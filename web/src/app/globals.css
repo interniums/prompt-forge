@@ -25,10 +25,29 @@ body {
 /* Terminal-style caret and selection for the input area */
 .terminal-input {
   caret-color: #ffffff;
+  scrollbar-width: thin;
+  scrollbar-color: #4b5563 transparent;
 }
 
 .terminal-input::selection {
   background-color: rgba(148, 163, 184, 0.35);
+}
+
+.terminal-input::-webkit-scrollbar {
+  width: 6px;
+}
+
+.terminal-input::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.terminal-input::-webkit-scrollbar-thumb {
+  background-color: #4b5563;
+  border-radius: 9999px;
+}
+
+.terminal-input::-webkit-scrollbar-thumb:hover {
+  background-color: #9ca3af;
 }
 
 /* Custom scrollbar to match app style */

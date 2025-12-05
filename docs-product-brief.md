@@ -1,12 +1,12 @@
 # PromptForge – Product Brief
 
 ## Product idea
-PromptForge is a focused workspace for turning fuzzy goals into clear prompts via two main experiences:
+PromptForge is a focused workspace for turning fuzzy goals into clear prompts through a single, terminal-style experience:
 
-- A **Fast & Easy** flow (the default) where users describe a problem in their own words (typed or voice). The app can ask a few clarifying questions and then proposes ready-to-use prompt variants that the user can refine.
-- An **Enchanted** sandbox where users intentionally choose templates and settings, shaping and testing prompt recipes with more control.
+- Users describe a problem in their own words (typed or voice) in the PromptForge terminal.
+- Lightweight slash commands (for example, `/help`, `/preferences`) control all other interactions: updating preferences, exploring templates, and reusing past prompts.
 
-Both flows share the same underlying template, history, and preference system so users can move between quick help and deep customization.
+Under the hood, a shared template, history, and preference system powers the terminal, but users always stay in one calm surface.
 
 ## Target users
 - Makers and founders writing product specs, strategies, and pitches
@@ -31,20 +31,14 @@ Fast clarity and consistent quality. The app reduces prompt-writing friction, en
 - **Voice typing effect**: UI animation that makes dictated input feel like it’s being typed in real time.
 
 ## Primary flows
-1. **Fast & Easy (default)**: Describe a problem (typed or voice) → app may ask a few clarifying questions → user receives several prompt candidates → refine and copy/export.
-2. **Enchanted sandbox**: Choose or create a template → define fields and options → preview and test → reuse in Generator.
-3. Reuse from history: pick a past generation → duplicate, tweak, copy.
-4. Share templates via a public gallery.
+1. **Task → prompt (default)**: Describe a problem (typed or voice) in the terminal → app may ask a few clarifying questions → user receives one or more prompt candidates → refine and copy/export.
+2. **Preferences**: Run `/preferences` → answer a few short questions → app updates stored tone, audience, and domain defaults used when shaping prompts.
+3. **Templates and history (later)**: Manage templates and reuse past generations through additional terminal commands (for example, `/templates`, `/history`).
 
-## Core screens
-- Landing
-- Fast & Easy surface (can be implemented as an enhanced Task Helper + quick preview).
-- Enchanted workspace composed of:
-  - Template Builder (split view for fields + prompt/preview).
-  - Generator (calm flow for filling fields and seeing the final prompt).
-- Gallery
-- Dashboard (optional overview tying flows together)
-- History (searchable with quick reuse)
+## Core surface
+- A single PromptForge terminal:
+  - One page, terminal-style UI with a scrolling log and an input at the bottom.
+  - All interactions—tasks, preferences, templates, and history—are initiated by typing into the terminal.
 
 ## Design principles
 - Minimalist, calm, and distraction-free

@@ -4,27 +4,22 @@ This file provides guidance to WARP (warp.dev) when working with code in this re
 
 ## Repository status
 
-As of 2025-12-04 this repository is in an early, design-only phase. There is no application code, build tooling, or test configuration yet. The main sources of truth are:
+As of 2025-12-05 this repository contains both product docs and an implemented web application.
 
-- `README.md` – high-level overview of PromptForge, its purpose, and planned feature set.
-- `docs-product-brief.md` – detailed product brief describing users, core promise, key concepts, primary flows, and planned screens.
+- The core product/docs live at the repo root (`README.md`, `docs-product-brief.md`, `docs-architecture.md`).
+- The Next.js app lives in `web/` and renders the PromptForge terminal on the root route (`/`).
 
-When implementation is added, new tooling and architecture should be reflected back into this file.
+The terminal is the primary user surface; any future features (templates, history, Task Helper) should be reachable through commands typed into this surface.
 
 ## Tooling and commands
 
-There are currently no package manifests or build/test configurations in the repo (for example, no `package.json`, `pyproject.toml`, `go.mod`, or similar files). That means there is **no canonical build, lint, or test command defined yet**.
+The `web/` folder contains a standard Next.js + TypeScript app with npm-based tooling:
 
-When code and tooling are introduced, derive commands from the concrete configuration in the repo instead of assuming defaults. In particular:
+- Development server: `cd web && npm run dev`
+- Lint: `cd web && npm run lint`
+- Production build: `cd web && npm run build`
 
-- If a JavaScript/TypeScript toolchain is added (e.g. `package.json` appears):
-  - Use the package manager implied by lockfiles (e.g. `pnpm-lock.yaml`, `yarn.lock`, or `package-lock.json`).
-  - Prefer running tasks via `npm run`, `pnpm`, or `yarn` scripts defined in `package.json` (e.g. `dev`, `build`, `lint`, `test`).
-  - For “run a single test” flows, look for the test runner (Vitest, Jest, Playwright, etc.) and use its documented CLI targeting options (by file or test name) based on the configured scripts.
-- If a different ecosystem is used (Python, Go, Rust, etc.):
-  - Inspect the corresponding config (`pyproject.toml`, `requirements.txt`, `go.mod`, `Cargo.toml`, etc.) and any `Makefile` or task runner config to discover the authoritative commands.
-
-Always take commands from the actual repo configuration rather than generic conventions, and update this section once the tooling is in place.
+Use these commands as the source of truth when running, linting, or building the app.
 
 ## Product and domain overview
 
@@ -46,20 +41,11 @@ Key domain concepts from the documentation:
 
 Primary user flows to keep in mind when designing or reading code:
 
-1. Fast & Easy (default): user describes a problem → app may ask clarifying questions → user receives several prompt candidates → refine or copy/export.
-2. Enchanted sandbox: user chooses or creates a template → defines fields/options → previews and tests → reuses via Generator.
-3. Reuse from history (duplicate, tweak, copy).
-4. Share templates via some form of gallery.
+1. Terminal task flow (default): user describes a problem in the terminal → app may ask clarifying questions → user receives one or more prompt candidates → refine and copy/export.
+2. Preferences: user runs `/preferences` → app walks through a short Q&A to capture tone, audience, and domain defaults.
+3. Templates and history (later): user manages templates and reuses past generations through additional terminal commands.
 
-Core planned screens from the product brief:
-
-- Landing
-- Gallery
-- Dashboard
-- Template Builder (split view: fields on one side, prompt + preview on the other)
-- Generator (a single, calm flow for generating prompts)
-- Task Helper (task → template assistant, likely reachable from Landing/Generator)
-- History (searchable, focused on quick reuse)
+There is a single primary surface: the PromptForge terminal on `/`. Any additional internal modules (for templates, history, Task Helper, etc.) should plug into this surface rather than introducing new standalone pages.
 
 These concepts and flows should shape both domain modeling and UI architecture once implementation begins.
 

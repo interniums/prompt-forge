@@ -9,19 +9,18 @@ PromptForge is a web application with:
 - A **Next.js + React + TypeScript** frontend.
 - A **Supabase** backend for Postgres, authentication, and persistence.
 - **Server-side AI integration** via server-only utility modules (no AI keys in the browser).
-- A focus on calm, minimal UI with live prompt preview and structured templates.
+- A focus on a calm, minimal **terminal-style UI** that sits on top of a structured template and history engine.
 
-The app is organized around two primary experiences, plus supporting screens:
+The app is organized around a **single terminal surface** rather than multiple pages:
 
-- **Fast & Easy flow (default)**: an assistant-style surface where the user describes a task (text or voice). The backend may ask clarifying questions, then generates several prompt variants that can be refined and reused.
-- **Enchanted sandbox**: a more deliberate workspace where users pick or build templates, adjust fields and options, and drive the Generator with fine-grained control.
+- Users type tasks and commands (for example, `/help`, `/preferences`) into the terminal.
+- The backend uses templates, fields, preferences, and history to shape prompts and answers.
 
-Supporting surfaces:
+Logical flows inside the terminal include:
 
-- Template Builder: create/edit templates with fields and instant preview.
-- Generator: use templates and fields to assemble prompts in a calm, single-flow UI.
-- History: browse, duplicate, and tweak past generations.
-- Gallery: browse shared/public templates.
+- Task handling: take a freeform description and generate prompts.
+- Preferences: collect and store tone, audience, and domain defaults.
+- Templates and history (later): manage templates and reuse past generations via commands.
 
 ## Tech stack
 
@@ -38,9 +37,9 @@ Supporting surfaces:
 
 ## Interaction patterns
 
-- **Server components** handle most data fetching from Supabase for pages like Generator, Template Builder, History, and Gallery.
-- **Server actions** handle mutations and AI calls, e.g. saving templates, generating prompts, or running Task Helper suggestions.
-- **Client components** are used where interactivity is required (form inputs, live preview controls, voice capture), calling server actions via form submissions or event handlers.
+- The primary UI is a client component `FastEasyShell` that renders the terminal: a scrollable log plus an input area.
+- **Server actions** (and, later, route handlers) handle mutations and AI calls, e.g. saving generations, updating preferences, or running Task Helper-style intent extraction.
+- Additional React components can be introduced for richer terminal interactions (for example, inline previews), but all user-initiated actions start from the terminal input.
 
 ## Supabase usage
 
