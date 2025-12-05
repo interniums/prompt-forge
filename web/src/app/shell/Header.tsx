@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 export function Header() {
@@ -17,28 +16,11 @@ export function Header() {
           <span className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-zinc-800 text-xs font-semibold text-zinc-100">
             PF
           </span>
-          <span className="tracking-tight">PromptForge</span>
+          <span className="tracking-tight">PromptForge terminal</span>
         </div>
-        <nav className="flex items-center gap-4 text-xs text-zinc-400">
-          <Link href="/" className="hover:text-zinc-100">
-            Home
-          </Link>
-          <Link href="/workspace" className="hover:text-zinc-100">
-            Workspace
-          </Link>
-          <Link href="/generator" className="hover:text-zinc-100">
-            Generator
-          </Link>
-          <Link href="/templates" className="hover:text-zinc-100">
-            Templates
-          </Link>
-          <Link href="/history" className="hover:text-zinc-100">
-            History
-          </Link>
-          <Link href="/gallery" className="hover:text-zinc-100">
-            Gallery
-          </Link>
-        </nav>
+        <div className="text-[11px] text-zinc-500">
+          Type <span className="font-mono text-zinc-300">/help</span> for available commands.
+        </div>
       </div>
     </header>
   );

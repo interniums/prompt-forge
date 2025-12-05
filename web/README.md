@@ -1,4 +1,4 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+This `web` folder contains the PromptForge web app: a single-screen, terminal-style interface built with [Next.js](https://nextjs.org) (App Router) and TypeScript.
 
 ## Getting Started
 

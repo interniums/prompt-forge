@@ -1,12 +1,3 @@
-export type TemplateField = {
-  id: string;
-  name: string;
-  label: string;
-  field_type: string;
-  required: boolean;
-  helper_text: string | null;
-};
-
 /**
  * Very simple prompt assembly: replace {{field_name}} placeholders in the base
  * prompt with user-provided values. If a field has no placeholder, it is
