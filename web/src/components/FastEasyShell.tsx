@@ -57,9 +57,9 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
   const [answeringQuestions, setAnsweringQuestions] = useState(false)
   const [clarifyingSelectedOptionIndex, setClarifyingSelectedOptionIndex] = useState<number | null>(null)
   const generationRunIdRef = useRef(0)
-  const scrollRef = useRef<HTMLDivElement | null>(null)
-  const editablePromptRef = useRef<HTMLTextAreaElement | null>(null)
-  const inputRef = useRef<HTMLTextAreaElement | null>(null)
+  const scrollRef = useRef<HTMLDivElement>(null!)
+  const editablePromptRef = useRef<HTMLTextAreaElement>(null!)
+  const inputRef = useRef<HTMLTextAreaElement>(null!)
   const toastTimeoutRef = useRef<number | null>(null)
   const [lines, setLines] = useState<TerminalLine[]>(
     initialLines && initialLines.length
@@ -144,10 +144,7 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
     void copyEditablePrompt()
     setIsPromptFinalized(true)
     setIsPromptEditable(false)
-    appendLine(
-      'app',
-      'Prompt approved and copied. You can now start a new task or type /discard to reset everything.'
-    )
+    appendLine('app', 'Prompt approved and copied. You can now start a new task or type /discard to reset everything.')
   }
 
   function appendLine(role: TerminalRole, text: string) {
@@ -168,6 +165,16 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
   }
 
   function startPreferencesFlow() {
+    // Clear any active task state to avoid conflicts
+    setPendingTask(null)
+    setAwaitingQuestionConsent(false)
+    setConsentSelectedIndex(null)
+    setClarifyingQuestions(null)
+    clarifyingAnswersRef.current = []
+    setCurrentQuestionIndex(0)
+    setClarifyingSelectedOptionIndex(null)
+    setAnsweringQuestions(false)
+
     appendLine('app', `Current preferences: ${formatPreferencesSummary()}`)
     appendLine('app', 'First, what tone do you prefer? (for example: casual, neutral, or formal?)')
     setPreferencesStep('tone')
