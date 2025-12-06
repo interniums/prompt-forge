@@ -31,6 +31,41 @@ export type Command = (typeof COMMAND)[keyof typeof COMMAND]
 /** Session cookie name */
 export const SESSION_COOKIE = 'pf_session_id'
 
+/** Preference defaults and option sets */
+export const DEFAULT_MODEL = 'gpt-4.1-mini'
+export const DEFAULT_TEMPERATURE = 0.4
+
+export const MODEL_OPTIONS = [
+  { value: 'gpt-4.1', label: 'GPT-4.1' },
+  { value: 'gpt-4.1-mini', label: 'GPT-4.1 mini' },
+  { value: 'claude-3.5-sonnet', label: 'Claude 3.5 Sonnet' },
+  { value: 'claude-3.5-haiku', label: 'Claude 3.5 Haiku' },
+] as const
+
+export const OUTPUT_FORMAT_OPTIONS = [
+  { value: 'plain_text', label: 'Plain text' },
+  { value: 'bullet_list', label: 'Bulleted list' },
+  { value: 'steps', label: 'Step-by-step' },
+  { value: 'table', label: 'Table' },
+  { value: 'outline', label: 'Outline' },
+] as const
+
+export const DEPTH_OPTIONS = [
+  { value: 'brief', label: 'Brief summary' },
+  { value: 'standard', label: 'Standard depth' },
+  { value: 'deep', label: 'Deep dive' },
+] as const
+
+export const CITATION_OPTIONS = [
+  { value: 'none', label: 'No citations' },
+  { value: 'light', label: 'Light references' },
+  { value: 'strict', label: 'Strict citations' },
+] as const
+
+export const TONE_OPTIONS = ['casual', 'neutral', 'formal'] as const
+export const AUDIENCE_OPTIONS = ['general', 'technical', 'executive'] as const
+export const LANGUAGE_OPTIONS = ['English', 'Spanish', 'French', 'German'] as const
+
 /** Toast display duration in milliseconds */
 export const TOAST_DURATION_MS = 2000
 

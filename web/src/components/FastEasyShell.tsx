@@ -9,16 +9,29 @@ import {
   recordGeneration,
   listHistory,
   recordEvent,
+  loadUserPreferences,
+  type SavePreferencesResult,
 } from '@/app/terminalActions'
 import { CenteredToast } from './terminal/CenteredToast'
 import { TerminalHeader } from './terminal/TerminalHeader'
 import { TerminalOutputArea } from './terminal/TerminalOutputArea'
 import { TerminalInputBar } from './terminal/TerminalInputBar'
 import { TerminalChromeButtons } from './terminal/TerminalChromeButtons'
+import { PreferencesPanel } from '@/components/PreferencesPanel'
+import { UserManagementModal } from '@/components/UserManagementModal'
 import { useToast } from '@/hooks/useToast'
 import { useDraftPersistence, loadDraft, clearDraft, type DraftState } from '@/hooks/useDraftPersistence'
 import { ROLE, COMMAND, MESSAGE, SHORTCUT, EMPTY_SUBMIT_COOLDOWN_MS, type TerminalRole } from '@/lib/constants'
-import type { TerminalLine, Preferences, PreferencesStep, ClarifyingQuestion, ClarifyingAnswer } from '@/lib/types'
+import { getSupabaseBrowserClient } from '@/lib/supabase/client'
+import type {
+  TerminalLine,
+  Preferences,
+  PreferencesStep,
+  ClarifyingQuestion,
+  ClarifyingAnswer,
+  PreferenceSource,
+  UserIdentity,
+} from '@/lib/types'
 
 // Re-export types for external consumers
 export type { TerminalLine, Preferences }
@@ -26,9 +39,18 @@ export type { TerminalLine, Preferences }
 type FastEasyShellProps = {
   initialLines?: TerminalLine[]
   initialPreferences?: Preferences
+  initialUser?: UserIdentity | null
+  initialPreferenceSource?: PreferenceSource
+  isFirstLogin?: boolean
 }
 
-export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShellProps) {
+export function FastEasyShell({
+  initialLines,
+  initialPreferences,
+  initialUser = null,
+  initialPreferenceSource = 'none',
+  isFirstLogin = false,
+}: FastEasyShellProps) {
   const [value, setValue] = useState('')
   const [isGenerating, setIsGenerating] = useState(false)
   const isMac = typeof window !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(window.navigator.userAgent)
@@ -63,8 +85,13 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
         ]
   )
   const [preferences, setPreferences] = useState<Preferences>(initialPreferences ?? {})
+  const [preferenceSource, setPreferenceSource] = useState<PreferenceSource>(initialPreferenceSource ?? 'none')
+  const [user, setUser] = useState<UserIdentity | null>(initialUser ?? null)
   const [preferencesStep, setPreferencesStep] = useState<PreferencesStep>(null)
+  const [isPreferencesOpen, setIsPreferencesOpen] = useState(isFirstLogin)
+  const [isSavingPreferences, setIsSavingPreferences] = useState(false)
   const [headerHelpShown, setHeaderHelpShown] = useState(false)
+  const [isUserManagementOpen, setIsUserManagementOpen] = useState(false)
   const [lastClearedLines, setLastClearedLines] = useState<TerminalLine[] | null>(null)
   const [lastHistory, setLastHistory] = useState<Array<{
     id: string
@@ -166,6 +193,72 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
   }, [draftRestoredShown, showToast])
 
   const inputDisabled = isGenerating
+
+  const applyPreferencesFromServer = useCallback((next: Preferences, source: PreferenceSource) => {
+    setPreferences(next)
+    setPreferenceSource(source)
+  }, [])
+
+  const refreshUserPreferences = useCallback(async () => {
+    try {
+      const result = await loadUserPreferences()
+      applyPreferencesFromServer(result.preferences, result.source)
+      if (result.source === 'user') {
+        showToast('Loaded your saved preferences')
+      } else {
+        showToast('No saved preferences found for your account yet')
+      }
+    } catch (err) {
+      console.error('Failed to load user preferences', err)
+      showToast('Could not load saved preferences')
+    }
+  }, [applyPreferencesFromServer, showToast])
+
+  useEffect(() => {
+    let isMounted = true
+    try {
+      const supabase = getSupabaseBrowserClient()
+      supabase.auth.getSession().then(({ data }) => {
+        if (!isMounted) return
+        const sessionUser = data.session?.user
+        if (sessionUser) {
+          setUser({ id: sessionUser.id, email: sessionUser.email })
+          void refreshUserPreferences()
+        }
+      })
+
+      const { data: subscription } = supabase.auth.onAuthStateChange((event, session) => {
+        if (!isMounted) return
+        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+          const sessionUser = session?.user
+          if (sessionUser) {
+            setUser({ id: sessionUser.id, email: sessionUser.email })
+            void refreshUserPreferences()
+          }
+        }
+        if (event === 'SIGNED_OUT') {
+          setUser(null)
+          setPreferenceSource('local')
+        }
+      })
+
+      return () => {
+        isMounted = false
+        subscription?.subscription.unsubscribe()
+      }
+    } catch (err) {
+      console.error('Supabase auth setup failed', err)
+      showToast('Authentication unavailable. Using local mode.')
+    }
+  }, [refreshUserPreferences, showToast])
+
+  const updatePreferencesLocally = useCallback((next: Preferences) => {
+    setPreferences(next)
+    setPreferenceSource((prev) => {
+      if (prev === 'user' || prev === 'session') return 'local'
+      return prev ?? 'local'
+    })
+  }, [])
 
   function focusInputToEnd() {
     if (!inputRef.current) return
@@ -324,7 +417,9 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
       return
     }
 
-    void copyEditablePrompt()
+    if (preferences.uiDefaults?.autoCopyApproved !== false) {
+      void copyEditablePrompt()
+    }
     setIsPromptFinalized(true)
     // Keep editable state available so user/AI edits remain possible post-approval.
     setIsPromptEditable(true)
@@ -341,7 +436,7 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
     if (inputRef.current) {
       inputRef.current.focus()
     }
-  }, [editablePrompt, copyEditablePrompt, lastApprovedPrompt])
+  }, [editablePrompt, preferences.uiDefaults?.autoCopyApproved, lastApprovedPrompt, copyEditablePrompt])
 
   function handleEditableChange(text: string) {
     setEditablePrompt(text)
@@ -370,6 +465,11 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
     if (prefs.tone) parts.push(`tone=${prefs.tone}`)
     if (prefs.audience) parts.push(`audience=${prefs.audience}`)
     if (prefs.domain) parts.push(`domain=${prefs.domain}`)
+    if (prefs.defaultModel) parts.push(`model=${prefs.defaultModel}`)
+    if (prefs.outputFormat) parts.push(`format=${prefs.outputFormat}`)
+    if (prefs.language) parts.push(`lang=${prefs.language}`)
+    if (prefs.depth) parts.push(`depth=${prefs.depth}`)
+    if (typeof prefs.temperature === 'number') parts.push(`temp=${prefs.temperature}`)
     if (parts.length === 0) return MESSAGE.NO_PREFERENCES
     return parts.join(', ')
   }
@@ -378,19 +478,87 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
     // Clear any active task state to avoid conflicts
     setPendingTask(null)
     resetClarifyingFlowState()
+    setPreferencesStep(null)
+    setIsPreferencesOpen(true)
 
-    appendLine(ROLE.APP, `Current preferences: ${formatPreferencesSummary()}`)
-    appendLine(ROLE.APP, 'First, what tone do you prefer? (for example: casual, neutral, or formal?)')
-    setPreferencesStep('tone')
+    appendLine(
+      ROLE.APP,
+      `Opening preferences (${user ? 'signed in' : 'local mode'}). Current settings: ${formatPreferencesSummary()}.`
+    )
     focusInputToEnd()
   }
+
+  const handlePreferencesChange = useCallback(
+    (next: Preferences) => {
+      updatePreferencesLocally(next)
+    },
+    [updatePreferencesLocally]
+  )
+
+  const handleSavePreferences = useCallback(async () => {
+    setIsSavingPreferences(true)
+    try {
+      const result: SavePreferencesResult = await savePreferences(preferences)
+      if (result.success) {
+        setPreferenceSource(result.scope)
+        setIsPreferencesOpen(false)
+        showToast(result.scope === 'user' ? 'Preferences saved to your account' : 'Preferences saved for this session')
+        // Refresh preferences to ensure sync with server
+        if (result.scope === 'user') {
+          void refreshUserPreferences()
+        }
+      } else {
+        showToast(result.message ? `Could not save preferences: ${result.message}` : 'Could not save preferences')
+      }
+    } catch (err) {
+      console.error('Failed to save preferences', err)
+      showToast('Could not save preferences')
+    } finally {
+      setIsSavingPreferences(false)
+    }
+  }, [preferences, showToast, refreshUserPreferences])
+
+  const handleSignIn = useCallback(async () => {
+    try {
+      const supabase = getSupabaseBrowserClient()
+      const origin = typeof window !== 'undefined' ? window.location.origin : ''
+      const next = typeof window !== 'undefined' ? window.location.href : '/'
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: origin ? `${origin}/auth/callback?next=${encodeURIComponent(next)}` : undefined,
+          scopes: 'email',
+        },
+      })
+      if (error) {
+        console.error('Supabase OAuth sign-in failed', error)
+        showToast('Could not start Google sign-in')
+      }
+    } catch (err) {
+      console.error('Supabase OAuth sign-in failed', err)
+      showToast('Could not start Google sign-in')
+    }
+  }, [showToast])
+
+  const handleSignOut = useCallback(async () => {
+    try {
+      const supabase = getSupabaseBrowserClient()
+      await supabase.auth.signOut()
+      setUser(null)
+      setPreferenceSource('local')
+      showToast('Signed out. Using local preferences.')
+    } catch (err) {
+      console.error('Failed to sign out', err)
+      showToast('Sign-out failed')
+    }
+  }, [showToast])
 
   function advancePreferences(answer: string) {
     if (!preferencesStep) return
 
     if (preferencesStep === 'tone') {
       const next = { ...preferences, tone: answer }
-      setPreferences(next)
+      updatePreferencesLocally(next)
       appendLine(ROLE.APP, 'Got it. Who are you usually writing for? (for example: founders, devs, general audience?)')
       setPreferencesStep('audience')
       return
@@ -398,7 +566,7 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
 
     if (preferencesStep === 'audience') {
       const next = { ...preferences, audience: answer }
-      setPreferences(next)
+      updatePreferencesLocally(next)
       appendLine(ROLE.APP, 'What domains do you mostly work in? (for example: product, marketing, engineering?)')
       setPreferencesStep('domain')
       return
@@ -406,7 +574,7 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
 
     if (preferencesStep === 'domain') {
       const next = { ...preferences, domain: answer }
-      setPreferences(next)
+      updatePreferencesLocally(next)
       appendLine(ROLE.APP, `Updated preferences: ${formatPreferencesSummary(next)}`)
       appendLine(ROLE.APP, 'These will be used to steer how prompts are shaped for you.')
       setPreferencesStep(null)
@@ -807,6 +975,13 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
     setIsPromptEditable(false)
     setIsPromptFinalized(false)
 
+    const wantsClarifying = preferences.uiDefaults?.showClarifying !== false
+
+    if (!wantsClarifying) {
+      await generateFinalPromptForTask(task, [])
+      return
+    }
+
     appendLine(ROLE.APP, MESSAGE.QUESTION_CONSENT)
     setAwaitingQuestionConsent(true)
     setConsentSelectedIndex(0) // Highlight first option so arrow navigation is obvious
@@ -1143,14 +1318,30 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
     >
       <CenteredToast message={toastMessage} />
 
-      <TerminalHeader
-        headerHelpShown={headerHelpShown}
-        onHelpClick={() => {
-          if (headerHelpShown) return
-          appendLine('user', '/help')
-          handleHelpCommand()
-          setHeaderHelpShown(true)
-        }}
+      <TerminalHeader onProfileClick={() => setIsUserManagementOpen(true)} />
+
+      <PreferencesPanel
+        open={isPreferencesOpen}
+        values={preferences}
+        source={preferenceSource}
+        user={user}
+        saving={isSavingPreferences}
+        canSave={Boolean(user)}
+        onClose={() => setIsPreferencesOpen(false)}
+        onChange={handlePreferencesChange}
+        onSave={handleSavePreferences}
+        onSignIn={handleSignIn}
+        onSignOut={handleSignOut}
+      />
+
+      <UserManagementModal
+        open={isUserManagementOpen}
+        user={user}
+        preferences={preferences}
+        preferenceSource={preferenceSource}
+        onClose={() => setIsUserManagementOpen(false)}
+        onOpenPreferences={() => setIsPreferencesOpen(true)}
+        onSignOut={handleSignOut}
       />
 
       <form onSubmit={handleFormSubmit} className="relative flex-1 text-sm">

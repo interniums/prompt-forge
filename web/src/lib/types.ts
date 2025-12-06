@@ -35,6 +35,13 @@ export type Preferences = {
   }
 }
 
+export type UserIdentity = {
+  id: string
+  email?: string | null
+}
+
+export type PreferenceSource = 'user' | 'session' | 'local' | 'none'
+
 /** A generated prompt with metadata */
 export type GeneratedPrompt = {
   id: string
@@ -78,7 +85,10 @@ export type PreferencesStep = 'tone' | 'audience' | 'domain' | null
 export type SessionState = {
   sessionId: string
   preferences: Preferences
+  preferencesSource: PreferenceSource
+  user: UserIdentity | null
   generations: HistoryItem[]
+  isFirstLogin?: boolean
 }
 
 /** Template summary for listing */

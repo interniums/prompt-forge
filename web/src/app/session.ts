@@ -1,7 +1,7 @@
 import { cookies } from 'next/headers'
-import { createServerSupabaseClient } from '@/lib/supabase/server'
+import { createServiceSupabaseClient, createServerSupabaseClient } from '@/lib/supabase/server'
 import { SESSION_COOKIE } from '@/lib/constants'
-import type { Preferences, HistoryItem, SessionState } from '@/lib/types'
+import type { Preferences, HistoryItem, SessionState, PreferenceSource, UserIdentity } from '@/lib/types'
 
 // Re-export types for backward compatibility
 export type { SessionState }
@@ -41,39 +41,114 @@ export async function getSessionId(): Promise<string | null> {
   return existing
 }
 
+function coerceString(value: unknown): string | undefined {
+  if (typeof value === 'string') return value
+  if (typeof value === 'number') return String(value)
+  return undefined
+}
+
+function coerceObject<T extends Record<string, unknown>>(value: unknown): T | undefined {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value as T
+  }
+  return undefined
+}
+
+function mapPreferences(row?: Record<string, unknown> | null): Preferences {
+  if (!row) return {}
+  return {
+    tone: coerceString(row.tone),
+    audience: coerceString(row.audience),
+    domain: coerceString(row.domain),
+    defaultModel: coerceString(row.default_model),
+    temperature: typeof row.temperature === 'number' ? row.temperature : null,
+    styleGuidelines: coerceString(row.style_guidelines),
+    outputFormat: coerceString(row.output_format),
+    language: coerceString(row.language),
+    depth: coerceString(row.depth),
+    citationPreference: coerceString(row.citation_preference),
+    personaHints: coerceString(row.persona_hints),
+    uiDefaults: coerceObject(row.ui_defaults),
+    sharingLinks: coerceObject(row.sharing_links),
+  }
+}
+
 export async function loadSessionState(): Promise<SessionState> {
   const sessionIdFromCookie = await getSessionId()
-  const supabase = createServerSupabaseClient()
+  const serviceSupabase = createServiceSupabaseClient()
+  const authSupabase = await createServerSupabaseClient()
+
+  const {
+    data: { user: authUser },
+    error: userError,
+  } = await authSupabase.auth.getUser()
+
+  if (userError && userError.message !== 'Auth session missing!') {
+    console.error('Failed to read auth user', userError)
+  }
+
+  const user: UserIdentity | null = authUser ? { id: authUser.id, email: authUser.email } : null
+  let preferences: Preferences = {}
+  let preferencesSource: PreferenceSource = 'none'
+  let isFirstLogin = false
 
   if (!sessionIdFromCookie) {
     // No real session yet; return empty state without hitting the database.
     // Note: Session will be created on first server action (e.g., submitting a task)
     return {
       sessionId: 'pending', // Indicates session will be created on first action
-      preferences: {},
+      preferences,
+      preferencesSource,
+      user,
       generations: [],
+      isFirstLogin: false,
     }
   }
 
   const sessionId = sessionIdFromCookie
 
-  const { data: prefsRow, error: prefsError } = await supabase
-    .from('pf_preferences')
-    .select('tone, audience, domain')
-    .eq('session_id', sessionId)
-    .maybeSingle()
+  // Prefer user preferences when signed in; otherwise fall back to session-scoped prefs
+  if (user) {
+    const { data: userPrefs, error: userPrefsError } = await authSupabase
+      .from('user_preferences')
+      .select(
+        'tone, audience, domain, default_model, temperature, style_guidelines, output_format, language, depth, citation_preference, persona_hints, ui_defaults, sharing_links, created_at'
+      )
+      .maybeSingle()
 
-  if (prefsError) {
-    console.error('Failed to load preferences', prefsError)
+    if (userPrefsError && userPrefsError.code !== 'PGRST116') {
+      console.error('Failed to load user preferences', userPrefsError)
+    }
+
+    if (userPrefs) {
+      preferences = mapPreferences(userPrefs)
+      preferencesSource = 'user'
+    } else {
+      // No user preferences yet - this is a first login
+      isFirstLogin = true
+    }
   }
 
-  const preferences: SessionPreferences = {
-    tone: prefsRow?.tone ?? undefined,
-    audience: prefsRow?.audience ?? undefined,
-    domain: prefsRow?.domain ?? undefined,
+  if (preferencesSource === 'none') {
+    const { data: prefsRow, error: prefsError } = await serviceSupabase
+      .from('pf_preferences')
+      .select('tone, audience, domain')
+      .eq('session_id', sessionId)
+      .maybeSingle()
+
+    if (prefsError && prefsError.code !== 'PGRST116') {
+      console.error('Failed to load session preferences', prefsError)
+    }
+
+    preferences = {
+      tone: prefsRow?.tone ?? undefined,
+      audience: prefsRow?.audience ?? undefined,
+      domain: prefsRow?.domain ?? undefined,
+    }
+    preferencesSource = prefsRow ? 'session' : 'none'
   }
 
-  const { data: generationsRows, error: generationsError } = await supabase
+  const { data: generationsRows, error: generationsError } = await serviceSupabase
     .from('pf_generations')
     .select('id, task, label, body, created_at')
     .eq('session_id', sessionId)
@@ -92,5 +167,5 @@ export async function loadSessionState(): Promise<SessionState> {
     created_at: g.created_at as string,
   }))
 
-  return { sessionId, preferences, generations }
+  return { sessionId, preferences, preferencesSource, user, generations, isFirstLogin }
 }

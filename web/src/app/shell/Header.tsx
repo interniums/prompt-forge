@@ -1,12 +1,13 @@
-"use client";
+'use client'
 
-import { usePathname } from "next/navigation";
+import { usePathname } from 'next/navigation'
 
 export function Header() {
-  const pathname = usePathname();
+  const pathname = usePathname()
 
-  if (pathname === "/") {
-    return null;
+  // Hide header on homepage and login page
+  if (pathname === '/' || pathname === '/login') {
+    return null
   }
 
   return (
@@ -23,5 +24,5 @@ export function Header() {
         </div>
       </div>
     </header>
-  );
+  )
 }
