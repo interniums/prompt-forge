@@ -48,11 +48,15 @@ export async function loadSessionState(): Promise<SessionState> {
     };
   }
 
-  const { data: prefsRow } = await supabase
+  const { data: prefsRow, error: prefsError } = await supabase
     .from("pf_preferences")
     .select("tone, audience, domain")
     .eq("session_id", sessionId)
     .maybeSingle();
+
+  if (prefsError) {
+    console.error("Failed to load preferences", prefsError);
+  }
 
   const preferences: SessionPreferences = {
     tone: prefsRow?.tone ?? undefined,
@@ -60,12 +64,16 @@ export async function loadSessionState(): Promise<SessionState> {
     domain: prefsRow?.domain ?? undefined,
   };
 
-  const { data: generationsRows } = await supabase
+  const { data: generationsRows, error: generationsError } = await supabase
     .from("pf_generations")
     .select("id, task, label, body, created_at")
     .eq("session_id", sessionId)
     .order("created_at", { ascending: false })
     .limit(10);
+
+  if (generationsError) {
+    console.error("Failed to load generations history", generationsError);
+  }
 
   const generations: SessionGeneration[] = (generationsRows ?? []).map((g) => ({
     id: g.id as string,

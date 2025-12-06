@@ -32,7 +32,7 @@ export default function RootLayout({
           {/* Hide header on landing to keep it focused and terminal-like */}
           <Header />
           <main className="flex-1 bg-gradient-to-b from-zinc-950 to-zinc-900">
-            <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 sm:py-14">
+            <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
               {children}
             </div>
           </main>

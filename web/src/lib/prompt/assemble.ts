@@ -10,7 +10,8 @@ export function assemblePrompt(
   let result = basePrompt;
 
   for (const [key, value] of Object.entries(values)) {
-    const placeholder = new RegExp(`{{\\s*${key}\\s*}}`, "gi");
+    const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const placeholder = new RegExp(`{{\\s*${escapedKey}\\s*}}`, "gi");
     result = result.replace(placeholder, value.trim());
   }
 

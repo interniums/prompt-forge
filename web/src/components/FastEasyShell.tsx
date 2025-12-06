@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import {
   generateClarifyingQuestions,
   generateFinalPrompt,
@@ -8,6 +8,7 @@ import {
   savePreferences,
   recordGeneration,
   listHistory,
+  recordEvent,
   type ClarifyingQuestion,
   type ClarifyingAnswer,
 } from '@/app/terminalActions'
@@ -83,6 +84,36 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
     body: string
     created_at: string
   }> | null>(null)
+  const [lastApprovedPrompt, setLastApprovedPrompt] = useState<string | null>(null)
+  const [emptySubmitWarned, setEmptySubmitWarned] = useState(false)
+  const [clarifyingAnswersCount, setClarifyingAnswersCount] = useState(0)
+  const [isRevising, setIsRevising] = useState(false)
+
+  const inputDisabled = isGenerating
+
+  function focusInputToEnd() {
+    if (!inputRef.current) return
+    const el = inputRef.current
+    el.focus()
+    const len = el.value.length
+    el.setSelectionRange(len, len)
+  }
+
+  function appendLine(role: TerminalRole, text: string) {
+    setLines((prev) => {
+      const nextId = prev.length ? prev[prev.length - 1].id + 1 : 0
+      return [...prev, { id: nextId, role, text }]
+    })
+  }
+
+  function scrollToBottom() {
+    if (!scrollRef.current) return
+    const el = scrollRef.current
+    // Wait for React to paint new lines before scrolling.
+    requestAnimationFrame(() => {
+      el.scrollTop = el.scrollHeight
+    })
+  }
 
   useEffect(() => {
     if (editablePrompt !== null) {
@@ -102,6 +133,76 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
     }
   }, [editablePrompt])
 
+  useEffect(() => {
+    scrollToBottom()
+  }, [lines])
+
+  useEffect(() => {
+    if (awaitingQuestionConsent) {
+      focusInputToEnd()
+    }
+  }, [awaitingQuestionConsent])
+
+  useEffect(() => {
+    if (inputDisabled && inputRef.current) {
+      inputRef.current.blur()
+    }
+  }, [inputDisabled])
+
+  function selectForQuestion(question: ClarifyingQuestion | null, hasBack: boolean) {
+    if (!question) {
+      setClarifyingSelectedOptionIndex(null)
+      return
+    }
+    if (question.options.length > 0) {
+      setClarifyingSelectedOptionIndex(0)
+      return
+    }
+    if (hasBack) {
+      setClarifyingSelectedOptionIndex(-1)
+      return
+    }
+    setClarifyingSelectedOptionIndex(null)
+  }
+
+  useEffect(() => {
+    function handleFocusShortcut(e: KeyboardEvent) {
+      if (!(e.metaKey || e.ctrlKey)) return
+      const key = e.key.toLowerCase()
+      if (key === 'j') {
+        e.preventDefault()
+        if (inputRef.current) {
+          inputRef.current.focus()
+          const len = inputRef.current.value.length
+          inputRef.current.setSelectionRange(len, len)
+        }
+        return
+      }
+      if (key === 'e' && editablePrompt) {
+        e.preventDefault()
+        setIsPromptEditable(true)
+        setIsPromptFinalized(false)
+        if (editablePromptRef.current) {
+          const el = editablePromptRef.current
+          el.focus()
+          const len = el.value.length
+          el.setSelectionRange(len, len)
+        }
+        return
+      }
+    }
+    window.addEventListener('keydown', handleFocusShortcut)
+    return () => window.removeEventListener('keydown', handleFocusShortcut)
+  }, [editablePrompt])
+
+  useEffect(() => {
+    return () => {
+      if (toastTimeoutRef.current !== null) {
+        window.clearTimeout(toastTimeoutRef.current)
+      }
+    }
+  }, [])
+
   function autosizeEditablePrompt() {
     if (!editablePromptRef.current) return
     const el = editablePromptRef.current
@@ -120,12 +221,13 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
     }, 2000)
   }
 
-  async function copyEditablePrompt() {
+  const copyEditablePrompt = useCallback(async () => {
     if (!editablePrompt) return
     try {
       if (navigator?.clipboard?.writeText) {
         await navigator.clipboard.writeText(editablePrompt)
         showToast('Prompt copied')
+        void recordEvent('prompt_copied', { prompt: editablePrompt })
       } else {
         appendLine('app', 'Clipboard is not available in this environment.')
       }
@@ -133,9 +235,17 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
       console.error('Failed to copy editable prompt', err)
       appendLine('app', 'Could not copy to clipboard. You can still select and copy manually.')
     }
-  }
+  }, [editablePrompt])
 
-  function handleApprovePrompt() {
+  useEffect(() => {
+    if (!isPromptEditable || !editablePromptRef.current) return
+    const el = editablePromptRef.current
+    el.focus()
+    const len = el.value.length
+    el.setSelectionRange(len, len)
+  }, [isPromptEditable])
+
+  const handleApprovePrompt = useCallback(() => {
     if (!editablePrompt) {
       appendLine('app', 'There is no prompt to approve yet. Generate one first.')
       return
@@ -143,16 +253,43 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
 
     void copyEditablePrompt()
     setIsPromptFinalized(true)
-    setIsPromptEditable(false)
-    appendLine('app', 'Prompt approved and copied. You can now start a new task or type /discard to reset everything.')
+    // Keep editable state available so user/AI edits remain possible post-approval.
+    setIsPromptEditable(true)
+    setLastApprovedPrompt(editablePrompt)
+    void recordEvent('prompt_approved', { prompt: editablePrompt })
+
+    if (editablePrompt !== lastApprovedPrompt) {
+      appendLine(
+        'app',
+        'Prompt approved and copied. You can now start a new task by typing /discard or continue updating this prompt.'
+      )
+    }
+
+    if (inputRef.current) {
+      inputRef.current.focus()
+    }
+  }, [editablePrompt, copyEditablePrompt, lastApprovedPrompt])
+
+  function handleEditableChange(text: string) {
+    setEditablePrompt(text)
+    autosizeEditablePrompt()
+    if (isPromptFinalized && text !== lastApprovedPrompt) {
+      setIsPromptFinalized(false)
+      setLastApprovedPrompt(null)
+    }
   }
 
-  function appendLine(role: TerminalRole, text: string) {
-    setLines((prev) => {
-      const nextId = prev.length ? prev[prev.length - 1].id + 1 : 0
-      return [...prev, { id: nextId, role, text }]
-    })
-  }
+  useEffect(() => {
+    if (!editablePrompt) return
+    function handleGlobalCopy(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        e.preventDefault()
+        handleApprovePrompt()
+      }
+    }
+    window.addEventListener('keydown', handleGlobalCopy)
+    return () => window.removeEventListener('keydown', handleGlobalCopy)
+  }, [editablePrompt, handleApprovePrompt])
 
   function formatPreferencesSummary(next?: Preferences) {
     const prefs = next ?? preferences
@@ -178,6 +315,7 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
     appendLine('app', `Current preferences: ${formatPreferencesSummary()}`)
     appendLine('app', 'First, what tone do you prefer? (for example: casual, neutral, or formal?)')
     setPreferencesStep('tone')
+    focusInputToEnd()
   }
 
   function advancePreferences(answer: string) {
@@ -222,6 +360,7 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
       'app',
       'Anything else is treated as a task description. The app will use your preferences to shape prompts.'
     )
+    scrollToBottom()
   }
 
   function handleClear() {
@@ -269,6 +408,7 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
     setAnsweringQuestions(false)
     setConsentSelectedIndex(null)
     setLastHistory(null)
+    setLastApprovedPrompt(null)
   }
 
   function handleRestore() {
@@ -301,24 +441,62 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
     }
   }
 
-  function handleUseFromHistory(index: number) {
-    if (!lastHistory || lastHistory.length === 0) {
-      appendLine('app', 'No history in memory. Run /history first.')
+  async function handleUseFromHistory(index: number) {
+    let history = lastHistory
+
+    if (!history || history.length === 0) {
+      try {
+        const items = await listHistory(10)
+        setLastHistory(items)
+        history = items
+      } catch (err) {
+        console.error('Failed to load history for /use', err)
+        appendLine('app', 'Could not load history. Try /history first.')
+        return
+      }
+    }
+
+    if (!history || history.length === 0) {
+      appendLine('app', 'No history yet for this session.')
       return
     }
-    if (index < 1 || index > lastHistory.length) {
-      appendLine('app', 'No such history entry. Use /history to see available numbers.')
+    if (index < 1 || index > history.length) {
+      appendLine('app', 'No such history entry. Use /history to see entries.')
       return
     }
 
-    const selected = lastHistory[index - 1]
+    const selected = history[index - 1]
     setValue(selected.task)
+    setEditablePrompt(selected.body)
+    setIsPromptEditable(false)
+    setIsPromptFinalized(false)
+    setLastApprovedPrompt(null)
+    setPendingTask(selected.task)
+    setHasRunInitialTask(true)
+    setAwaitingQuestionConsent(false)
+    setClarifyingQuestions(null)
+    clarifyingAnswersRef.current = []
+    setCurrentQuestionIndex(0)
+    setClarifyingSelectedOptionIndex(null)
+    setAnsweringQuestions(false)
+    setConsentSelectedIndex(null)
+
     appendLine('app', `Loaded task #${index} from history into the input.`)
+    appendLine('user', selected.task)
+    appendLine('app', `Restored prompt (${selected.label}):\n\n${selected.body}`)
+
+    void recordEvent('history_use', {
+      index,
+      historyId: selected.id,
+      task: selected.task,
+      label: selected.label,
+    })
   }
 
   function handleCommand(raw: string) {
     const normalized = raw.trim()
     const [command, ...rest] = normalized.split(/\s+/)
+    void recordEvent('command', { command: normalized })
 
     switch (command) {
       case '/help': {
@@ -336,6 +514,14 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
       }
       case '/clear': {
         handleClear()
+        return
+      }
+      case '/back': {
+        handleUndoAnswer()
+        return
+      }
+      case '/revise': {
+        handleReviseFlow()
         return
       }
       case '/restore': {
@@ -404,13 +590,15 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
 
       setClarifyingQuestions(questions)
       clarifyingAnswersRef.current = []
+      setClarifyingAnswersCount(0)
       setCurrentQuestionIndex(0)
-      setClarifyingSelectedOptionIndex(questions[0].options.length > 0 ? 0 : null)
+      selectForQuestion(questions[0], false)
       setAwaitingQuestionConsent(false)
       setConsentSelectedIndex(null)
       setAnsweringQuestions(true)
 
       appendClarifyingQuestion(questions[0], 0, questions.length)
+      focusInputToEnd()
     } catch (err) {
       if (runId === generationRunIdRef.current) {
         console.error('Failed to generate clarifying questions', err)
@@ -451,6 +639,7 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
       setEditablePrompt(finalPrompt)
       setIsPromptEditable(false)
       setIsPromptFinalized(false)
+      setLastApprovedPrompt(null)
 
       void recordGeneration({
         task,
@@ -490,6 +679,7 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
       setEditablePrompt(finalPrompt)
       setIsPromptEditable(true)
       setIsPromptFinalized(false)
+      setLastApprovedPrompt(null)
 
       void recordGeneration({
         task: pendingTask ?? 'Edited prompt',
@@ -514,6 +704,30 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
     const task = line.trim()
     if (!task) return
 
+    void recordEvent('task_submitted', { task })
+
+    // If revising and task is unchanged, reuse previous clarifying questions/answers.
+    if (isRevising && pendingTask && task === pendingTask && clarifyingQuestions && clarifyingQuestions.length > 0) {
+      setIsRevising(false)
+      setHasRunInitialTask(true)
+      setAwaitingQuestionConsent(false)
+      const answered = clarifyingAnswersRef.current.length
+      if (answered < clarifyingQuestions.length) {
+        setAnsweringQuestions(true)
+        setCurrentQuestionIndex(answered)
+        const nextQuestion = clarifyingQuestions[answered]
+        selectForQuestion(nextQuestion ?? null, answered > 0)
+        appendClarifyingQuestion(nextQuestion, answered, clarifyingQuestions.length)
+        focusInputToEnd()
+      } else {
+        await generateFinalPromptForTask(task, clarifyingAnswersRef.current)
+      }
+      setValue('')
+      return
+    }
+
+    setIsRevising(false)
+
     // After the first full task, treat further free-text inputs as edits to the existing prompt
     // instead of restarting the clarifying-question flow, unless the user has started a new
     // conversation via /discard.
@@ -533,10 +747,11 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
     setPendingTask(task)
     setClarifyingQuestions(null)
     clarifyingAnswersRef.current = []
+    setClarifyingAnswersCount(0)
     setCurrentQuestionIndex(0)
     setClarifyingSelectedOptionIndex(null)
     setAnsweringQuestions(false)
-    setConsentSelectedIndex(0)
+    setConsentSelectedIndex(null)
     setEditablePrompt(null)
     setIsPromptEditable(false)
     setIsPromptFinalized(false)
@@ -546,13 +761,27 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
       'Before I craft your prompt, would you like to answer 3 quick questions to improve the context? (yes/no)'
     )
     setAwaitingQuestionConsent(true)
-    setConsentSelectedIndex(0)
+    // Don't pre-select an option; user must arrow-select first to prevent accidental Enter auto-submit
+    // Ensure input is focused for arrow navigation
+    setTimeout(() => focusInputToEnd(), 0)
   }
 
   function submitCurrent() {
+    if (isGenerating) {
+      showToast('Please wait for the AI to finish before submitting.')
+      return
+    }
+
     const raw = value
     const line = raw.trim()
-    if (!line) return
+    if (!line) {
+      if (!emptySubmitWarned) {
+        appendLine('app', 'Nothing to submit. Type a command or describe a task.')
+        setEmptySubmitWarned(true)
+        window.setTimeout(() => setEmptySubmitWarned(false), 20000)
+      }
+      return
+    }
 
     appendLine('user', raw)
 
@@ -611,10 +840,22 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
       return
     }
 
+    void recordEvent('question_consent', { task: pendingTask, answer: normalized })
+
     if (normalized === 'yes' || normalized === 'y') {
       setAwaitingQuestionConsent(false)
       setConsentSelectedIndex(null)
-      await startClarifyingQuestions(pendingTask)
+      if (clarifyingQuestions && clarifyingQuestions.length > 0) {
+        const answered = clarifyingAnswersRef.current.length
+        setAnsweringQuestions(true)
+        setCurrentQuestionIndex(answered)
+        const nextQuestion = clarifyingQuestions[Math.min(answered, clarifyingQuestions.length - 1)]
+        selectForQuestion(nextQuestion ?? null, true)
+        appendClarifyingQuestion(nextQuestion, answered, clarifyingQuestions.length)
+        focusInputToEnd()
+      } else {
+        await startClarifyingQuestions(pendingTask)
+      }
       return
     }
 
@@ -626,6 +867,7 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
     }
 
     appendLine('app', 'Please answer "yes" or "no".')
+    focusInputToEnd()
   }
 
   function handleClarifyingOptionClick(index: number) {
@@ -635,6 +877,7 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
     const chosen = current.options[index]
     setClarifyingSelectedOptionIndex(index)
     void handleClarifyingAnswer(chosen.label)
+    focusInputToEnd()
   }
 
   async function handleClarifyingAnswer(answer: string) {
@@ -662,25 +905,90 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
       },
     ]
     clarifyingAnswersRef.current = updated
+    setClarifyingAnswersCount(updated.length)
+    void recordEvent('clarifying_answer', {
+      task: pendingTask,
+      questionId: question.id,
+      question: question.question,
+      answer: trimmedAnswer,
+    })
 
     const nextIndex = index + 1
     if (nextIndex < clarifyingQuestions.length) {
       setCurrentQuestionIndex(nextIndex)
       const nextQuestion = clarifyingQuestions[nextIndex]
-      setClarifyingSelectedOptionIndex(nextQuestion.options.length > 0 ? 0 : null)
+      selectForQuestion(nextQuestion, true)
       appendClarifyingQuestion(nextQuestion, nextIndex, clarifyingQuestions.length)
+      focusInputToEnd()
     } else {
       setClarifyingSelectedOptionIndex(null)
       void generateFinalPromptForTask(pendingTask, updated)
     }
   }
 
-  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+  function handleUndoAnswer() {
+    if (!clarifyingQuestions || !pendingTask) {
+      appendLine('app', 'No clarifying flow active.')
+      return
+    }
+    const answers = clarifyingAnswersRef.current
+    if (!answers.length) {
+      // Go back to consent (yes/no) when on the first question with no answers.
+      setAnsweringQuestions(false)
+      setAwaitingQuestionConsent(true)
+      setConsentSelectedIndex(null) // Don't pre-select; user must arrow-select to prevent accidental Enter
+      setClarifyingSelectedOptionIndex(null)
+      setCurrentQuestionIndex(0)
+      appendLine('app', 'Do you want to answer the clarifying questions? (yes/no)')
+      setTimeout(() => focusInputToEnd(), 0)
+      return
+    }
+    const nextAnswers = answers.slice(0, -1)
+    clarifyingAnswersRef.current = nextAnswers
+    setClarifyingAnswersCount(nextAnswers.length)
+    const prevIndex = Math.max(0, nextAnswers.length)
+    setCurrentQuestionIndex(prevIndex)
+    const prevQuestion = clarifyingQuestions[prevIndex]
+    selectForQuestion(prevQuestion ?? null, true)
+    setAnsweringQuestions(true)
+    setAwaitingQuestionConsent(false)
+    appendLine('app', `Revisit question ${prevIndex + 1}: ${prevQuestion?.question ?? ''}`)
+    focusInputToEnd()
+  }
+
+  function handleReviseFlow() {
+    // Allow editing task and clarifying answers even after prompt generation.
+    setIsRevising(true)
+    setHasRunInitialTask(false)
+    setAwaitingQuestionConsent(false)
+    setAnsweringQuestions(false)
+    // Preserve clarifyingQuestions and answers; user can reuse them if task stays same.
+    setCurrentQuestionIndex(clarifyingAnswersRef.current.length)
+    setClarifyingSelectedOptionIndex(null)
+    setConsentSelectedIndex(null)
+    setEditablePrompt(null)
+    setIsPromptEditable(false)
+    setIsPromptFinalized(false)
+    setLastApprovedPrompt(null)
+    setValue(pendingTask ?? '')
+    appendLine('app', 'Revise the task or clarifying answers. Update the task and press Enter to continue.')
+    focusInputToEnd()
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement> | KeyboardEvent) {
+    // Prevent double-handling: called both from input onKeyDown and global listener
+    if (e.defaultPrevented) return
+
+    const key = e.key
+    const metaKey = 'metaKey' in e ? e.metaKey : false
+    const ctrlKey = 'ctrlKey' in e ? e.ctrlKey : false
+    const preventDefault = () => e.preventDefault()
+
     // Consent yes/no option navigation
     if (awaitingQuestionConsent) {
       const options = ['yes', 'no']
-      if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-        e.preventDefault()
+      if (key === 'ArrowDown' || key === 'ArrowUp' || key === 'ArrowLeft' || key === 'ArrowRight') {
+        preventDefault()
         const isForward = e.key === 'ArrowDown' || e.key === 'ArrowRight'
         setConsentSelectedIndex((prev) => {
           if (prev === null) {
@@ -693,8 +1001,8 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
         return
       }
 
-      if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey && !value.trim() && consentSelectedIndex !== null) {
-        e.preventDefault()
+      if (key === 'Enter' && !metaKey && !ctrlKey && !value.trim() && consentSelectedIndex !== null) {
+        preventDefault()
         const chosen = options[consentSelectedIndex]
         void handleQuestionConsent(chosen)
         return
@@ -710,51 +1018,81 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
     ) {
       const current = clarifyingQuestions[currentQuestionIndex]
       const options = current.options ?? []
+      const hasBack = true
+      const totalSlots = options.length + 1
 
-      if (options.length > 0) {
-        if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-          e.preventDefault()
+      if (totalSlots > 0) {
+        if (key === 'ArrowDown' || key === 'ArrowUp' || key === 'ArrowLeft' || key === 'ArrowRight') {
+          preventDefault()
           const isForward = e.key === 'ArrowDown' || e.key === 'ArrowRight'
-          setClarifyingSelectedOptionIndex((prev) => {
-            if (prev === null) {
-              return isForward ? 0 : options.length - 1
-            }
+          setClarifyingSelectedOptionIndex((prevRaw) => {
+            const prev = prevRaw ?? (hasBack ? -1 : 0)
+            const toPos = (idx: number) => (idx === -1 ? 0 : hasBack ? idx + 1 : idx)
+            const fromPos = (pos: number) => (hasBack ? (pos === 0 ? -1 : pos - 1) : pos)
+            const prevPos = Math.max(0, Math.min(totalSlots - 1, toPos(prev)))
             const delta = isForward ? 1 : -1
-            const next = (prev + delta + options.length) % options.length
-            return next
+            const nextPos = (prevPos + delta + totalSlots) % totalSlots
+            return fromPos(nextPos)
           })
           return
         }
 
-        if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey && !value.trim() && clarifyingSelectedOptionIndex !== null) {
-          e.preventDefault()
-          void handleClarifyingOptionClick(clarifyingSelectedOptionIndex)
-          return
+        if (key === 'Enter' && !metaKey && !ctrlKey && !value.trim()) {
+          preventDefault()
+          const sel = clarifyingSelectedOptionIndex ?? (hasBack ? -1 : 0)
+          if (sel === -1 && hasBack) {
+            handleUndoAnswer()
+            return
+          }
+          if (sel !== null && sel >= 0 && sel < options.length) {
+            void handleClarifyingOptionClick(sel)
+            return
+          }
         }
       }
     }
 
-    if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey) {
-      const trimmed = value.trim()
-
+    if (key === 'Enter' && !metaKey && !ctrlKey) {
       // Plain Enter submits instead of inserting a newline
-      e.preventDefault()
+      preventDefault()
       submitCurrent()
     }
     // Cmd/Ctrl+Enter: allow default newline behavior
   }
 
+  useEffect(() => {
+    if (!answeringQuestions && !awaitingQuestionConsent) return
+    const handler = (ev: KeyboardEvent) => {
+      handleKeyDown(ev)
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    answeringQuestions,
+    awaitingQuestionConsent,
+    consentSelectedIndex,
+    clarifyingSelectedOptionIndex,
+    clarifyingQuestions,
+    clarifyingAnswersCount,
+    currentQuestionIndex,
+    value,
+  ])
+
   function handleVoiceClick() {
     setIsListening((prev) => !prev)
   }
 
-  const inputPlaceholder =
-    editablePrompt !== null
-      ? `Provide feedback about the generated prompt or press ${isMac ? '⌘+Enter' : 'Ctrl+Enter'} to copy`
-      : 'Give us context to create an effective prompt'
+  const inputPlaceholder = answeringQuestions
+    ? 'Type your own answer here or use arrows to select'
+    : awaitingQuestionConsent
+    ? 'Use arrows to select yes/no'
+    : editablePrompt !== null
+    ? `Provide feedback about the generated prompt or press ${isMac ? '⌘+Enter' : 'Ctrl+Enter'} to copy`
+    : 'Give us context to create an effective prompt'
 
   return (
-    <div className="relative mx-auto flex h-[70vh] w-[85vw] max-w-6xl flex-col gap-3 rounded-2xl bg-[#050608] p-4 shadow-[0_0_160px_rgba(15,23,42,0.95)]">
+    <div className="relative mx-auto flex h-[70vh] w-[92vw] max-w-6xl flex-col gap-3 rounded-2xl bg-[#050608] p-4 shadow-[0_0_160px_rgba(15,23,42,0.95)]">
       <CenteredToast message={toastMessage} />
 
       <TerminalHeader
@@ -775,6 +1113,7 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
             awaitingQuestionConsent={awaitingQuestionConsent}
             consentSelectedIndex={consentSelectedIndex}
             answeringQuestions={answeringQuestions}
+            clarifyingAnswersCount={clarifyingAnswersCount}
             currentClarifyingQuestion={
               answeringQuestions &&
               clarifyingQuestions &&
@@ -799,10 +1138,9 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
               void handleQuestionConsent(v)
             }}
             onClarifyingOptionClick={handleClarifyingOptionClick}
-            onEditableChange={(text) => {
-              setEditablePrompt(text)
-              autosizeEditablePrompt()
-            }}
+            onUndoAnswer={handleUndoAnswer}
+            onRevise={handleReviseFlow}
+            onEditableChange={handleEditableChange}
             onCopyEditable={() => void copyEditablePrompt()}
             onEditClick={() => {
               setIsPromptEditable(true)
@@ -823,6 +1161,7 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
             onKeyDown={handleKeyDown}
             placeholder={inputPlaceholder}
             inputRef={inputRef}
+            disabled={inputDisabled}
           />
         </div>
 
@@ -831,7 +1170,10 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
           isGenerating={isGenerating}
           onToggleListening={handleVoiceClick}
           onStop={handleStopClick}
-          onSubmit={submitCurrent}
+          onSubmit={() => {
+            submitCurrent()
+            if (inputRef.current) inputRef.current.focus()
+          }}
         />
       </form>
     </div>
