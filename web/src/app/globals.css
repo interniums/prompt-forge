@@ -1,4 +1,4 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
 :root {
   /* Warp dark–inspired palette */
@@ -19,7 +19,7 @@
 body {
   background: #050608;
   color: var(--foreground);
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
 }
 
 /* Terminal-style caret and selection for the input area */
@@ -71,32 +71,4 @@ body {
 
 .terminal-scroll::-webkit-scrollbar-thumb:hover {
   background-color: #9ca3af;
-}
-
-/* Override xterm.js default colors so the terminal matches the app bg */
-.xterm,
-.xterm-viewport,
-.xterm-screen {
-  background-color: #020617 !important;
-}
-
-.xterm-viewport {
-  padding: 8px 12px !important;
-}
-
-/* Bump common fixed text sizes by +2px app-wide */
-.text-\[11px\] {
-  font-size: 13px !important;
-}
-.text-\[12px\] {
-  font-size: 14px !important;
-}
-.text-\[13px\] {
-  font-size: 15px !important;
-}
-.text-\[14px\] {
-  font-size: 16px !important;
-}
-.text-\[15px\] {
-  font-size: 17px !important;
 }

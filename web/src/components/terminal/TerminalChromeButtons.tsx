@@ -4,20 +4,12 @@ import React from 'react'
 import { textButtonClass } from './styles'
 
 export type TerminalChromeButtonsProps = {
-  isListening: boolean
   isGenerating: boolean
-  onToggleListening: () => void
   onStop: () => void
   onSubmit: () => void
 }
 
-export function TerminalChromeButtons({
-  isListening,
-  isGenerating,
-  onToggleListening,
-  onStop,
-  onSubmit,
-}: TerminalChromeButtonsProps) {
+export function TerminalChromeButtons({ isGenerating, onStop, onSubmit }: TerminalChromeButtonsProps) {
   return (
     <>
       {/* Mic / listening button hidden for now; will be reintroduced later. */}

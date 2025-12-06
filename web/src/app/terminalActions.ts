@@ -4,51 +4,39 @@ import OpenAI from 'openai'
 import { cookies } from 'next/headers'
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { GENERIC_QUESTION_TEMPLATES } from './terminalFallbacks'
+import { SESSION_COOKIE } from '@/lib/constants'
+import type {
+  Preferences,
+  GeneratedPrompt,
+  HistoryItem,
+  ClarifyingQuestion,
+  ClarifyingAnswer,
+  ClarifyingOption,
+} from '@/lib/types'
 
-export type PreferencesInput = {
-  tone?: string
-  audience?: string
-  domain?: string
-}
+// Re-export types for consumers that import from this module
+export type { Preferences, GeneratedPrompt, HistoryItem, ClarifyingQuestion, ClarifyingAnswer, ClarifyingOption }
 
-export type GeneratedPrompt = {
-  id: string
-  label: string
-  body: string
-}
+// Alias for backward compatibility
+export type PreferencesInput = Preferences
 
-export type HistoryItem = {
-  id: string
-  task: string
-  label: string
-  body: string
-  created_at: string
-}
-
-export type ClarifyingOption = {
-  id: string
-  label: string
-}
-
-export type ClarifyingQuestion = {
-  id: string
-  question: string
-  options: ClarifyingOption[]
-}
-
-export type ClarifyingAnswer = {
-  questionId: string
-  question: string
-  answer: string
-}
-
-const SESSION_COOKIE = 'pf_session_id'
-
+/**
+ * Ensure a session row exists in the database.
+ * Uses upsert with ON CONFLICT DO NOTHING to handle race conditions safely.
+ */
 async function ensureSessionExists(supabase: ReturnType<typeof createServerSupabaseClient>, sessionId: string) {
+  // First try a quick read to avoid unnecessary writes
   const { data } = await supabase.from('pf_sessions').select('id').eq('id', sessionId).maybeSingle()
   if (data?.id) return
-  const { error: insertError } = await supabase.from('pf_sessions').insert({ id: sessionId })
-  if (insertError) {
+
+  // Use upsert with onConflict to handle race conditions
+  // If another request already inserted this session, this will be a no-op
+  const { error: insertError } = await supabase
+    .from('pf_sessions')
+    .upsert({ id: sessionId }, { onConflict: 'id', ignoreDuplicates: true })
+
+  if (insertError && insertError.code !== '23505') {
+    // 23505 = unique violation, which is fine (another request beat us)
     console.error('Failed to ensure session exists', insertError)
   }
 }
@@ -468,10 +456,14 @@ export async function editPrompt(input: {
 
 /**
  * Persist the latest preferences for the current session.
+ * Returns true if successful, false otherwise.
  */
-export async function savePreferences(preferences: PreferencesInput): Promise<void> {
+export async function savePreferences(preferences: PreferencesInput): Promise<boolean> {
   const sessionId = await getOrCreateActionSessionId()
   const supabase = createServerSupabaseClient()
+
+  // Ensure session exists first (preferences has FK to sessions)
+  await ensureSessionExists(supabase, sessionId)
 
   const payload = {
     session_id: sessionId,
@@ -480,65 +472,104 @@ export async function savePreferences(preferences: PreferencesInput): Promise<vo
     domain: preferences.domain ?? null,
   }
 
-  const { error } = await supabase.from('pf_preferences').upsert(payload, { onConflict: 'session_id' })
+  const attemptUpsert = async () => supabase.from('pf_preferences').upsert(payload, { onConflict: 'session_id' })
+
+  let { error } = await attemptUpsert()
+
+  // Retry once if FK constraint fails
+  if (error && (error as { code?: string }).code === '23503') {
+    await ensureSessionExists(supabase, sessionId)
+    ;({ error } = await attemptUpsert())
+  }
 
   if (error) {
     console.error('Failed to save preferences', error)
-  } else {
-    void recordEvent('preferences_updated', preferences)
+    return false
   }
+
+  void recordEvent('preferences_updated', preferences)
+  return true
 }
 
 /**
  * Record a generation event for the current session.
+ * Stores in both pf_generations (for history) and pf_prompt_versions (for detailed tracking).
+ *
+ * Returns the generation ID if successful, null otherwise.
  */
-export async function recordGeneration(input: { task: string; prompt: GeneratedPrompt }): Promise<void> {
+export async function recordGeneration(input: { task: string; prompt: GeneratedPrompt }): Promise<string | null> {
   const sessionId = await getOrCreateActionSessionId()
   const supabase = createServerSupabaseClient()
 
   await ensureSessionExists(supabase, sessionId)
 
-  const { data, error } = await supabase
-    .from('pf_generations')
-    .insert({
-      session_id: sessionId,
-      task: input.task,
-      label: input.prompt.label,
-      body: input.prompt.body,
-    })
-    .select('id')
-    .single()
+  // Helper to attempt the insert with FK retry
+  const attemptInsert = async () =>
+    supabase
+      .from('pf_generations')
+      .insert({
+        session_id: sessionId,
+        task: input.task,
+        label: input.prompt.label,
+        body: input.prompt.body,
+      })
+      .select('id')
+      .single()
+
+  let { data, error } = await attemptInsert()
+
+  // Retry once if FK constraint fails (session might not exist yet)
+  if (error && (error as { code?: string }).code === '23503') {
+    await ensureSessionExists(supabase, sessionId)
+    ;({ data, error } = await attemptInsert())
+  }
 
   if (error) {
     console.error('Failed to record generation', error)
-  } else {
-    const generationId = data?.id
-    void recordEvent('prompt_saved', {
-      task: input.task,
-      prompt: input.prompt,
-      generationId,
+    return null
+  }
+
+  const generationId = data?.id as string | undefined
+
+  // Record the event (non-blocking)
+  void recordEvent('prompt_saved', {
+    task: input.task,
+    prompt: input.prompt,
+    generationId,
+  })
+
+  // Also store in prompt versions for detailed restore (non-blocking, but log errors)
+  const promptVersion = {
+    session_id: sessionId,
+    task: input.task,
+    label: input.prompt.label,
+    body: input.prompt.body,
+    revision: null,
+    source_event_id: null,
+  }
+
+  supabase
+    .from('pf_prompt_versions')
+    .insert(promptVersion)
+    .then(({ error: pvError }) => {
+      if (pvError) {
+        console.error('Failed to record prompt version', pvError)
+      }
     })
 
-    // Also store in prompt versions for detailed restore.
-    const promptVersion = {
-      session_id: sessionId,
-      task: input.task,
-      label: input.prompt.label,
-      body: input.prompt.body,
-      revision: null,
-      source_event_id: null,
-    }
-
-    const { error: pvError } = await supabase.from('pf_prompt_versions').insert(promptVersion)
-    if (pvError) {
-      console.error('Failed to record prompt version', pvError)
-    }
-  }
+  return generationId ?? null
 }
 
+/**
+ * List recent prompt generations for the current session.
+ * Returns empty array if session doesn't exist yet (first-time user).
+ */
 export async function listHistory(limit = 10): Promise<HistoryItem[]> {
   const sessionId = await getOrCreateActionSessionId()
   const supabase = createServerSupabaseClient()
+
+  // Note: We don't need to ensure session exists for read operations
+  // If session doesn't exist, the query will simply return empty results
 
   const { data, error } = await supabase
     .from('pf_generations')
@@ -548,7 +579,10 @@ export async function listHistory(limit = 10): Promise<HistoryItem[]> {
     .limit(limit)
 
   if (error) {
-    console.error('Failed to load history', error)
+    // Don't log as error if it's just an empty result for new session
+    if ((error as { code?: string }).code !== 'PGRST116') {
+      console.error('Failed to load history', error)
+    }
     return []
   }
 

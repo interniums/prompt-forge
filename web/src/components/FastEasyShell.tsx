@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo, useLayoutEffect } from 'react'
 import {
   generateClarifyingQuestions,
   generateFinalPrompt,
@@ -9,30 +9,19 @@ import {
   recordGeneration,
   listHistory,
   recordEvent,
-  type ClarifyingQuestion,
-  type ClarifyingAnswer,
 } from '@/app/terminalActions'
 import { CenteredToast } from './terminal/CenteredToast'
 import { TerminalHeader } from './terminal/TerminalHeader'
 import { TerminalOutputArea } from './terminal/TerminalOutputArea'
 import { TerminalInputBar } from './terminal/TerminalInputBar'
 import { TerminalChromeButtons } from './terminal/TerminalChromeButtons'
+import { useToast } from '@/hooks/useToast'
+import { useDraftPersistence, loadDraft, clearDraft, type DraftState } from '@/hooks/useDraftPersistence'
+import { ROLE, COMMAND, MESSAGE, SHORTCUT, EMPTY_SUBMIT_COOLDOWN_MS, type TerminalRole } from '@/lib/constants'
+import type { TerminalLine, Preferences, PreferencesStep, ClarifyingQuestion, ClarifyingAnswer } from '@/lib/types'
 
-type TerminalRole = 'system' | 'user' | 'app'
-
-export type TerminalLine = {
-  id: number
-  role: TerminalRole
-  text: string
-}
-
-export type Preferences = {
-  tone?: string
-  audience?: string
-  domain?: string
-}
-
-type PreferencesStep = 'tone' | 'audience' | 'domain' | null
+// Re-export types for external consumers
+export type { TerminalLine, Preferences }
 
 type FastEasyShellProps = {
   initialLines?: TerminalLine[]
@@ -41,35 +30,35 @@ type FastEasyShellProps = {
 
 export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShellProps) {
   const [value, setValue] = useState('')
-  const [isListening, setIsListening] = useState(false)
   const [isGenerating, setIsGenerating] = useState(false)
   const isMac = typeof window !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(window.navigator.userAgent)
   const [editablePrompt, setEditablePrompt] = useState<string | null>(null)
-  const [toastMessage, setToastMessage] = useState<string | null>(null)
+  const { message: toastMessage, showToast } = useToast()
   const [pendingTask, setPendingTask] = useState<string | null>(null)
   const [awaitingQuestionConsent, setAwaitingQuestionConsent] = useState(false)
   const [isPromptEditable, setIsPromptEditable] = useState(false)
   const [isPromptFinalized, setIsPromptFinalized] = useState(false)
+  // If we have a saved draft with task or prompt, treat as if initial task was run
   const [hasRunInitialTask, setHasRunInitialTask] = useState(false)
   const [consentSelectedIndex, setConsentSelectedIndex] = useState<number | null>(null)
   const [clarifyingQuestions, setClarifyingQuestions] = useState<ClarifyingQuestion[] | null>(null)
+  // Initialize clarifying answers from saved draft if available
   const clarifyingAnswersRef = useRef<ClarifyingAnswer[]>([])
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
   const [answeringQuestions, setAnsweringQuestions] = useState(false)
   const [clarifyingSelectedOptionIndex, setClarifyingSelectedOptionIndex] = useState<number | null>(null)
   const generationRunIdRef = useRef(0)
-  const scrollRef = useRef<HTMLDivElement>(null!)
-  const editablePromptRef = useRef<HTMLTextAreaElement>(null!)
-  const inputRef = useRef<HTMLTextAreaElement>(null!)
-  const toastTimeoutRef = useRef<number | null>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const editablePromptRef = useRef<HTMLTextAreaElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
   const [lines, setLines] = useState<TerminalLine[]>(
     initialLines && initialLines.length
       ? initialLines
       : [
           {
             id: 0,
-            role: 'system',
-            text: 'Describe your task and what kind of AI answer you expect.',
+            role: ROLE.SYSTEM,
+            text: MESSAGE.WELCOME,
           },
         ]
   )
@@ -88,6 +77,86 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
   const [emptySubmitWarned, setEmptySubmitWarned] = useState(false)
   const [clarifyingAnswersCount, setClarifyingAnswersCount] = useState(0)
   const [isRevising, setIsRevising] = useState(false)
+  const [draftRestoredShown, setDraftRestoredShown] = useState(false)
+
+  // Build current draft state for auto-persistence
+  // Note: clarifyingAnswersCount is used to trigger re-memoization when answers change
+  // (since we can't depend on the ref directly)
+  const currentDraft: DraftState = useMemo(
+    () => ({
+      task: pendingTask,
+      editablePrompt: editablePrompt,
+      clarifyingQuestions: clarifyingQuestions,
+      clarifyingAnswers: clarifyingAnswersRef.current.length > 0 ? [...clarifyingAnswersRef.current] : null,
+      currentQuestionIndex,
+      wasAnsweringQuestions: answeringQuestions,
+      lines,
+      awaitingQuestionConsent,
+      consentSelectedIndex,
+      clarifyingSelectedOptionIndex,
+      isPromptEditable,
+      isPromptFinalized,
+      headerHelpShown,
+      lastApprovedPrompt,
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- clarifyingAnswersCount triggers update when ref changes
+    [
+      pendingTask,
+      editablePrompt,
+      clarifyingQuestions,
+      currentQuestionIndex,
+      answeringQuestions,
+      clarifyingAnswersCount,
+      lines,
+      awaitingQuestionConsent,
+      consentSelectedIndex,
+      clarifyingSelectedOptionIndex,
+      isPromptEditable,
+      isPromptFinalized,
+      headerHelpShown,
+      lastApprovedPrompt,
+    ]
+  )
+
+  // Auto-save draft to localStorage (debounced, disabled while generating)
+  useDraftPersistence(currentDraft, !isGenerating)
+
+  // Restore draft after mount to avoid SSR/CSR mismatch
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const draft = loadDraft()
+    if (!draft) return
+
+    setEditablePrompt(draft.editablePrompt ?? null)
+    setPendingTask(draft.task ?? null)
+    setClarifyingQuestions(draft.clarifyingQuestions ?? null)
+    clarifyingAnswersRef.current = draft.clarifyingAnswers ?? []
+    setClarifyingAnswersCount(draft.clarifyingAnswers?.length ?? 0)
+    setCurrentQuestionIndex(draft.currentQuestionIndex ?? 0)
+    setAnsweringQuestions(Boolean(draft.wasAnsweringQuestions))
+    setHasRunInitialTask(Boolean(draft.task || draft.editablePrompt))
+    setAwaitingQuestionConsent(draft.awaitingQuestionConsent ?? false)
+    setConsentSelectedIndex(draft.consentSelectedIndex ?? null)
+    setClarifyingSelectedOptionIndex(draft.clarifyingSelectedOptionIndex ?? null)
+    setIsPromptEditable(draft.isPromptEditable ?? false)
+    setIsPromptFinalized(draft.isPromptFinalized ?? false)
+    setHeaderHelpShown(draft.headerHelpShown ?? false)
+    setLastApprovedPrompt(draft.lastApprovedPrompt ?? null)
+    if (draft.lines && draft.lines.length) {
+      setLines(
+        draft.lines.map((line) => ({
+          id: line.id,
+          role: line.role as TerminalRole,
+          text: line.text,
+        }))
+      )
+    }
+
+    if (!draftRestoredShown && (draft.task || draft.editablePrompt || draft.lines?.length)) {
+      showToast('Draft restored')
+      setDraftRestoredShown(true)
+    }
+  }, [draftRestoredShown, showToast])
 
   const inputDisabled = isGenerating
 
@@ -97,6 +166,21 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
     el.focus()
     const len = el.value.length
     el.setSelectionRange(len, len)
+  }
+
+  /**
+   * Reset all clarifying question flow state to initial values.
+   * Used when starting a new task, clearing, or discarding the current flow.
+   */
+  function resetClarifyingFlowState() {
+    setClarifyingQuestions(null)
+    clarifyingAnswersRef.current = []
+    setClarifyingAnswersCount(0)
+    setCurrentQuestionIndex(0)
+    setClarifyingSelectedOptionIndex(null)
+    setAnsweringQuestions(false)
+    setAwaitingQuestionConsent(false)
+    setConsentSelectedIndex(null)
   }
 
   function appendLine(role: TerminalRole, text: string) {
@@ -137,11 +221,12 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
     scrollToBottom()
   }, [lines])
 
-  useEffect(() => {
-    if (awaitingQuestionConsent) {
+  useLayoutEffect(() => {
+    // Keep the input focused when the yes/no consent prompt is active so arrows/Enter work immediately.
+    if (awaitingQuestionConsent && !isGenerating) {
       focusInputToEnd()
     }
-  }, [awaitingQuestionConsent])
+  }, [awaitingQuestionConsent, isGenerating])
 
   useEffect(() => {
     if (inputDisabled && inputRef.current) {
@@ -195,14 +280,6 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
     return () => window.removeEventListener('keydown', handleFocusShortcut)
   }, [editablePrompt])
 
-  useEffect(() => {
-    return () => {
-      if (toastTimeoutRef.current !== null) {
-        window.clearTimeout(toastTimeoutRef.current)
-      }
-    }
-  }, [])
-
   function autosizeEditablePrompt() {
     if (!editablePromptRef.current) return
     const el = editablePromptRef.current
@@ -210,32 +287,21 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
     el.style.height = `${el.scrollHeight}px`
   }
 
-  function showToast(message: string) {
-    setToastMessage(message)
-    if (toastTimeoutRef.current !== null) {
-      window.clearTimeout(toastTimeoutRef.current)
-    }
-    toastTimeoutRef.current = window.setTimeout(() => {
-      setToastMessage(null)
-      toastTimeoutRef.current = null
-    }, 2000)
-  }
-
   const copyEditablePrompt = useCallback(async () => {
     if (!editablePrompt) return
     try {
       if (navigator?.clipboard?.writeText) {
         await navigator.clipboard.writeText(editablePrompt)
-        showToast('Prompt copied')
+        showToast(MESSAGE.PROMPT_COPIED)
         void recordEvent('prompt_copied', { prompt: editablePrompt })
       } else {
-        appendLine('app', 'Clipboard is not available in this environment.')
+        appendLine(ROLE.APP, 'Clipboard is not available in this environment.')
       }
     } catch (err) {
       console.error('Failed to copy editable prompt', err)
-      appendLine('app', 'Could not copy to clipboard. You can still select and copy manually.')
+      appendLine(ROLE.APP, 'Could not copy to clipboard. You can still select and copy manually.')
     }
-  }, [editablePrompt])
+  }, [editablePrompt, showToast])
 
   useEffect(() => {
     if (!isPromptEditable || !editablePromptRef.current) return
@@ -247,7 +313,7 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
 
   const handleApprovePrompt = useCallback(() => {
     if (!editablePrompt) {
-      appendLine('app', 'There is no prompt to approve yet. Generate one first.')
+      appendLine(ROLE.APP, 'There is no prompt to approve yet. Generate one first.')
       return
     }
 
@@ -259,11 +325,11 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
     void recordEvent('prompt_approved', { prompt: editablePrompt })
 
     if (editablePrompt !== lastApprovedPrompt) {
-      appendLine(
-        'app',
-        'Prompt approved and copied. You can now start a new task by typing /discard or continue updating this prompt.'
-      )
+      appendLine(ROLE.APP, MESSAGE.PROMPT_APPROVED)
     }
+
+    // Clear the draft since user has approved/saved the prompt
+    clearDraft()
 
     if (inputRef.current) {
       inputRef.current.focus()
@@ -297,23 +363,17 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
     if (prefs.tone) parts.push(`tone=${prefs.tone}`)
     if (prefs.audience) parts.push(`audience=${prefs.audience}`)
     if (prefs.domain) parts.push(`domain=${prefs.domain}`)
-    if (parts.length === 0) return 'no preferences set yet'
+    if (parts.length === 0) return MESSAGE.NO_PREFERENCES
     return parts.join(', ')
   }
 
   function startPreferencesFlow() {
     // Clear any active task state to avoid conflicts
     setPendingTask(null)
-    setAwaitingQuestionConsent(false)
-    setConsentSelectedIndex(null)
-    setClarifyingQuestions(null)
-    clarifyingAnswersRef.current = []
-    setCurrentQuestionIndex(0)
-    setClarifyingSelectedOptionIndex(null)
-    setAnsweringQuestions(false)
+    resetClarifyingFlowState()
 
-    appendLine('app', `Current preferences: ${formatPreferencesSummary()}`)
-    appendLine('app', 'First, what tone do you prefer? (for example: casual, neutral, or formal?)')
+    appendLine(ROLE.APP, `Current preferences: ${formatPreferencesSummary()}`)
+    appendLine(ROLE.APP, 'First, what tone do you prefer? (for example: casual, neutral, or formal?)')
     setPreferencesStep('tone')
     focusInputToEnd()
   }
@@ -324,7 +384,7 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
     if (preferencesStep === 'tone') {
       const next = { ...preferences, tone: answer }
       setPreferences(next)
-      appendLine('app', 'Got it. Who are you usually writing for? (for example: founders, devs, general audience?)')
+      appendLine(ROLE.APP, 'Got it. Who are you usually writing for? (for example: founders, devs, general audience?)')
       setPreferencesStep('audience')
       return
     }
@@ -332,7 +392,7 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
     if (preferencesStep === 'audience') {
       const next = { ...preferences, audience: answer }
       setPreferences(next)
-      appendLine('app', 'What domains do you mostly work in? (for example: product, marketing, engineering?)')
+      appendLine(ROLE.APP, 'What domains do you mostly work in? (for example: product, marketing, engineering?)')
       setPreferencesStep('domain')
       return
     }
@@ -340,24 +400,24 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
     if (preferencesStep === 'domain') {
       const next = { ...preferences, domain: answer }
       setPreferences(next)
-      appendLine('app', `Updated preferences: ${formatPreferencesSummary(next)}`)
-      appendLine('app', 'These will be used to steer how prompts are shaped for you.')
+      appendLine(ROLE.APP, `Updated preferences: ${formatPreferencesSummary(next)}`)
+      appendLine(ROLE.APP, 'These will be used to steer how prompts are shaped for you.')
       setPreferencesStep(null)
       void savePreferences(next)
     }
   }
 
   function handleHelpCommand() {
-    appendLine('app', 'Available commands:')
-    appendLine('app', '/help        Show this help.')
-    appendLine('app', '/preferences Update your preferences (tone, audience, domain).')
-    appendLine('app', '/clear       Clear terminal history (can be restored once).')
-    appendLine('app', '/restore     Restore the last cleared history snapshot.')
-    appendLine('app', '/discard     Discard the current prompt and flow, start fresh.')
-    appendLine('app', '/history     Show recent tasks and prompts from this session.')
-    appendLine('app', '/use <n>     Load task #n from the last history listing into the input.')
+    appendLine(ROLE.APP, 'Available commands:')
+    appendLine(ROLE.APP, `${COMMAND.HELP}        Show this help.`)
+    appendLine(ROLE.APP, `${COMMAND.PREFERENCES} Update your preferences (tone, audience, domain).`)
+    appendLine(ROLE.APP, `${COMMAND.CLEAR}       Clear terminal history (can be restored once).`)
+    appendLine(ROLE.APP, `${COMMAND.RESTORE}     Restore the last cleared history snapshot.`)
+    appendLine(ROLE.APP, `${COMMAND.DISCARD}     Discard the current prompt and flow, start fresh.`)
+    appendLine(ROLE.APP, `${COMMAND.HISTORY}     Show recent tasks and prompts from this session.`)
+    appendLine(ROLE.APP, `${COMMAND.USE} <n>     Load task #n from the last history listing into the input.`)
     appendLine(
-      'app',
+      ROLE.APP,
       'Anything else is treated as a task description. The app will use your preferences to shape prompts.'
     )
     scrollToBottom()
@@ -369,19 +429,13 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
     setLines([
       {
         id: 0,
-        role: 'system',
-        text: 'History cleared. Use /restore to bring it back.',
+        role: ROLE.SYSTEM,
+        text: MESSAGE.HISTORY_CLEARED,
       },
     ])
     // Keep the current editable prompt so the user doesn't lose their work.
     setPendingTask(null)
-    setAwaitingQuestionConsent(false)
-    setClarifyingQuestions(null)
-    clarifyingAnswersRef.current = []
-    setCurrentQuestionIndex(0)
-    setClarifyingSelectedOptionIndex(null)
-    setAnsweringQuestions(false)
-    setConsentSelectedIndex(null)
+    resetClarifyingFlowState()
   }
 
   function handleDiscard() {
@@ -391,8 +445,8 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
     setLines([
       {
         id: 0,
-        role: 'system',
-        text: 'Starting fresh. Describe your task and what kind of AI answer you expect.',
+        role: ROLE.SYSTEM,
+        text: MESSAGE.WELCOME_FRESH,
       },
     ])
     setEditablePrompt(null)
@@ -400,20 +454,16 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
     setIsPromptFinalized(false)
     setPendingTask(null)
     setHasRunInitialTask(false)
-    setAwaitingQuestionConsent(false)
-    setClarifyingQuestions(null)
-    clarifyingAnswersRef.current = []
-    setCurrentQuestionIndex(0)
-    setClarifyingSelectedOptionIndex(null)
-    setAnsweringQuestions(false)
-    setConsentSelectedIndex(null)
+    resetClarifyingFlowState()
     setLastHistory(null)
     setLastApprovedPrompt(null)
+    // Clear persisted draft since user explicitly discarded
+    clearDraft()
   }
 
   function handleRestore() {
     if (!lastClearedLines) {
-      appendLine('app', 'Nothing to restore yet.')
+      appendLine(ROLE.APP, 'Nothing to restore yet.')
       return
     }
 
@@ -426,18 +476,18 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
       setLastHistory(items)
 
       if (!items.length) {
-        appendLine('app', 'No history yet for this session.')
+        appendLine(ROLE.APP, 'No history yet for this session.')
         return
       }
 
-      appendLine('app', 'History (most recent first):')
+      appendLine(ROLE.APP, 'History (most recent first):')
       items.forEach((item, index) => {
         const shortTask = item.task.length > 80 ? `${item.task.slice(0, 77)}...` : item.task
-        appendLine('app', `#${index + 1} — ${item.label} — ${shortTask}`)
+        appendLine(ROLE.APP, `#${index + 1} — ${item.label} — ${shortTask}`)
       })
     } catch (err) {
       console.error('Failed to load history', err)
-      appendLine('app', 'Something went wrong while loading history.')
+      appendLine(ROLE.APP, 'Something went wrong while loading history.')
     }
   }
 
@@ -451,17 +501,17 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
         history = items
       } catch (err) {
         console.error('Failed to load history for /use', err)
-        appendLine('app', 'Could not load history. Try /history first.')
+        appendLine(ROLE.APP, `Could not load history. Try ${COMMAND.HISTORY} first.`)
         return
       }
     }
 
     if (!history || history.length === 0) {
-      appendLine('app', 'No history yet for this session.')
+      appendLine(ROLE.APP, 'No history yet for this session.')
       return
     }
     if (index < 1 || index > history.length) {
-      appendLine('app', 'No such history entry. Use /history to see entries.')
+      appendLine(ROLE.APP, `No such history entry. Use ${COMMAND.HISTORY} to see entries.`)
       return
     }
 
@@ -473,17 +523,11 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
     setLastApprovedPrompt(null)
     setPendingTask(selected.task)
     setHasRunInitialTask(true)
-    setAwaitingQuestionConsent(false)
-    setClarifyingQuestions(null)
-    clarifyingAnswersRef.current = []
-    setCurrentQuestionIndex(0)
-    setClarifyingSelectedOptionIndex(null)
-    setAnsweringQuestions(false)
-    setConsentSelectedIndex(null)
+    resetClarifyingFlowState()
 
-    appendLine('app', `Loaded task #${index} from history into the input.`)
-    appendLine('user', selected.task)
-    appendLine('app', `Restored prompt (${selected.label}):\n\n${selected.body}`)
+    appendLine(ROLE.APP, `Loaded task #${index} from history into the input.`)
+    appendLine(ROLE.USER, selected.task)
+    appendLine(ROLE.APP, `Restored prompt (${selected.label}):\n\n${selected.body}`)
 
     void recordEvent('history_use', {
       index,
@@ -499,71 +543,71 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
     void recordEvent('command', { command: normalized })
 
     switch (command) {
-      case '/help': {
+      case COMMAND.HELP: {
         if (headerHelpShown) {
-          appendLine('app', 'Help is already shown. Use /clear to reset the terminal.')
+          appendLine(ROLE.APP, `Help is already shown. Use ${COMMAND.CLEAR} to reset the terminal.`)
           return
         }
         handleHelpCommand()
         setHeaderHelpShown(true)
         return
       }
-      case '/preferences': {
+      case COMMAND.PREFERENCES: {
         startPreferencesFlow()
         return
       }
-      case '/clear': {
+      case COMMAND.CLEAR: {
         handleClear()
         return
       }
-      case '/back': {
+      case COMMAND.BACK: {
         handleUndoAnswer()
         return
       }
-      case '/revise': {
+      case COMMAND.REVISE: {
         handleReviseFlow()
         return
       }
-      case '/restore': {
+      case COMMAND.RESTORE: {
         handleRestore()
         return
       }
-      case '/discard': {
+      case COMMAND.DISCARD: {
         handleDiscard()
         return
       }
-      case '/history': {
+      case COMMAND.HISTORY: {
         void handleHistory()
         return
       }
-      case '/use': {
+      case COMMAND.USE: {
         const arg = rest[0]
         const index = Number(arg)
         if (!arg || Number.isNaN(index)) {
-          appendLine('app', 'Usage: /use <number>. Use /history to see entries.')
+          appendLine(ROLE.APP, `Usage: ${COMMAND.USE} <number>. Use ${COMMAND.HISTORY} to see entries.`)
           return
         }
         handleUseFromHistory(index)
         return
       }
-      case '/edit': {
+      case COMMAND.EDIT: {
         const instructions = rest.join(' ')
         if (!instructions.trim()) {
           appendLine(
-            'app',
-            'Usage: /edit <how you want the current prompt changed> (for example: "shorter", "for a CTO").'
+            ROLE.APP,
+            `Usage: ${COMMAND.EDIT} <how you want the current prompt changed> (for example: "shorter", "for a CTO").`
           )
           return
         }
         if (!editablePrompt) {
-          appendLine('app', 'There is no prompt to edit yet. Generate one first.')
+          appendLine(ROLE.APP, 'There is no prompt to edit yet. Generate one first.')
           return
         }
         void handleEditPrompt(instructions.trim())
         return
       }
       default: {
-        appendLine('app', `Unknown command: ${command}. Type /help to see what you can do.`)
+        appendLine(ROLE.APP, `Unknown command: ${command}. Type ${COMMAND.HELP} to see what you can do.`)
       }
     }
   }
@@ -571,7 +615,7 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
   async function startClarifyingQuestions(task: string) {
     const runId = (generationRunIdRef.current += 1)
     setIsGenerating(true)
-    appendLine('app', 'Thinking about the best questions to ask...')
+    appendLine(ROLE.APP, MESSAGE.ASKING_QUESTIONS)
 
     try {
       const questions = await generateClarifyingQuestions({ task, preferences })
@@ -603,7 +647,7 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
       if (runId === generationRunIdRef.current) {
         console.error('Failed to generate clarifying questions', err)
         appendLine(
-          'app',
+          ROLE.APP,
           'Something went wrong while generating questions. I will try to create a prompt from your task directly.'
         )
         setIsGenerating(false)
@@ -613,12 +657,12 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
   }
 
   function appendClarifyingQuestion(question: ClarifyingQuestion, index: number, total: number) {
-    appendLine('app', `Question ${index + 1}/${total}: ${question.question}`)
+    appendLine(ROLE.APP, `Question ${index + 1}/${total}: ${question.question}`)
     if (question.options && question.options.length > 0) {
       const opts = question.options.map((o) => `${o.id}) ${o.label}`).join(' | ')
-      appendLine('app', `You can answer in your own words, or choose one of: ${opts}`)
+      appendLine(ROLE.APP, `You can answer in your own words, or choose one of: ${opts}`)
     } else {
-      appendLine('app', 'Answer in your own words.')
+      appendLine(ROLE.APP, 'Answer in your own words.')
     }
   }
 
@@ -626,7 +670,7 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
     const runId = (generationRunIdRef.current += 1)
     setIsGenerating(true)
     setAnsweringQuestions(false)
-    appendLine('app', 'Creating your prompt...')
+    appendLine(ROLE.APP, MESSAGE.CREATING_PROMPT)
 
     try {
       const prompt = await generateFinalPrompt({ task, preferences, answers })
@@ -650,12 +694,12 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
         },
       })
 
-      appendLine('app', 'Here is a prompt you can use or edit:')
+      appendLine(ROLE.APP, MESSAGE.PROMPT_READY)
       setIsGenerating(false)
     } catch (err) {
       if (runId === generationRunIdRef.current) {
         console.error('Failed to generate final prompt', err)
-        appendLine('app', 'Something went wrong while generating the prompt. Try again in a moment.')
+        appendLine(ROLE.APP, 'Something went wrong while generating the prompt. Try again in a moment.')
         setIsGenerating(false)
       }
     }
@@ -664,9 +708,10 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
   async function handleEditPrompt(editRequest: string) {
     if (!editablePrompt) return
 
+    const previousPrompt = editablePrompt
     const runId = (generationRunIdRef.current += 1)
     setIsGenerating(true)
-    appendLine('app', 'Editing your prompt...')
+    appendLine(ROLE.APP, MESSAGE.EDITING_PROMPT)
 
     try {
       const updated = await editPrompt({ currentPrompt: editablePrompt, editRequest, preferences })
@@ -681,6 +726,11 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
       setIsPromptFinalized(false)
       setLastApprovedPrompt(null)
 
+      // Surface when the AI returns nothing new so the user knows to try again or edit manually.
+      if (finalPrompt === previousPrompt) {
+        appendLine(ROLE.APP, 'The AI could not apply your edit; the prompt is unchanged. Try again or edit manually.')
+      }
+
       void recordGeneration({
         task: pendingTask ?? 'Edited prompt',
         prompt: {
@@ -694,7 +744,7 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
     } catch (err) {
       if (runId === generationRunIdRef.current) {
         console.error('Failed to edit prompt', err)
-        appendLine('app', 'Something went wrong while editing the prompt. Try again in a moment.')
+        appendLine(ROLE.APP, 'Something went wrong while editing the prompt. Try again in a moment.')
         setIsGenerating(false)
       }
     }
@@ -745,21 +795,12 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
 
     setHasRunInitialTask(true)
     setPendingTask(task)
-    setClarifyingQuestions(null)
-    clarifyingAnswersRef.current = []
-    setClarifyingAnswersCount(0)
-    setCurrentQuestionIndex(0)
-    setClarifyingSelectedOptionIndex(null)
-    setAnsweringQuestions(false)
-    setConsentSelectedIndex(null)
+    resetClarifyingFlowState()
     setEditablePrompt(null)
     setIsPromptEditable(false)
     setIsPromptFinalized(false)
 
-    appendLine(
-      'app',
-      'Before I craft your prompt, would you like to answer 3 quick questions to improve the context? (yes/no)'
-    )
+    appendLine(ROLE.APP, MESSAGE.QUESTION_CONSENT)
     setAwaitingQuestionConsent(true)
     // Don't pre-select an option; user must arrow-select first to prevent accidental Enter auto-submit
     // Ensure input is focused for arrow navigation
@@ -768,7 +809,7 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
 
   function submitCurrent() {
     if (isGenerating) {
-      showToast('Please wait for the AI to finish before submitting.')
+      showToast(MESSAGE.GENERATING_WAIT)
       return
     }
 
@@ -776,14 +817,14 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
     const line = raw.trim()
     if (!line) {
       if (!emptySubmitWarned) {
-        appendLine('app', 'Nothing to submit. Type a command or describe a task.')
+        appendLine(ROLE.APP, MESSAGE.EMPTY_SUBMIT_WARNING)
         setEmptySubmitWarned(true)
-        window.setTimeout(() => setEmptySubmitWarned(false), 20000)
+        window.setTimeout(() => setEmptySubmitWarned(false), EMPTY_SUBMIT_COOLDOWN_MS)
       }
       return
     }
 
-    appendLine('user', raw)
+    appendLine(ROLE.USER, raw)
 
     if (line.startsWith('/')) {
       handleCommand(line)
@@ -823,7 +864,7 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
     if (!isGenerating) return
     generationRunIdRef.current += 1
     setIsGenerating(false)
-    appendLine('app', 'Stopped AI generation for the current task.')
+    appendLine(ROLE.APP, MESSAGE.AI_STOPPED)
   }
 
   function handleFormSubmit(e: React.FormEvent) {
@@ -835,7 +876,7 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
     const normalized = answer.trim().toLowerCase()
 
     if (!pendingTask) {
-      appendLine('app', 'No task in memory. Describe a task first.')
+      appendLine(ROLE.APP, 'No task in memory. Describe a task first.')
       setAwaitingQuestionConsent(false)
       return
     }
@@ -866,7 +907,7 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
       return
     }
 
-    appendLine('app', 'Please answer "yes" or "no".')
+    appendLine(ROLE.APP, 'Please answer "yes" or "no".')
     focusInputToEnd()
   }
 
@@ -882,7 +923,7 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
 
   async function handleClarifyingAnswer(answer: string) {
     if (!clarifyingQuestions || !pendingTask) {
-      appendLine('app', 'No active questions. Describe a task first.')
+      appendLine(ROLE.APP, 'No active questions. Describe a task first.')
       setAnsweringQuestions(false)
       return
     }
@@ -928,7 +969,7 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
 
   function handleUndoAnswer() {
     if (!clarifyingQuestions || !pendingTask) {
-      appendLine('app', 'No clarifying flow active.')
+      appendLine(ROLE.APP, 'No clarifying flow active.')
       return
     }
     const answers = clarifyingAnswersRef.current
@@ -939,7 +980,7 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
       setConsentSelectedIndex(null) // Don't pre-select; user must arrow-select to prevent accidental Enter
       setClarifyingSelectedOptionIndex(null)
       setCurrentQuestionIndex(0)
-      appendLine('app', 'Do you want to answer the clarifying questions? (yes/no)')
+      appendLine(ROLE.APP, 'Do you want to answer the clarifying questions? (yes/no)')
       setTimeout(() => focusInputToEnd(), 0)
       return
     }
@@ -952,7 +993,7 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
     selectForQuestion(prevQuestion ?? null, true)
     setAnsweringQuestions(true)
     setAwaitingQuestionConsent(false)
-    appendLine('app', `Revisit question ${prevIndex + 1}: ${prevQuestion?.question ?? ''}`)
+    appendLine(ROLE.APP, `Revisit question ${prevIndex + 1}: ${prevQuestion?.question ?? ''}`)
     focusInputToEnd()
   }
 
@@ -971,7 +1012,7 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
     setIsPromptFinalized(false)
     setLastApprovedPrompt(null)
     setValue(pendingTask ?? '')
-    appendLine('app', 'Revise the task or clarifying answers. Update the task and press Enter to continue.')
+    appendLine(ROLE.APP, 'Revise the task or clarifying answers. Update the task and press Enter to continue.')
     focusInputToEnd()
   }
 
@@ -1079,20 +1120,20 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
     value,
   ])
 
-  function handleVoiceClick() {
-    setIsListening((prev) => !prev)
-  }
-
   const inputPlaceholder = answeringQuestions
     ? 'Type your own answer here or use arrows to select'
     : awaitingQuestionConsent
     ? 'Use arrows to select yes/no'
     : editablePrompt !== null
-    ? `Provide feedback about the generated prompt or press ${isMac ? '⌘+Enter' : 'Ctrl+Enter'} to copy`
+    ? `Provide feedback about the generated prompt or press ${isMac ? SHORTCUT.COPY_MAC : SHORTCUT.COPY_WIN} to copy`
     : 'Give us context to create an effective prompt'
 
   return (
-    <div className="relative mx-auto flex h-[70vh] w-[92vw] max-w-6xl flex-col gap-3 rounded-2xl bg-[#050608] p-4 shadow-[0_0_160px_rgba(15,23,42,0.95)]">
+    <div
+      className="relative mx-auto flex h-[70vh] w-[92vw] max-w-6xl flex-col gap-3 rounded-2xl bg-[#050608] p-4 shadow-[0_0_160px_rgba(15,23,42,0.95)]"
+      role="region"
+      aria-label="PromptForge Terminal"
+    >
       <CenteredToast message={toastMessage} />
 
       <TerminalHeader
@@ -1105,7 +1146,7 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
         }}
       />
 
-      <form onSubmit={handleFormSubmit} className="relative flex-1 text-[14px]">
+      <form onSubmit={handleFormSubmit} className="relative flex-1 text-sm">
         <div className="absolute inset-0 flex min-h-0 flex-col overflow-hidden border-t border-slate-800 bg-[#050608]">
           <TerminalOutputArea
             lines={lines}
@@ -1166,9 +1207,7 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
         </div>
 
         <TerminalChromeButtons
-          isListening={isListening}
           isGenerating={isGenerating}
-          onToggleListening={handleVoiceClick}
           onStop={handleStopClick}
           onSubmit={() => {
             submitCurrent()
