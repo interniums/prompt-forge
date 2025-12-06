@@ -33,6 +33,19 @@ export type Preferences = {
     allowPrefillLinks?: boolean
     warnSensitive?: boolean
   }
+  doNotAskAgain?: {
+    tone?: boolean
+    audience?: boolean
+    domain?: boolean
+    defaultModel?: boolean
+    temperature?: boolean
+    styleGuidelines?: boolean
+    outputFormat?: boolean
+    language?: boolean
+    depth?: boolean
+    citationPreference?: boolean
+    personaHints?: boolean
+  }
 }
 
 export type UserIdentity = {

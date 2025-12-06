@@ -19,6 +19,7 @@ import { TerminalInputBar } from './terminal/TerminalInputBar'
 import { TerminalChromeButtons } from './terminal/TerminalChromeButtons'
 import { PreferencesPanel } from '@/components/PreferencesPanel'
 import { UserManagementModal } from '@/components/UserManagementModal'
+import { LoginRequiredModal } from '@/components/LoginRequiredModal'
 import { useToast } from '@/hooks/useToast'
 import { useDraftPersistence, loadDraft, clearDraft, type DraftState } from '@/hooks/useDraftPersistence'
 import { ROLE, COMMAND, MESSAGE, SHORTCUT, EMPTY_SUBMIT_COOLDOWN_MS, type TerminalRole } from '@/lib/constants'
@@ -92,6 +93,7 @@ export function FastEasyShell({
   const [isSavingPreferences, setIsSavingPreferences] = useState(false)
   const [headerHelpShown, setHeaderHelpShown] = useState(false)
   const [isUserManagementOpen, setIsUserManagementOpen] = useState(false)
+  const [isLoginRequiredOpen, setIsLoginRequiredOpen] = useState(false)
   const [lastClearedLines, setLastClearedLines] = useState<TerminalLine[] | null>(null)
   const [lastHistory, setLastHistory] = useState<Array<{
     id: string
@@ -105,6 +107,9 @@ export function FastEasyShell({
   const [clarifyingAnswersCount, setClarifyingAnswersCount] = useState(0)
   const [isRevising, setIsRevising] = useState(false)
   const [draftRestoredShown, setDraftRestoredShown] = useState(false)
+  const [isAskingPreferenceQuestions, setIsAskingPreferenceQuestions] = useState(false)
+  const [currentPreferenceQuestionKey, setCurrentPreferenceQuestionKey] = useState<keyof Preferences | null>(null)
+  const [pendingPreferenceUpdates, setPendingPreferenceUpdates] = useState<Partial<Preferences>>({})
 
   // Default-select the first consent option so keyboard users see focus immediately
   useEffect(() => {
@@ -252,13 +257,36 @@ export function FastEasyShell({
     }
   }, [refreshUserPreferences, showToast])
 
-  const updatePreferencesLocally = useCallback((next: Preferences) => {
-    setPreferences(next)
-    setPreferenceSource((prev) => {
-      if (prev === 'user' || prev === 'session') return 'local'
-      return prev ?? 'local'
-    })
-  }, [])
+  const updatePreferencesLocally = useCallback(
+    (next: Preferences) => {
+      setPreferences(next)
+      setPreferenceSource((prev) => {
+        if (prev === 'user' || prev === 'session') return 'local'
+        return prev ?? 'local'
+      })
+      // Save to localStorage for non-authenticated users
+      if (!user && typeof window !== 'undefined') {
+        localStorage.setItem('pf_local_preferences', JSON.stringify(next))
+      }
+    },
+    [user]
+  )
+
+  // Load preferences from localStorage for non-authenticated users on mount
+  useEffect(() => {
+    if (!user && typeof window !== 'undefined') {
+      const stored = localStorage.getItem('pf_local_preferences')
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored) as Preferences
+          setPreferences(parsed)
+          setPreferenceSource('local')
+        } catch (e) {
+          console.error('Failed to parse stored preferences', e)
+        }
+      }
+    }
+  }, [user])
 
   function focusInputToEnd() {
     if (!inputRef.current) return
@@ -539,6 +567,15 @@ export function FastEasyShell({
       showToast('Could not start Google sign-in')
     }
   }, [showToast])
+
+  // When user becomes authenticated, continue with pending prompt generation
+  useEffect(() => {
+    if (user && isLoginRequiredOpen && pendingTask) {
+      setIsLoginRequiredOpen(false)
+      const answers = clarifyingAnswersRef.current
+      void generateFinalPromptForTask(pendingTask, answers)
+    }
+  }, [user, isLoginRequiredOpen, pendingTask])
 
   const handleSignOut = useCallback(async () => {
     try {
@@ -841,7 +878,100 @@ export function FastEasyShell({
     }
   }
 
+  // Get list of preference keys that should be asked about (where "Ask every time" is enabled)
+  function getPreferencesToAsk(): Array<keyof Preferences> {
+    const doNotAskAgain = preferences.doNotAskAgain ?? {}
+    const prefsToAsk: Array<keyof Preferences> = []
+
+    // Ask about preferences where doNotAskAgain is explicitly false (meaning "Ask every time" is checked)
+    if (doNotAskAgain.tone === false) prefsToAsk.push('tone')
+    if (doNotAskAgain.audience === false) prefsToAsk.push('audience')
+    if (doNotAskAgain.domain === false) prefsToAsk.push('domain')
+    if (doNotAskAgain.defaultModel === false) prefsToAsk.push('defaultModel')
+    if (doNotAskAgain.outputFormat === false) prefsToAsk.push('outputFormat')
+    if (doNotAskAgain.language === false) prefsToAsk.push('language')
+    if (doNotAskAgain.depth === false) prefsToAsk.push('depth')
+
+    return prefsToAsk
+  }
+
+  function getPreferenceQuestionText(key: keyof Preferences): string {
+    switch (key) {
+      case 'tone':
+        return 'What tone would you like for this prompt? (e.g., professional, casual, technical)'
+      case 'audience':
+        return 'Who is the target audience? (e.g., developers, managers, general audience)'
+      case 'domain':
+        return 'What domain is this for? (e.g., marketing, engineering, product)'
+      case 'defaultModel':
+        return 'Which AI model are you targeting? (e.g., gpt-4, claude, gemini)'
+      case 'outputFormat':
+        return 'What output format do you prefer? (e.g., markdown, plain text, code)'
+      case 'language':
+        return 'What language should the output be in? (e.g., English, Spanish, French)'
+      case 'depth':
+        return 'How detailed should the output be? (e.g., concise, detailed, comprehensive)'
+      default:
+        return 'Please provide your preference:'
+    }
+  }
+
+  async function startPreferenceQuestions() {
+    const prefsToAsk = getPreferencesToAsk()
+    if (prefsToAsk.length === 0) {
+      // No preferences to ask about, proceed to generate
+      if (pendingTask) {
+        await generateFinalPromptForTask(pendingTask, clarifyingAnswersRef.current)
+      }
+      return
+    }
+
+    setIsAskingPreferenceQuestions(true)
+    setCurrentPreferenceQuestionKey(prefsToAsk[0])
+    setPendingPreferenceUpdates({})
+    appendLine(ROLE.APP, getPreferenceQuestionText(prefsToAsk[0]))
+  }
+
+  function handlePreferenceAnswer(answer: string) {
+    if (!currentPreferenceQuestionKey) return
+
+    const trimmedAnswer = answer.trim()
+    const updates = { ...pendingPreferenceUpdates, [currentPreferenceQuestionKey]: trimmedAnswer }
+    setPendingPreferenceUpdates(updates)
+
+    const prefsToAsk = getPreferencesToAsk()
+    const currentIndex = prefsToAsk.indexOf(currentPreferenceQuestionKey)
+    const nextIndex = currentIndex + 1
+
+    if (nextIndex < prefsToAsk.length) {
+      // Ask next preference question
+      const nextKey = prefsToAsk[nextIndex]
+      setCurrentPreferenceQuestionKey(nextKey)
+      appendLine(ROLE.APP, getPreferenceQuestionText(nextKey))
+    } else {
+      // All preference questions answered, update preferences and generate
+      setIsAskingPreferenceQuestions(false)
+      setCurrentPreferenceQuestionKey(null)
+      const updatedPrefs = { ...preferences, ...updates }
+      updatePreferencesLocally(updatedPrefs)
+      setPendingPreferenceUpdates({})
+
+      if (pendingTask) {
+        void generateFinalPromptForTask(pendingTask, clarifyingAnswersRef.current)
+      }
+    }
+  }
+
   async function generateFinalPromptForTask(task: string, answers: ClarifyingAnswer[]) {
+    // Check if user is authenticated before generating
+    if (!user) {
+      setIsLoginRequiredOpen(true)
+      setPendingTask(task)
+      clarifyingAnswersRef.current = answers
+      setClarifyingAnswersCount(answers.length)
+      return
+    }
+
     const runId = (generationRunIdRef.current += 1)
     setIsGenerating(true)
     setAnsweringQuestions(false)
@@ -871,6 +1001,24 @@ export function FastEasyShell({
 
       appendLine(ROLE.APP, MESSAGE.PROMPT_READY)
       setIsGenerating(false)
+
+      // After first generation, prompt user to fill preferences if they haven't yet
+      // Check if user has any preferences configured
+      const hasAnyPreference =
+        preferences.tone ||
+        preferences.audience ||
+        preferences.domain ||
+        preferences.defaultModel ||
+        preferences.outputFormat ||
+        preferences.language ||
+        preferences.depth
+
+      if (!hasAnyPreference && preferenceSource !== 'user') {
+        appendLine(
+          ROLE.APP,
+          'Would you like to set your preferences now? This will help us generate better prompts in the future. Type /preferences to open settings.'
+        )
+      }
     } catch (err) {
       if (runId === generationRunIdRef.current) {
         console.error('Failed to generate final prompt', err)
@@ -1038,6 +1186,12 @@ export function FastEasyShell({
       return
     }
 
+    if (isAskingPreferenceQuestions && currentPreferenceQuestionKey) {
+      handlePreferenceAnswer(line)
+      setValue('')
+      return
+    }
+
     void handleTask(line)
     setValue('')
   }
@@ -1085,7 +1239,13 @@ export function FastEasyShell({
     if (normalized === 'no' || normalized === 'n') {
       setAwaitingQuestionConsent(false)
       setConsentSelectedIndex(null)
-      await generateFinalPromptForTask(pendingTask, [])
+      // Check if we need to ask about preferences before generating
+      const prefsToAsk = getPreferencesToAsk()
+      if (prefsToAsk.length > 0) {
+        void startPreferenceQuestions()
+      } else {
+        await generateFinalPromptForTask(pendingTask, [])
+      }
       return
     }
 
@@ -1145,7 +1305,14 @@ export function FastEasyShell({
       focusInputToEnd()
     } else {
       setClarifyingSelectedOptionIndex(null)
-      void generateFinalPromptForTask(pendingTask, updated)
+      setAnsweringQuestions(false)
+      // After clarifying questions, check if we need to ask about preferences
+      const prefsToAsk = getPreferencesToAsk()
+      if (prefsToAsk.length > 0) {
+        void startPreferenceQuestions()
+      } else {
+        void generateFinalPromptForTask(pendingTask, updated)
+      }
     }
   }
 
@@ -1306,6 +1473,8 @@ export function FastEasyShell({
     ? 'Type your own answer here or use arrows to select'
     : awaitingQuestionConsent
     ? 'Use arrows to select yes/no'
+    : isAskingPreferenceQuestions
+    ? 'Answer the preference question'
     : editablePrompt !== null
     ? `Provide feedback about the generated prompt or press ${isMac ? SHORTCUT.COPY_MAC : SHORTCUT.COPY_WIN} to copy`
     : 'Give us context to create an effective prompt'
@@ -1341,7 +1510,17 @@ export function FastEasyShell({
         preferenceSource={preferenceSource}
         onClose={() => setIsUserManagementOpen(false)}
         onOpenPreferences={() => setIsPreferencesOpen(true)}
+        onSignIn={handleSignIn}
         onSignOut={handleSignOut}
+      />
+
+      <LoginRequiredModal
+        open={isLoginRequiredOpen}
+        onClose={() => {
+          setIsLoginRequiredOpen(false)
+          appendLine(ROLE.APP, 'Sign in required to generate prompts. Try again when you are ready.')
+        }}
+        onSignIn={handleSignIn}
       />
 
       <form onSubmit={handleFormSubmit} className="relative flex-1 text-sm">

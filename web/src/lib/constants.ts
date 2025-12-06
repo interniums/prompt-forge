@@ -36,10 +36,33 @@ export const DEFAULT_MODEL = 'gpt-4.1-mini'
 export const DEFAULT_TEMPERATURE = 0.4
 
 export const MODEL_OPTIONS = [
+  { value: 'gpt-4o', label: 'GPT-4o' },
   { value: 'gpt-4.1', label: 'GPT-4.1' },
-  { value: 'gpt-4.1-mini', label: 'GPT-4.1 mini' },
+  { value: 'o3', label: 'o3' },
+  { value: 'o4-mini', label: 'o4-mini' },
   { value: 'claude-3.5-sonnet', label: 'Claude 3.5 Sonnet' },
-  { value: 'claude-3.5-haiku', label: 'Claude 3.5 Haiku' },
+  { value: 'claude-3-opus', label: 'Claude 3 Opus' },
+  { value: 'claude-3-haiku', label: 'Claude 3 Haiku' },
+  { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+  { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+  { value: 'grok-4', label: 'Grok 4' },
+  { value: 'command-r', label: 'Command R' },
+  { value: 'command-r-plus', label: 'Command R+' },
+  { value: 'llama-3.1', label: 'Llama 3.1' },
+  { value: 'mistral-large-2', label: 'Mistral Large 2' },
+  { value: 'mixtral-8x7b', label: 'Mixtral 8x7B' },
+  { value: 'deepseek-r1', label: 'DeepSeek R1' },
+  { value: 'qwen2.5', label: 'Qwen2.5' },
+  { value: 'phi-4', label: 'Phi-4' },
+  { value: 'dbrx', label: 'DBRX' },
+  { value: 'jamba-1.5', label: 'Jamba 1.5' },
+  { value: 'titan-text', label: 'Titan Text (Bedrock)' },
+  { value: 'stable-diffusion-3', label: 'Stable Diffusion 3' },
+  { value: 'flux-1', label: 'FLUX.1' },
+  { value: 'midjourney-v7', label: 'Midjourney v7' },
+  { value: 'adobe-firefly', label: 'Adobe Firefly' },
+  { value: 'runway-gen-4', label: 'Runway Gen-4' },
+  { value: 'elevenlabs-v3', label: 'ElevenLabs v3' },
 ] as const
 
 export const OUTPUT_FORMAT_OPTIONS = [

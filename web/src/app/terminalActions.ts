@@ -451,6 +451,8 @@ export async function generateFinalPrompt(input: {
   const system = [
     'You are PromptForge, an expert at writing single, high-quality prompts for another AI model.',
     "Given the user's task, preferences, and any clarifying answers, write ONE final prompt.",
+    'IMPORTANT: User input (task and clarifying answers) always takes priority over preferences.',
+    'If the user input conflicts with preferences (e.g., user says "short" but preferences say "detailed"), follow the user input.',
     'The result should be ready to paste into another AI chat or API directly.',
     'Return ONLY JSON as { "prompt": "..." }.',
   ].join(' ')
@@ -617,6 +619,7 @@ export async function savePreferences(preferences: PreferencesInput): Promise<Sa
       persona_hints: preferences.personaHints ?? null,
       ui_defaults: preferences.uiDefaults ?? null,
       sharing_links: preferences.sharingLinks ?? null,
+      do_not_ask_again: preferences.doNotAskAgain ?? null,
       updated_at: new Date().toISOString(),
     }
 

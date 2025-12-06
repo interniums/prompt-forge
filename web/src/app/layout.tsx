@@ -26,17 +26,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-zinc-950 text-zinc-50 overflow-hidden`}
-      >
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased bg-zinc-950 text-zinc-50`}>
         <AuthSessionSync />
-        <div className="min-h-screen flex flex-col">
-          {/* Hide header on landing to keep it focused and terminal-like */}
-          <Header />
-          <main className="flex-1 bg-linear-to-b from-zinc-950 to-zinc-900">
-            <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14">{children}</div>
-          </main>
-        </div>
+        {/* Header conditionally renders based on route */}
+        <Header />
+        {/* Pages control their own layout - no wrapper constraints */}
+        {children}
       </body>
     </html>
   )

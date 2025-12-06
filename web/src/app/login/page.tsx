@@ -10,41 +10,50 @@ export default function LoginPage() {
   const [isLoadingGoogle, setIsLoadingGoogle] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
-  const [isCheckingAuth, setIsCheckingAuth] = useState(true)
   const router = useRouter()
   const searchParams = useSearchParams()
   const redirectTo = searchParams.get('redirect') || '/'
   const authError = searchParams.get('error')
 
-  useEffect(() => {
-    // Show auth error if present
-    if (authError === 'auth_failed') {
-      setError('Authentication failed. Please try again.')
-      setIsCheckingAuth(false)
-    } else if (authError === 'session_error') {
-      setError('Session error occurred. Please sign in again.')
-      setIsCheckingAuth(false)
-    } else {
-      // Check if user is already logged in
-      const checkAuth = async () => {
-        try {
-          const supabase = getSupabaseBrowserClient()
-          const {
-            data: { session },
-          } = await supabase.auth.getSession()
+  // Derive error message from URL param (no state needed)
+  const authErrorMessage =
+    authError === 'auth_failed'
+      ? 'Authentication failed. Please try again.'
+      : authError === 'session_error'
+      ? 'Session error occurred. Please sign in again.'
+      : null
 
-          if (session) {
-            router.replace(redirectTo)
-          } else {
-            setIsCheckingAuth(false)
-          }
-        } catch (err) {
-          console.error('Auth check failed', err)
+  // Combine URL error with user-triggered errors
+  const displayError = error || authErrorMessage
+
+  // If there's an auth error, skip auth check (derived state, no effect needed)
+  const [isCheckingAuth, setIsCheckingAuth] = useState(!authError)
+
+  useEffect(() => {
+    // Skip auth check if there's an error from URL
+    if (authError) {
+      return
+    }
+
+    // Check if user is already logged in
+    const checkAuth = async () => {
+      try {
+        const supabase = getSupabaseBrowserClient()
+        const {
+          data: { session },
+        } = await supabase.auth.getSession()
+
+        if (session) {
+          router.replace(redirectTo)
+        } else {
           setIsCheckingAuth(false)
         }
+      } catch (err) {
+        console.error('Auth check failed', err)
+        setIsCheckingAuth(false)
       }
-      checkAuth()
     }
+    checkAuth()
   }, [authError, router, redirectTo])
 
   if (isCheckingAuth) {
@@ -128,12 +137,12 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-4">
+    <main className="flex min-h-screen items-center justify-center p-4">
       {/* Background gradient */}
       <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top,rgba(148,163,184,0.18),transparent_55%),radial-gradient(circle_at_bottom,rgba(148,163,184,0.18),transparent_55%)] opacity-80" />
 
       {/* Login container */}
-      <div className="w-full max-w-sm rounded-2xl bg-[#050608] p-8 shadow-[0_0_120px_rgba(15,23,42,0.95)]">
+      <div className="mx-auto w-full max-w-sm rounded-2xl bg-[#050608] p-8 shadow-[0_0_120px_rgba(15,23,42,0.95)]">
         {/* Success message */}
         {success && (
           <div className="mb-6 rounded-lg border border-slate-700 bg-slate-800/50 p-3 text-sm text-slate-200">
@@ -142,8 +151,10 @@ export default function LoginPage() {
         )}
 
         {/* Error message */}
-        {error && (
-          <div className="mb-6 rounded-lg border border-red-900/50 bg-red-950/30 p-3 text-sm text-red-200">{error}</div>
+        {displayError && (
+          <div className="mb-6 rounded-lg border border-red-900/50 bg-red-950/30 p-3 text-sm text-red-200">
+            {displayError}
+          </div>
         )}
 
         {/* Email sign-in form */}
@@ -231,6 +242,6 @@ export default function LoginPage() {
           By continuing, you agree to our Terms and Privacy Policy
         </p>
       </div>
-    </div>
+    </main>
   )
 }
