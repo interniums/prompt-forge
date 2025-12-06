@@ -79,6 +79,13 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
   const [isRevising, setIsRevising] = useState(false)
   const [draftRestoredShown, setDraftRestoredShown] = useState(false)
 
+  // Default-select the first consent option so keyboard users see focus immediately
+  useEffect(() => {
+    if (awaitingQuestionConsent && consentSelectedIndex === null) {
+      setConsentSelectedIndex(0)
+    }
+  }, [awaitingQuestionConsent, consentSelectedIndex])
+
   // Build current draft state for auto-persistence
   // Note: clarifyingAnswersCount is used to trigger re-memoization when answers change
   // (since we can't depend on the ref directly)
@@ -802,7 +809,7 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
 
     appendLine(ROLE.APP, MESSAGE.QUESTION_CONSENT)
     setAwaitingQuestionConsent(true)
-    // Don't pre-select an option; user must arrow-select first to prevent accidental Enter auto-submit
+    setConsentSelectedIndex(0) // Highlight first option so arrow navigation is obvious
     // Ensure input is focused for arrow navigation
     setTimeout(() => focusInputToEnd(), 0)
   }
@@ -977,7 +984,7 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
       // Go back to consent (yes/no) when on the first question with no answers.
       setAnsweringQuestions(false)
       setAwaitingQuestionConsent(true)
-      setConsentSelectedIndex(null) // Don't pre-select; user must arrow-select to prevent accidental Enter
+      setConsentSelectedIndex(0) // Keep visual focus on the first option for clarity
       setClarifyingSelectedOptionIndex(null)
       setCurrentQuestionIndex(0)
       appendLine(ROLE.APP, 'Do you want to answer the clarifying questions? (yes/no)')
@@ -1151,6 +1158,7 @@ export function FastEasyShell({ initialLines, initialPreferences }: FastEasyShel
           <TerminalOutputArea
             lines={lines}
             editablePrompt={editablePrompt}
+            approvedPrompt={lastApprovedPrompt}
             awaitingQuestionConsent={awaitingQuestionConsent}
             consentSelectedIndex={consentSelectedIndex}
             answeringQuestions={answeringQuestions}

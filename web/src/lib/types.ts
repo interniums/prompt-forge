@@ -17,6 +17,22 @@ export type Preferences = {
   tone?: string
   audience?: string
   domain?: string
+  defaultModel?: string
+  temperature?: number | null
+  styleGuidelines?: string
+  outputFormat?: string
+  language?: string
+  depth?: string
+  citationPreference?: string
+  personaHints?: string
+  uiDefaults?: {
+    autoCopyApproved?: boolean
+    showClarifying?: boolean
+  }
+  sharingLinks?: {
+    allowPrefillLinks?: boolean
+    warnSensitive?: boolean
+  }
 }
 
 /** A generated prompt with metadata */

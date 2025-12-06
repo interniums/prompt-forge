@@ -8,6 +8,7 @@ import { textButtonClass } from './styles'
 export type TerminalOutputAreaProps = {
   lines: TerminalLine[]
   editablePrompt: string | null
+  approvedPrompt: string | null
   awaitingQuestionConsent: boolean
   consentSelectedIndex: number | null
   answeringQuestions: boolean
@@ -183,6 +184,7 @@ const ClarifyingOptions = memo(function ClarifyingOptions({
  */
 const EditablePromptSection = memo(function EditablePromptSection({
   editablePrompt,
+  approvedPrompt,
   editablePromptRef,
   isPromptEditable,
   isPromptFinalized,
@@ -193,6 +195,7 @@ const EditablePromptSection = memo(function EditablePromptSection({
   onEditableChange,
 }: {
   editablePrompt: string
+  approvedPrompt: string | null
   editablePromptRef: React.RefObject<HTMLTextAreaElement | null>
   isPromptEditable: boolean
   isPromptFinalized: boolean
@@ -252,6 +255,57 @@ const EditablePromptSection = memo(function EditablePromptSection({
           className="terminal-input w-full min-h-50 resize-none overflow-hidden bg-transparent px-0 py-0 text-[15px] leading-relaxed text-slate-50 outline-none font-mono"
         />
       </div>
+      {isPromptFinalized && approvedPrompt && <ApprovedPromptLinks prompt={approvedPrompt} />}
+    </div>
+  )
+})
+
+const ApprovedPromptLinks = memo(function ApprovedPromptLinks({ prompt }: { prompt: string }) {
+  const providers = useMemo(() => {
+    const encoded = encodeURIComponent(prompt)
+    return [
+      { id: 'chatgpt', label: 'ChatGPT', href: `https://chatgpt.com/?q=${encoded}` },
+      { id: 'claude', label: 'Claude', href: `https://claude.ai/new?q=${encoded}` },
+      { id: 'perplexity', label: 'Perplexity', href: `https://www.perplexity.ai/search?q=${encoded}` },
+      {
+        id: 'gemini',
+        label: 'Gemini (AI Studio)',
+        href: `https://aistudio.google.com/prompts/new_chat?prompt=${encoded}`,
+      },
+    ]
+  }, [prompt])
+
+  return (
+    <div className="mt-4 space-y-2 text-[14px] text-slate-200">
+      <div className="flex items-center justify-between text-[13px] uppercase tracking-wide text-slate-500">
+        <span>Open prompt in popular AIs</span>
+      </div>
+      <div className="flex flex-wrap gap-3">
+        {providers.map((provider) =>
+          provider.href ? (
+            <a
+              key={provider.id}
+              href={provider.href}
+              target="_blank"
+              rel="noreferrer"
+              className="cursor-pointer text-[13px] text-slate-100 underline-offset-4 hover:underline"
+              title="Prefills and opens in a new tab"
+            >
+              {provider.label}
+            </a>
+          ) : (
+            <button
+              key={provider.id}
+              type="button"
+              onClick={provider.action}
+              className="cursor-pointer bg-transparent text-[13px] text-slate-100 underline-offset-4 hover:underline"
+              title={provider.hint ?? 'Copies prompt, then opens in new tab'}
+            >
+              {provider.label}
+            </button>
+          )
+        )}
+      </div>
     </div>
   )
 })
@@ -263,6 +317,7 @@ const EditablePromptSection = memo(function EditablePromptSection({
 export const TerminalOutputArea = memo(function TerminalOutputArea({
   lines,
   editablePrompt,
+  approvedPrompt,
   awaitingQuestionConsent,
   consentSelectedIndex,
   answeringQuestions,
@@ -317,6 +372,7 @@ export const TerminalOutputArea = memo(function TerminalOutputArea({
       {editablePrompt !== null && (
         <EditablePromptSection
           editablePrompt={editablePrompt}
+          approvedPrompt={approvedPrompt}
           editablePromptRef={editablePromptRef}
           isPromptEditable={isPromptEditable}
           isPromptFinalized={isPromptFinalized}
