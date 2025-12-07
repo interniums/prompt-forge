@@ -27,12 +27,15 @@ const ClearButton = ({ onClick, show = true, rightOffset = 'right-2' }: ClearBut
     <button
       type="button"
       onClick={onClick}
-      className={`absolute ${rightOffset} top-1/2 -translate-y-1/2 flex items-center justify-center w-5 h-5 rounded hover:bg-slate-700 text-slate-400 hover:text-slate-100 transition-colors z-10`}
+      className={`absolute ${rightOffset} top-1/2 -translate-y-1/2 flex items-center justify-center w-6 h-6 rounded hover:bg-slate-700 text-slate-400 hover:text-slate-100 transition-colors z-10 cursor-pointer group`}
       aria-label="Clear"
     >
-      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-      </svg>
+      <span className="relative">
+        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+        <span className="absolute bottom-0 left-0 right-0 h-px bg-slate-100 scale-x-0 group-hover:scale-x-100 transition-transform origin-center"></span>
+      </span>
     </button>
   )
 }
