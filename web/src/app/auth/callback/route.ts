@@ -5,7 +5,7 @@ import { createClient } from '@supabase/supabase-js'
 export async function GET(request: Request) {
   const url = new URL(request.url)
   const code = url.searchParams.get('code')
-  const next = url.searchParams.get('next') ?? '/'
+  const next = url.searchParams.get('next') ?? '/generate'
 
   if (!code) {
     return NextResponse.redirect(new URL('/login?error=auth_failed', url.origin))
@@ -47,7 +47,7 @@ export async function GET(request: Request) {
   }
 
   // Validate redirect URL to prevent open redirect vulnerability
-  const safeNext = next.startsWith('/') && !next.startsWith('//') ? next : '/'
+  const safeNext = next.startsWith('/') && !next.startsWith('//') ? next : '/generate'
   const redirectUrl = new URL(safeNext, url.origin)
 
   // Create redirect response and manually set the auth cookie

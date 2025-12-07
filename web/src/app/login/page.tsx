@@ -12,7 +12,7 @@ export default function LoginPage() {
   const [success, setSuccess] = useState<string | null>(null)
   const router = useRouter()
   const searchParams = useSearchParams()
-  const redirectTo = searchParams.get('redirect') || '/'
+  const redirectTo = searchParams.get('redirect') || '/generate'
   const authError = searchParams.get('error')
 
   // Derive error message from URL param (no state needed)

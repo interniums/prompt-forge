@@ -192,10 +192,9 @@ export function FastEasyShell({
     }
 
     if (!draftRestoredShown && (draft.task || draft.editablePrompt || draft.lines?.length)) {
-      showToast('Draft restored')
       setDraftRestoredShown(true)
     }
-  }, [draftRestoredShown, showToast])
+  }, [draftRestoredShown])
 
   const inputDisabled = isGenerating
 
@@ -208,16 +207,13 @@ export function FastEasyShell({
     try {
       const result = await loadUserPreferences()
       applyPreferencesFromServer(result.preferences, result.source)
-      if (result.source === 'user') {
-        showToast('Loaded your saved preferences')
-      } else {
-        showToast('No saved preferences found for your account yet')
-      }
     } catch (err) {
       console.error('Failed to load user preferences', err)
-      showToast('Could not load saved preferences')
     }
-  }, [applyPreferencesFromServer, showToast])
+  }, [applyPreferencesFromServer])
+
+  // Removed circular state/URL sync - modals are now controlled by state only
+  // This eliminates the performance issues caused by router operations
 
   useEffect(() => {
     let isMounted = true
@@ -253,9 +249,8 @@ export function FastEasyShell({
       }
     } catch (err) {
       console.error('Supabase auth setup failed', err)
-      showToast('Authentication unavailable. Using local mode.')
     }
-  }, [refreshUserPreferences, showToast])
+  }, [refreshUserPreferences])
 
   const updatePreferencesLocally = useCallback(
     (next: Preferences) => {
@@ -311,12 +306,12 @@ export function FastEasyShell({
     setConsentSelectedIndex(null)
   }
 
-  function appendLine(role: TerminalRole, text: string) {
+  const appendLine = useCallback((role: TerminalRole, text: string) => {
     setLines((prev) => {
       const nextId = prev.length ? prev[prev.length - 1].id + 1 : 0
       return [...prev, { id: nextId, role, text }]
     })
-  }
+  }, [])
 
   function scrollToBottom() {
     if (!scrollRef.current) return
@@ -429,7 +424,7 @@ export function FastEasyShell({
       console.error('Failed to copy editable prompt', err)
       appendLine(ROLE.APP, 'Could not copy to clipboard. You can still select and copy manually.')
     }
-  }, [editablePrompt, showToast])
+  }, [appendLine, editablePrompt, showToast])
 
   useEffect(() => {
     if (!isPromptEditable || !editablePromptRef.current) return
@@ -464,7 +459,7 @@ export function FastEasyShell({
     if (inputRef.current) {
       inputRef.current.focus()
     }
-  }, [editablePrompt, preferences.uiDefaults?.autoCopyApproved, lastApprovedPrompt, copyEditablePrompt])
+  }, [appendLine, copyEditablePrompt, editablePrompt, lastApprovedPrompt, preferences.uiDefaults?.autoCopyApproved])
 
   function handleEditableChange(text: string) {
     setEditablePrompt(text)
@@ -507,6 +502,9 @@ export function FastEasyShell({
     setPendingTask(null)
     resetClarifyingFlowState()
     setPreferencesStep(null)
+
+    // Open modals with state only - no URL changes
+    setIsUserManagementOpen(true)
     setIsPreferencesOpen(true)
 
     appendLine(
@@ -529,18 +527,14 @@ export function FastEasyShell({
       const result: SavePreferencesResult = await savePreferences(preferences)
       if (result.success) {
         setPreferenceSource(result.scope)
-        setIsPreferencesOpen(false)
         showToast(result.scope === 'user' ? 'Preferences saved to your account' : 'Preferences saved for this session')
         // Refresh preferences to ensure sync with server
         if (result.scope === 'user') {
           void refreshUserPreferences()
         }
-      } else {
-        showToast(result.message ? `Could not save preferences: ${result.message}` : 'Could not save preferences')
       }
     } catch (err) {
       console.error('Failed to save preferences', err)
-      showToast('Could not save preferences')
     } finally {
       setIsSavingPreferences(false)
     }
@@ -560,13 +554,80 @@ export function FastEasyShell({
       })
       if (error) {
         console.error('Supabase OAuth sign-in failed', error)
-        showToast('Could not start Google sign-in')
       }
     } catch (err) {
       console.error('Supabase OAuth sign-in failed', err)
-      showToast('Could not start Google sign-in')
     }
-  }, [showToast])
+  }, [])
+
+  const generateFinalPromptForTask = useCallback(
+    async (task: string, answers: ClarifyingAnswer[]) => {
+      // Check if user is authenticated before generating
+      if (!user) {
+        setIsLoginRequiredOpen(true)
+        setPendingTask(task)
+        clarifyingAnswersRef.current = answers
+        setClarifyingAnswersCount(answers.length)
+        return
+      }
+
+      const runId = (generationRunIdRef.current += 1)
+      setIsGenerating(true)
+      setAnsweringQuestions(false)
+      appendLine(ROLE.APP, MESSAGE.CREATING_PROMPT)
+
+      try {
+        const prompt = await generateFinalPrompt({ task, preferences, answers })
+
+        if (runId !== generationRunIdRef.current) {
+          return
+        }
+
+        const finalPrompt = prompt.trim() || task
+        setEditablePrompt(finalPrompt)
+        setIsPromptEditable(false)
+        setIsPromptFinalized(false)
+        setLastApprovedPrompt(null)
+
+        void recordGeneration({
+          task,
+          prompt: {
+            id: 'final',
+            label: 'Final prompt',
+            body: finalPrompt,
+          },
+        })
+
+        appendLine(ROLE.APP, MESSAGE.PROMPT_READY)
+        setIsGenerating(false)
+
+        // After first generation, prompt user to fill preferences if they haven't yet
+        // Check if user has any preferences configured
+        const hasAnyPreference =
+          preferences.tone ||
+          preferences.audience ||
+          preferences.domain ||
+          preferences.defaultModel ||
+          preferences.outputFormat ||
+          preferences.language ||
+          preferences.depth
+
+        if (!hasAnyPreference && preferenceSource !== 'user') {
+          appendLine(
+            ROLE.APP,
+            'Would you like to set your preferences now? This will help us generate better prompts in the future. Type /preferences to open settings.'
+          )
+        }
+      } catch (err) {
+        if (runId === generationRunIdRef.current) {
+          console.error('Failed to generate final prompt', err)
+          appendLine(ROLE.APP, 'Something went wrong while generating the prompt. Try again in a moment.')
+          setIsGenerating(false)
+        }
+      }
+    },
+    [appendLine, preferenceSource, preferences, user]
+  )
 
   // When user becomes authenticated, continue with pending prompt generation
   useEffect(() => {
@@ -575,7 +636,7 @@ export function FastEasyShell({
       const answers = clarifyingAnswersRef.current
       void generateFinalPromptForTask(pendingTask, answers)
     }
-  }, [user, isLoginRequiredOpen, pendingTask])
+  }, [user, isLoginRequiredOpen, pendingTask, generateFinalPromptForTask])
 
   const handleSignOut = useCallback(async () => {
     try {
@@ -583,12 +644,10 @@ export function FastEasyShell({
       await supabase.auth.signOut()
       setUser(null)
       setPreferenceSource('local')
-      showToast('Signed out. Using local preferences.')
     } catch (err) {
       console.error('Failed to sign out', err)
-      showToast('Sign-out failed')
     }
-  }, [showToast])
+  }, [])
 
   function advancePreferences(answer: string) {
     if (!preferencesStep) return
@@ -962,72 +1021,6 @@ export function FastEasyShell({
     }
   }
 
-  async function generateFinalPromptForTask(task: string, answers: ClarifyingAnswer[]) {
-    // Check if user is authenticated before generating
-    if (!user) {
-      setIsLoginRequiredOpen(true)
-      setPendingTask(task)
-      clarifyingAnswersRef.current = answers
-      setClarifyingAnswersCount(answers.length)
-      return
-    }
-
-    const runId = (generationRunIdRef.current += 1)
-    setIsGenerating(true)
-    setAnsweringQuestions(false)
-    appendLine(ROLE.APP, MESSAGE.CREATING_PROMPT)
-
-    try {
-      const prompt = await generateFinalPrompt({ task, preferences, answers })
-
-      if (runId !== generationRunIdRef.current) {
-        return
-      }
-
-      const finalPrompt = prompt.trim() || task
-      setEditablePrompt(finalPrompt)
-      setIsPromptEditable(false)
-      setIsPromptFinalized(false)
-      setLastApprovedPrompt(null)
-
-      void recordGeneration({
-        task,
-        prompt: {
-          id: 'final',
-          label: 'Final prompt',
-          body: finalPrompt,
-        },
-      })
-
-      appendLine(ROLE.APP, MESSAGE.PROMPT_READY)
-      setIsGenerating(false)
-
-      // After first generation, prompt user to fill preferences if they haven't yet
-      // Check if user has any preferences configured
-      const hasAnyPreference =
-        preferences.tone ||
-        preferences.audience ||
-        preferences.domain ||
-        preferences.defaultModel ||
-        preferences.outputFormat ||
-        preferences.language ||
-        preferences.depth
-
-      if (!hasAnyPreference && preferenceSource !== 'user') {
-        appendLine(
-          ROLE.APP,
-          'Would you like to set your preferences now? This will help us generate better prompts in the future. Type /preferences to open settings.'
-        )
-      }
-    } catch (err) {
-      if (runId === generationRunIdRef.current) {
-        console.error('Failed to generate final prompt', err)
-        appendLine(ROLE.APP, 'Something went wrong while generating the prompt. Try again in a moment.')
-        setIsGenerating(false)
-      }
-    }
-  }
-
   async function handleEditPrompt(editRequest: string) {
     if (!editablePrompt) return
 
@@ -1139,7 +1132,6 @@ export function FastEasyShell({
 
   function submitCurrent() {
     if (isGenerating) {
-      showToast(MESSAGE.GENERATING_WAIT)
       return
     }
 
@@ -1487,7 +1479,11 @@ export function FastEasyShell({
     >
       <CenteredToast message={toastMessage} />
 
-      <TerminalHeader onProfileClick={() => setIsUserManagementOpen(true)} />
+      <TerminalHeader
+        onProfileClick={() => {
+          setIsUserManagementOpen(true)
+        }}
+      />
 
       <PreferencesPanel
         open={isPreferencesOpen}
@@ -1508,8 +1504,13 @@ export function FastEasyShell({
         user={user}
         preferences={preferences}
         preferenceSource={preferenceSource}
-        onClose={() => setIsUserManagementOpen(false)}
-        onOpenPreferences={() => setIsPreferencesOpen(true)}
+        onClose={() => {
+          setIsUserManagementOpen(false)
+          setIsPreferencesOpen(false)
+        }}
+        onOpenPreferences={() => {
+          setIsPreferencesOpen(true)
+        }}
         onSignIn={handleSignIn}
         onSignOut={handleSignOut}
       />

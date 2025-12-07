@@ -5,8 +5,8 @@ import { usePathname } from 'next/navigation'
 export function Header() {
   const pathname = usePathname()
 
-  // Hide header on homepage and login page
-  if (pathname === '/' || pathname === '/login') {
+  // Hide header on homepage, generate page, and login page
+  if (pathname === '/' || pathname === '/generate' || pathname.startsWith('/generate/') || pathname === '/login') {
     return null
   }
 
