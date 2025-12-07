@@ -7,7 +7,7 @@ This file provides guidance to WARP (warp.dev) when working with code in this re
 As of 2025-12-05 this repository contains both product docs and an implemented web application.
 
 - The core product/docs live at the repo root (`README.md`, `docs-product-brief.md`, `docs-architecture.md`).
-- The Next.js app lives in `web/` and renders the PromptForge terminal on the root route (`/`).
+- The Next.js app lives in `web/` and renders the PromptForge terminal under `/generate` (catch-all: `/generate/**`). Modals (account, preferences) are **state-driven only**—no URL routing.
 
 The terminal is the primary user surface; any future features (templates, history, Task Helper) should be reachable through commands typed into this surface.
 
@@ -69,10 +69,12 @@ For more detail, see `docs-architecture.md`.
 Once code is added, future agents should:
 
 1. **Identify the stack and entry points**
+
    - Locate the main application entry (e.g. `src/main.tsx`, `app/page.tsx`, a backend `main` file, etc.).
    - Map how routes or screens correspond to the "Core screens" listed above.
 
 2. **Look for clear separation of concerns**
+
    - Expect a separation between:
      - **Domain/model layer** – templates, fields, prompt assembly, validation, and history entities.
      - **UI layer** – components implementing Template Builder, Generator, Gallery, History, etc.
@@ -80,6 +82,7 @@ Once code is added, future agents should:
    - When editing or adding code, keep new logic within the appropriate layer instead of mixing UI, domain, and persistence concerns.
 
 3. **Align features with documented flows**
+
    - When implementing new features or refactors, verify they support or extend one of the documented primary flows (template selection, template creation/editing, history reuse, or gallery/sharing).
    - For new screens or modules, document how they fit into the flows above to keep the app focused and calm.
 

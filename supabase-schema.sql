@@ -54,6 +54,7 @@ create table if not exists public.user_preferences (
   persona_hints jsonb null,
   ui_defaults jsonb null,
   sharing_links jsonb null,
+  do_not_ask_again jsonb null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );

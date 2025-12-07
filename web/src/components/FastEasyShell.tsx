@@ -22,7 +22,21 @@ import { UserManagementModal } from '@/components/UserManagementModal'
 import { LoginRequiredModal } from '@/components/LoginRequiredModal'
 import { useToast } from '@/hooks/useToast'
 import { useDraftPersistence, loadDraft, clearDraft, type DraftState } from '@/hooks/useDraftPersistence'
-import { ROLE, COMMAND, MESSAGE, SHORTCUT, EMPTY_SUBMIT_COOLDOWN_MS, type TerminalRole } from '@/lib/constants'
+import {
+  ROLE,
+  COMMAND,
+  MESSAGE,
+  SHORTCUT,
+  EMPTY_SUBMIT_COOLDOWN_MS,
+  TONE_OPTIONS,
+  AUDIENCE_OPTIONS,
+  DEPTH_OPTIONS,
+  OUTPUT_FORMAT_OPTIONS,
+  CITATION_OPTIONS,
+  LANGUAGE_OPTIONS,
+  MODEL_OPTIONS,
+  type TerminalRole,
+} from '@/lib/constants'
 import { getSupabaseBrowserClient } from '@/lib/supabase/client'
 import type {
   TerminalLine,
@@ -59,8 +73,9 @@ export function FastEasyShell({
   const { message: toastMessage, showToast } = useToast()
   const [pendingTask, setPendingTask] = useState<string | null>(null)
   const [awaitingQuestionConsent, setAwaitingQuestionConsent] = useState(false)
-  const [isPromptEditable, setIsPromptEditable] = useState(false)
+  const [isPromptEditable, setIsPromptEditable] = useState(true)
   const [isPromptFinalized, setIsPromptFinalized] = useState(false)
+  const [likeState, setLikeState] = useState<'none' | 'liked' | 'disliked'>('none')
   // If we have a saved draft with task or prompt, treat as if initial task was run
   const [hasRunInitialTask, setHasRunInitialTask] = useState(false)
   const [consentSelectedIndex, setConsentSelectedIndex] = useState<number | null>(null)
@@ -94,7 +109,29 @@ export function FastEasyShell({
   const [headerHelpShown, setHeaderHelpShown] = useState(false)
   const [isUserManagementOpen, setIsUserManagementOpen] = useState(false)
   const [isLoginRequiredOpen, setIsLoginRequiredOpen] = useState(false)
-  const [lastClearedLines, setLastClearedLines] = useState<TerminalLine[] | null>(null)
+  type SessionSnapshot = {
+    lines: TerminalLine[]
+    editablePrompt: string | null
+    pendingTask: string | null
+    clarifyingQuestions: ClarifyingQuestion[] | null
+    clarifyingAnswers: ClarifyingAnswer[]
+    currentQuestionIndex: number
+    answeringQuestions: boolean
+    awaitingQuestionConsent: boolean
+    consentSelectedIndex: number | null
+    clarifyingSelectedOptionIndex: number | null
+    isPromptEditable: boolean
+    isPromptFinalized: boolean
+    lastApprovedPrompt: string | null
+    headerHelpShown: boolean
+    hasRunInitialTask: boolean
+    isAskingPreferenceQuestions: boolean
+    currentPreferenceQuestionKey: keyof Preferences | null
+    preferenceSelectedOptionIndex: number | null
+    pendingPreferenceUpdates: Partial<Preferences>
+  }
+
+  const [lastSnapshot, setLastSnapshot] = useState<SessionSnapshot | null>(null)
   const [lastHistory, setLastHistory] = useState<Array<{
     id: string
     task: string
@@ -110,6 +147,7 @@ export function FastEasyShell({
   const [isAskingPreferenceQuestions, setIsAskingPreferenceQuestions] = useState(false)
   const [currentPreferenceQuestionKey, setCurrentPreferenceQuestionKey] = useState<keyof Preferences | null>(null)
   const [pendingPreferenceUpdates, setPendingPreferenceUpdates] = useState<Partial<Preferences>>({})
+  const [preferenceSelectedOptionIndex, setPreferenceSelectedOptionIndex] = useState<number | null>(null)
 
   // Default-select the first consent option so keyboard users see focus immediately
   useEffect(() => {
@@ -295,7 +333,7 @@ export function FastEasyShell({
    * Reset all clarifying question flow state to initial values.
    * Used when starting a new task, clearing, or discarding the current flow.
    */
-  function resetClarifyingFlowState() {
+  const resetClarifyingFlowState = useCallback(() => {
     setClarifyingQuestions(null)
     clarifyingAnswersRef.current = []
     setClarifyingAnswersCount(0)
@@ -304,7 +342,7 @@ export function FastEasyShell({
     setAnsweringQuestions(false)
     setAwaitingQuestionConsent(false)
     setConsentSelectedIndex(null)
-  }
+  }, [])
 
   const appendLine = useCallback((role: TerminalRole, text: string) => {
     setLines((prev) => {
@@ -434,32 +472,7 @@ export function FastEasyShell({
     el.setSelectionRange(len, len)
   }, [isPromptEditable])
 
-  const handleApprovePrompt = useCallback(() => {
-    if (!editablePrompt) {
-      appendLine(ROLE.APP, 'There is no prompt to approve yet. Generate one first.')
-      return
-    }
-
-    if (preferences.uiDefaults?.autoCopyApproved !== false) {
-      void copyEditablePrompt()
-    }
-    setIsPromptFinalized(true)
-    // Keep editable state available so user/AI edits remain possible post-approval.
-    setIsPromptEditable(true)
-    setLastApprovedPrompt(editablePrompt)
-    void recordEvent('prompt_approved', { prompt: editablePrompt })
-
-    if (editablePrompt !== lastApprovedPrompt) {
-      appendLine(ROLE.APP, MESSAGE.PROMPT_APPROVED)
-    }
-
-    // Clear the draft since user has approved/saved the prompt
-    clearDraft()
-
-    if (inputRef.current) {
-      inputRef.current.focus()
-    }
-  }, [appendLine, copyEditablePrompt, editablePrompt, lastApprovedPrompt, preferences.uiDefaults?.autoCopyApproved])
+  // Approve flow removed per new requirements
 
   function handleEditableChange(text: string) {
     setEditablePrompt(text)
@@ -475,12 +488,12 @@ export function FastEasyShell({
     function handleGlobalCopy(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
         e.preventDefault()
-        handleApprovePrompt()
+        void copyEditablePrompt()
       }
     }
     window.addEventListener('keydown', handleGlobalCopy)
     return () => window.removeEventListener('keydown', handleGlobalCopy)
-  }, [editablePrompt, handleApprovePrompt])
+  }, [copyEditablePrompt, editablePrompt])
 
   function formatPreferencesSummary(next?: Preferences) {
     const prefs = next ?? preferences
@@ -585,9 +598,19 @@ export function FastEasyShell({
 
         const finalPrompt = prompt.trim() || task
         setEditablePrompt(finalPrompt)
-        setIsPromptEditable(false)
+        setIsPromptEditable(true)
         setIsPromptFinalized(false)
         setLastApprovedPrompt(null)
+        void recordEvent('prompt_vote', { vote: 'none', prompt: finalPrompt, runId })
+        // Auto-copy the final prompt when it arrives
+        try {
+          if (navigator?.clipboard?.writeText) {
+            await navigator.clipboard.writeText(finalPrompt)
+            showToast('Prompt copied')
+          }
+        } catch (err) {
+          console.error('Auto-copy failed', err)
+        }
 
         void recordGeneration({
           task,
@@ -626,7 +649,7 @@ export function FastEasyShell({
         }
       }
     },
-    [appendLine, preferenceSource, preferences, user]
+    [appendLine, preferenceSource, preferences, showToast, user]
   )
 
   // When user becomes authenticated, continue with pending prompt generation
@@ -695,7 +718,40 @@ export function FastEasyShell({
   }
 
   function handleClear() {
-    setLastClearedLines(lines)
+    // Check if terminal is already empty (only has welcome or history cleared message)
+    const isEmpty =
+      lines.length === 1 &&
+      lines[0]?.role === ROLE.SYSTEM &&
+      (lines[0]?.text === MESSAGE.WELCOME ||
+        lines[0]?.text === MESSAGE.WELCOME_FRESH ||
+        lines[0]?.text === MESSAGE.HISTORY_CLEARED)
+
+    if (isEmpty) {
+      // Terminal is already empty, do nothing
+      return
+    }
+
+    setLastSnapshot({
+      lines,
+      editablePrompt,
+      pendingTask,
+      clarifyingQuestions,
+      clarifyingAnswers: [...clarifyingAnswersRef.current],
+      currentQuestionIndex,
+      answeringQuestions,
+      awaitingQuestionConsent,
+      consentSelectedIndex,
+      clarifyingSelectedOptionIndex,
+      isPromptEditable,
+      isPromptFinalized,
+      lastApprovedPrompt,
+      headerHelpShown,
+      hasRunInitialTask,
+      isAskingPreferenceQuestions,
+      currentPreferenceQuestionKey,
+      preferenceSelectedOptionIndex,
+      pendingPreferenceUpdates,
+    })
     setHeaderHelpShown(false)
     setLines([
       {
@@ -712,7 +768,7 @@ export function FastEasyShell({
   function handleDiscard() {
     // Hard reset of the interactive flow and editable prompt.
     setHeaderHelpShown(false)
-    setLastClearedLines(null)
+    setLastSnapshot(null)
     setLines([
       {
         id: 0,
@@ -721,7 +777,7 @@ export function FastEasyShell({
       },
     ])
     setEditablePrompt(null)
-    setIsPromptEditable(false)
+    setIsPromptEditable(true)
     setIsPromptFinalized(false)
     setPendingTask(null)
     setHasRunInitialTask(false)
@@ -732,13 +788,98 @@ export function FastEasyShell({
     clearDraft()
   }
 
+  function handleStartNewConversation() {
+    // Save snapshot for potential restore, then reset to a fresh session
+    setLastSnapshot({
+      lines,
+      editablePrompt,
+      pendingTask,
+      clarifyingQuestions,
+      clarifyingAnswers: [...clarifyingAnswersRef.current],
+      currentQuestionIndex,
+      answeringQuestions,
+      awaitingQuestionConsent,
+      consentSelectedIndex,
+      clarifyingSelectedOptionIndex,
+      isPromptEditable,
+      isPromptFinalized,
+      lastApprovedPrompt,
+      headerHelpShown,
+      hasRunInitialTask,
+      isAskingPreferenceQuestions,
+      currentPreferenceQuestionKey,
+      preferenceSelectedOptionIndex,
+      pendingPreferenceUpdates,
+    })
+
+    setLines([
+      {
+        id: 0,
+        role: ROLE.SYSTEM,
+        text: MESSAGE.WELCOME_FRESH,
+      },
+    ])
+    setEditablePrompt(null)
+    setIsPromptEditable(true)
+    setIsPromptFinalized(false)
+    setPendingTask(null)
+    setHasRunInitialTask(false)
+    resetClarifyingFlowState()
+    setLastHistory(null)
+    setLastApprovedPrompt(null)
+    setLikeState('none')
+  }
+
+  const handleLikePrompt = useCallback(() => {
+    if (!editablePrompt) {
+      appendLine(ROLE.APP, 'There is no prompt to like yet.')
+      return
+    }
+    void recordEvent('prompt_vote', { vote: 'like', prompt: editablePrompt })
+    appendLine(ROLE.APP, 'Feedback recorded. 👍')
+    setLikeState('liked')
+  }, [appendLine, editablePrompt])
+
+  const handleDislikePrompt = useCallback(() => {
+    if (!editablePrompt) {
+      appendLine(ROLE.APP, 'There is no prompt to dislike yet.')
+      return
+    }
+    void recordEvent('prompt_vote', { vote: 'dislike', prompt: editablePrompt })
+    appendLine(ROLE.APP, 'Feedback recorded. 👎')
+    setLikeState('disliked')
+  }, [appendLine, editablePrompt])
+
   function handleRestore() {
-    if (!lastClearedLines) {
+    if (!lastSnapshot) {
       appendLine(ROLE.APP, 'Nothing to restore yet.')
       return
     }
 
-    setLines(lastClearedLines)
+    setLines(lastSnapshot.lines)
+    setEditablePrompt(lastSnapshot.editablePrompt)
+    setPendingTask(lastSnapshot.pendingTask)
+    setClarifyingQuestions(lastSnapshot.clarifyingQuestions)
+    clarifyingAnswersRef.current = [...lastSnapshot.clarifyingAnswers]
+    setClarifyingAnswersCount(lastSnapshot.clarifyingAnswers.length)
+    setCurrentQuestionIndex(lastSnapshot.currentQuestionIndex)
+    setAnsweringQuestions(lastSnapshot.answeringQuestions)
+    setAwaitingQuestionConsent(lastSnapshot.awaitingQuestionConsent)
+    setConsentSelectedIndex(lastSnapshot.consentSelectedIndex)
+    setClarifyingSelectedOptionIndex(lastSnapshot.clarifyingSelectedOptionIndex)
+    setIsPromptEditable(lastSnapshot.isPromptEditable)
+    setIsPromptFinalized(lastSnapshot.isPromptFinalized)
+    setLastApprovedPrompt(lastSnapshot.lastApprovedPrompt)
+    setHeaderHelpShown(lastSnapshot.headerHelpShown)
+    setHasRunInitialTask(lastSnapshot.hasRunInitialTask)
+    setIsAskingPreferenceQuestions(lastSnapshot.isAskingPreferenceQuestions)
+    setCurrentPreferenceQuestionKey(lastSnapshot.currentPreferenceQuestionKey)
+    setPreferenceSelectedOptionIndex(lastSnapshot.preferenceSelectedOptionIndex)
+    setPendingPreferenceUpdates(lastSnapshot.pendingPreferenceUpdates)
+    setLikeState('none')
+
+    // Allow single restore; clear snapshot
+    setLastSnapshot(null)
   }
 
   async function handleHistory() {
@@ -929,29 +1070,32 @@ export function FastEasyShell({
 
   function appendClarifyingQuestion(question: ClarifyingQuestion, index: number, total: number) {
     appendLine(ROLE.APP, `Question ${index + 1}/${total}: ${question.question}`)
-    if (question.options && question.options.length > 0) {
-      const opts = question.options.map((o) => `${o.id}) ${o.label}`).join(' | ')
-      appendLine(ROLE.APP, `You can answer in your own words, or choose one of: ${opts}`)
-    } else {
-      appendLine(ROLE.APP, 'Answer in your own words.')
-    }
   }
 
   // Get list of preference keys that should be asked about (where "Ask every time" is enabled)
   function getPreferencesToAsk(): Array<keyof Preferences> {
     const doNotAskAgain = preferences.doNotAskAgain ?? {}
-    const prefsToAsk: Array<keyof Preferences> = []
+
+    // List of preference keys that can be asked about (excluding nested objects)
+    const askablePreferenceKeys: Array<keyof Preferences> = [
+      'tone',
+      'audience',
+      'domain',
+      'defaultModel',
+      'temperature',
+      'outputFormat',
+      'language',
+      'depth',
+      'citationPreference',
+      'styleGuidelines',
+      'personaHints',
+    ]
 
     // Ask about preferences where doNotAskAgain is explicitly false (meaning "Ask every time" is checked)
-    if (doNotAskAgain.tone === false) prefsToAsk.push('tone')
-    if (doNotAskAgain.audience === false) prefsToAsk.push('audience')
-    if (doNotAskAgain.domain === false) prefsToAsk.push('domain')
-    if (doNotAskAgain.defaultModel === false) prefsToAsk.push('defaultModel')
-    if (doNotAskAgain.outputFormat === false) prefsToAsk.push('outputFormat')
-    if (doNotAskAgain.language === false) prefsToAsk.push('language')
-    if (doNotAskAgain.depth === false) prefsToAsk.push('depth')
-
-    return prefsToAsk
+    return askablePreferenceKeys.filter((key) => {
+      const doNotAskKey = key as keyof NonNullable<Preferences['doNotAskAgain']>
+      return doNotAskAgain[doNotAskKey] === false
+    })
   }
 
   function getPreferenceQuestionText(key: keyof Preferences): string {
@@ -964,14 +1108,62 @@ export function FastEasyShell({
         return 'What domain is this for? (e.g., marketing, engineering, product)'
       case 'defaultModel':
         return 'Which AI model are you targeting? (e.g., gpt-4, claude, gemini)'
+      case 'temperature':
+        return 'What temperature/creativity level? (0.0-1.0, e.g., 0.7 for balanced, 0.9 for creative)'
       case 'outputFormat':
         return 'What output format do you prefer? (e.g., markdown, plain text, code)'
       case 'language':
         return 'What language should the output be in? (e.g., English, Spanish, French)'
       case 'depth':
         return 'How detailed should the output be? (e.g., concise, detailed, comprehensive)'
+      case 'citationPreference':
+        return 'How should citations be handled? (e.g., include sources, no citations, inline references)'
+      case 'styleGuidelines':
+        return 'Any specific style guidelines? (e.g., use bullet points, keep paragraphs short, active voice)'
+      case 'personaHints':
+        return 'Any persona or voice hints? (e.g., write as a senior engineer, be helpful but concise)'
       default:
         return 'Please provide your preference:'
+    }
+  }
+
+  function getPreferenceOptions(key: keyof Preferences): Array<{ id: string; label: string }> {
+    switch (key) {
+      case 'tone':
+        return TONE_OPTIONS.map((opt, idx) => ({ id: String.fromCharCode('a'.charCodeAt(0) + idx), label: opt }))
+      case 'audience':
+        return AUDIENCE_OPTIONS.map((opt, idx) => ({ id: String.fromCharCode('a'.charCodeAt(0) + idx), label: opt }))
+      case 'domain':
+        return ['product', 'marketing', 'engineering'].map((opt, idx) => ({
+          id: String.fromCharCode('a'.charCodeAt(0) + idx),
+          label: opt,
+        }))
+      case 'depth':
+        return DEPTH_OPTIONS.map((opt, idx) => ({ id: String.fromCharCode('a'.charCodeAt(0) + idx), label: opt.label }))
+      case 'outputFormat':
+        return OUTPUT_FORMAT_OPTIONS.map((opt, idx) => ({
+          id: String.fromCharCode('a'.charCodeAt(0) + idx),
+          label: opt.label,
+        }))
+      case 'citationPreference':
+        return CITATION_OPTIONS.map((opt, idx) => ({
+          id: String.fromCharCode('a'.charCodeAt(0) + idx),
+          label: opt.label,
+        }))
+      case 'language':
+        return LANGUAGE_OPTIONS.map((opt, idx) => ({ id: String.fromCharCode('a'.charCodeAt(0) + idx), label: opt }))
+      case 'defaultModel':
+        return MODEL_OPTIONS.map((opt, idx) => ({
+          id: String.fromCharCode('a'.charCodeAt(0) + idx),
+          label: opt.label,
+        }))
+      case 'temperature':
+        return ['0.3 (focused)', '0.7 (balanced)', '0.9 (creative)'].map((opt, idx) => ({
+          id: String.fromCharCode('a'.charCodeAt(0) + idx),
+          label: opt,
+        }))
+      default:
+        return []
     }
   }
 
@@ -988,14 +1180,34 @@ export function FastEasyShell({
     setIsAskingPreferenceQuestions(true)
     setCurrentPreferenceQuestionKey(prefsToAsk[0])
     setPendingPreferenceUpdates({})
-    appendLine(ROLE.APP, getPreferenceQuestionText(prefsToAsk[0]))
+    const firstKeyOptions = getPreferenceOptions(prefsToAsk[0])
+    setPreferenceSelectedOptionIndex(firstKeyOptions.length > 0 ? 0 : null)
+
+    if (prefsToAsk.length > 1) {
+      appendLine(ROLE.APP, `Now let's set some preferences for this prompt (${prefsToAsk.length} questions):`)
+    } else {
+      appendLine(ROLE.APP, "Now let's set a preference for this prompt:")
+    }
+    appendLine(ROLE.APP, `Preference 1/${prefsToAsk.length}: ${getPreferenceQuestionText(prefsToAsk[0])}`)
+    focusInputToEnd()
   }
 
   function handlePreferenceAnswer(answer: string) {
     if (!currentPreferenceQuestionKey) return
 
     const trimmedAnswer = answer.trim()
-    const updates = { ...pendingPreferenceUpdates, [currentPreferenceQuestionKey]: trimmedAnswer }
+
+    // Display the user's answer
+    appendLine(ROLE.USER, trimmedAnswer)
+
+    // Handle temperature as a number
+    let value: string | number | undefined = trimmedAnswer
+    if (currentPreferenceQuestionKey === 'temperature') {
+      const numValue = parseFloat(trimmedAnswer)
+      value = isNaN(numValue) ? undefined : Math.max(0, Math.min(1, numValue))
+    }
+
+    const updates = { ...pendingPreferenceUpdates, [currentPreferenceQuestionKey]: value }
     setPendingPreferenceUpdates(updates)
 
     const prefsToAsk = getPreferencesToAsk()
@@ -1006,11 +1218,15 @@ export function FastEasyShell({
       // Ask next preference question
       const nextKey = prefsToAsk[nextIndex]
       setCurrentPreferenceQuestionKey(nextKey)
-      appendLine(ROLE.APP, getPreferenceQuestionText(nextKey))
+      const nextKeyOptions = getPreferenceOptions(nextKey)
+      setPreferenceSelectedOptionIndex(nextKeyOptions.length > 0 ? 0 : null)
+      appendLine(ROLE.APP, `Preference ${nextIndex + 1}/${prefsToAsk.length}: ${getPreferenceQuestionText(nextKey)}`)
+      focusInputToEnd()
     } else {
       // All preference questions answered, update preferences and generate
       setIsAskingPreferenceQuestions(false)
       setCurrentPreferenceQuestionKey(null)
+      setPreferenceSelectedOptionIndex(null)
       const updatedPrefs = { ...preferences, ...updates }
       updatePreferencesLocally(updatedPrefs)
       setPendingPreferenceUpdates({})
@@ -1146,21 +1362,40 @@ export function FastEasyShell({
       return
     }
 
-    appendLine(ROLE.USER, raw)
+    // Check if this is a clear command on an already empty terminal
+    if (line.startsWith('/')) {
+      const [command] = line.trim().split(/\s+/)
+      if (command === COMMAND.CLEAR) {
+        const isEmpty =
+          lines.length === 1 &&
+          lines[0]?.role === ROLE.SYSTEM &&
+          (lines[0]?.text === MESSAGE.WELCOME ||
+            lines[0]?.text === MESSAGE.WELCOME_FRESH ||
+            lines[0]?.text === MESSAGE.HISTORY_CLEARED)
+        if (isEmpty) {
+          // Terminal is already empty, don't append the command and do nothing
+          setValue('')
+          return
+        }
+      }
+    }
 
     if (line.startsWith('/')) {
+      appendLine(ROLE.USER, raw)
       handleCommand(line)
       setValue('')
       return
     }
 
     if (preferencesStep) {
+      appendLine(ROLE.USER, raw)
       advancePreferences(line)
       setValue('')
       return
     }
 
     if (awaitingQuestionConsent && pendingTask) {
+      appendLine(ROLE.USER, raw)
       void handleQuestionConsent(line)
       setValue('')
       return
@@ -1173,17 +1408,21 @@ export function FastEasyShell({
       currentQuestionIndex < clarifyingQuestions.length &&
       pendingTask
     ) {
+      // Don't append here - handleClarifyingAnswer will append the answer
       void handleClarifyingAnswer(line)
       setValue('')
       return
     }
 
     if (isAskingPreferenceQuestions && currentPreferenceQuestionKey) {
+      // Don't append here - handlePreferenceAnswer will append the answer
       handlePreferenceAnswer(line)
       setValue('')
       return
     }
 
+    // For regular tasks, append the user input
+    appendLine(ROLE.USER, raw)
     void handleTask(line)
     setValue('')
   }
@@ -1231,11 +1470,16 @@ export function FastEasyShell({
     if (normalized === 'no' || normalized === 'n') {
       setAwaitingQuestionConsent(false)
       setConsentSelectedIndex(null)
-      // Check if we need to ask about preferences before generating
-      const prefsToAsk = getPreferencesToAsk()
-      if (prefsToAsk.length > 0) {
+      // User chose to skip clarifying questions; optionally ask preferences based on setting
+      const wantsPreferencesOnSkip = preferences.uiDefaults?.askPreferencesOnSkip === true
+      const prefsToAsk = wantsPreferencesOnSkip ? getPreferencesToAsk() : []
+
+      if (wantsPreferencesOnSkip && prefsToAsk.length > 0) {
+        appendLine(ROLE.APP, 'Skipping clarifying questions, but asking preferences as configured.')
+        setIsAskingPreferenceQuestions(true)
         void startPreferenceQuestions()
       } else {
+        appendLine(ROLE.APP, 'Skipping clarifying and preference questions. Generating prompt directly.')
         await generateFinalPromptForTask(pendingTask, [])
       }
       return
@@ -1255,6 +1499,16 @@ export function FastEasyShell({
     focusInputToEnd()
   }
 
+  function handlePreferenceOptionClick(index: number) {
+    if (!currentPreferenceQuestionKey) return
+    const options = getPreferenceOptions(currentPreferenceQuestionKey)
+    if (index < 0 || index >= options.length) return
+    const chosen = options[index]
+    setPreferenceSelectedOptionIndex(index)
+    handlePreferenceAnswer(chosen.label)
+    focusInputToEnd()
+  }
+
   async function handleClarifyingAnswer(answer: string) {
     if (!clarifyingQuestions || !pendingTask) {
       appendLine(ROLE.APP, 'No active questions. Describe a task first.')
@@ -1270,6 +1524,9 @@ export function FastEasyShell({
 
     const question = clarifyingQuestions[index]
     const trimmedAnswer = answer.trim()
+
+    // Display the user's answer
+    appendLine(ROLE.USER, trimmedAnswer)
 
     const updated: ClarifyingAnswer[] = [
       ...clarifyingAnswersRef.current,
@@ -1434,6 +1691,32 @@ export function FastEasyShell({
       }
     }
 
+    // Preference question option navigation
+    if (isAskingPreferenceQuestions && currentPreferenceQuestionKey) {
+      const options = getPreferenceOptions(currentPreferenceQuestionKey)
+      if (options.length > 0) {
+        if (key === 'ArrowDown' || key === 'ArrowUp' || key === 'ArrowLeft' || key === 'ArrowRight') {
+          preventDefault()
+          const isForward = e.key === 'ArrowDown' || e.key === 'ArrowRight'
+          setPreferenceSelectedOptionIndex((prev) => {
+            if (prev === null) {
+              return isForward ? 0 : options.length - 1
+            }
+            const delta = isForward ? 1 : -1
+            const next = (prev + delta + options.length) % options.length
+            return next
+          })
+          return
+        }
+
+        if (key === 'Enter' && !metaKey && !ctrlKey && !value.trim() && preferenceSelectedOptionIndex !== null) {
+          preventDefault()
+          handlePreferenceOptionClick(preferenceSelectedOptionIndex)
+          return
+        }
+      }
+    }
+
     if (key === 'Enter' && !metaKey && !ctrlKey) {
       // Plain Enter submits instead of inserting a newline
       preventDefault()
@@ -1443,7 +1726,7 @@ export function FastEasyShell({
   }
 
   useEffect(() => {
-    if (!answeringQuestions && !awaitingQuestionConsent) return
+    if (!answeringQuestions && !awaitingQuestionConsent && !isAskingPreferenceQuestions) return
     const handler = (ev: KeyboardEvent) => {
       handleKeyDown(ev)
     }
@@ -1453,11 +1736,14 @@ export function FastEasyShell({
   }, [
     answeringQuestions,
     awaitingQuestionConsent,
+    isAskingPreferenceQuestions,
     consentSelectedIndex,
     clarifyingSelectedOptionIndex,
+    preferenceSelectedOptionIndex,
     clarifyingQuestions,
     clarifyingAnswersCount,
     currentQuestionIndex,
+    currentPreferenceQuestionKey,
     value,
   ])
 
@@ -1466,7 +1752,7 @@ export function FastEasyShell({
     : awaitingQuestionConsent
     ? 'Use arrows to select yes/no'
     : isAskingPreferenceQuestions
-    ? 'Answer the preference question'
+    ? 'Type your preference answer (you can provide a custom value)'
     : editablePrompt !== null
     ? `Provide feedback about the generated prompt or press ${isMac ? SHORTCUT.COPY_MAC : SHORTCUT.COPY_WIN} to copy`
     : 'Give us context to create an effective prompt'
@@ -1527,7 +1813,7 @@ export function FastEasyShell({
           <TerminalOutputArea
             lines={lines}
             editablePrompt={editablePrompt}
-            approvedPrompt={lastApprovedPrompt}
+            promptForLinks={editablePrompt ?? lastApprovedPrompt}
             awaitingQuestionConsent={awaitingQuestionConsent}
             consentSelectedIndex={consentSelectedIndex}
             answeringQuestions={answeringQuestions}
@@ -1542,8 +1828,6 @@ export function FastEasyShell({
             }
             clarifyingSelectedOptionIndex={clarifyingSelectedOptionIndex}
             editablePromptRef={editablePromptRef}
-            isPromptEditable={isPromptEditable}
-            isPromptFinalized={isPromptFinalized}
             scrollRef={scrollRef}
             inputRef={inputRef}
             onHelpCommandClick={(cmd) => {
@@ -1560,17 +1844,17 @@ export function FastEasyShell({
             onRevise={handleReviseFlow}
             onEditableChange={handleEditableChange}
             onCopyEditable={() => void copyEditablePrompt()}
-            onEditClick={() => {
-              setIsPromptEditable(true)
-              setIsPromptFinalized(false)
-              if (editablePromptRef.current) {
-                const el = editablePromptRef.current
-                el.focus()
-                const len = el.value.length
-                el.setSelectionRange(len, len)
-              }
-            }}
-            onApproveClick={handleApprovePrompt}
+            onStartNewConversation={handleStartNewConversation}
+            onLike={handleLikePrompt}
+            onDislike={handleDislikePrompt}
+            likeState={likeState}
+            isAskingPreferenceQuestions={isAskingPreferenceQuestions}
+            currentPreferenceQuestionKey={currentPreferenceQuestionKey}
+            preferenceSelectedOptionIndex={preferenceSelectedOptionIndex}
+            onPreferenceOptionClick={handlePreferenceOptionClick}
+            getPreferenceOptions={getPreferenceOptions}
+            getPreferenceQuestionText={getPreferenceQuestionText}
+            getPreferencesToAsk={getPreferencesToAsk}
           />
 
           <TerminalInputBar

@@ -28,6 +28,7 @@ export type Preferences = {
   uiDefaults?: {
     autoCopyApproved?: boolean
     showClarifying?: boolean
+    askPreferencesOnSkip?: boolean
   }
   sharingLinks?: {
     allowPrefillLinks?: boolean

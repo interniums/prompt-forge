@@ -27,15 +27,12 @@ const ClearButton = ({ onClick, show = true, rightOffset = 'right-2' }: ClearBut
     <button
       type="button"
       onClick={onClick}
-      className={`absolute ${rightOffset} top-1/2 -translate-y-1/2 flex items-center justify-center w-6 h-6 rounded hover:bg-slate-700 text-slate-400 hover:text-slate-100 transition-colors z-10 cursor-pointer group`}
+      className={`absolute ${rightOffset} top-1/2 -translate-y-1/2 flex items-center justify-center w-6 h-6 rounded hover:bg-slate-700 text-slate-400 hover:text-slate-100 transition-colors z-10 cursor-pointer`}
       aria-label="Clear"
     >
-      <span className="relative">
-        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-        </svg>
-        <span className="absolute bottom-0 left-0 right-0 h-px bg-slate-100 scale-x-0 group-hover:scale-x-100 transition-transform origin-center"></span>
-      </span>
+      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+      </svg>
     </button>
   )
 }
@@ -353,11 +350,7 @@ export function PreferencesPanel({
                       ))}
                     </SelectContent>
                   </Select>
-                  <ClearButton
-                    onClick={() => clearPreference('defaultModel')}
-                    show={!!localValues.defaultModel}
-                    rightOffset="right-8"
-                  />
+                  <ClearButton onClick={() => clearPreference('defaultModel')} show={!!localValues.defaultModel} />
                 </div>
               </div>
 
@@ -441,11 +434,7 @@ export function PreferencesPanel({
                       ))}
                     </SelectContent>
                   </Select>
-                  <ClearButton
-                    onClick={() => clearPreference('outputFormat')}
-                    show={!!localValues.outputFormat}
-                    rightOffset="right-8"
-                  />
+                  <ClearButton onClick={() => clearPreference('outputFormat')} show={!!localValues.outputFormat} />
                 </div>
               </div>
 
@@ -517,11 +506,7 @@ export function PreferencesPanel({
                       ))}
                     </SelectContent>
                   </Select>
-                  <ClearButton
-                    onClick={() => clearPreference('depth')}
-                    show={!!localValues.depth}
-                    rightOffset="right-8"
-                  />
+                  <ClearButton onClick={() => clearPreference('depth')} show={!!localValues.depth} />
                 </div>
               </div>
 
@@ -566,7 +551,6 @@ export function PreferencesPanel({
                   <ClearButton
                     onClick={() => clearPreference('citationPreference')}
                     show={!!localValues.citationPreference}
-                    rightOffset="right-8"
                   />
                 </div>
               </div>
@@ -681,6 +665,25 @@ export function PreferencesPanel({
                   <div className="flex-1">
                     <div className="font-mono text-base text-slate-300">Ask clarifying questions</div>
                     <div className="font-mono text-sm text-slate-500 mt-0.5">Enable follow-up questions by default</div>
+                  </div>
+                </label>
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <Checkbox
+                    checked={Boolean(uiDefaults.askPreferencesOnSkip)}
+                    onCheckedChange={(checked: CheckedState) => {
+                      const updated = {
+                        ...localValues,
+                        uiDefaults: { ...uiDefaults, askPreferencesOnSkip: checked === true },
+                      }
+                      setLocalValues(updated)
+                      onChange(updated)
+                    }}
+                  />
+                  <div className="flex-1">
+                    <div className="font-mono text-base text-slate-300">Ask preferences if clarifying skipped</div>
+                    <div className="font-mono text-sm text-slate-500 mt-0.5">
+                      When you choose “no” for clarifying, still ask preference questions
+                    </div>
                   </div>
                 </label>
               </div>

@@ -1,22 +1,20 @@
 'use client'
 
 import React, { memo, useMemo, useCallback } from 'react'
-import type { TerminalLine, ClarifyingQuestion } from '@/lib/types'
+import type { TerminalLine, ClarifyingQuestion, Preferences } from '@/lib/types'
 import { ROLE } from '@/lib/constants'
 import { textButtonClass } from './styles'
 
 export type TerminalOutputAreaProps = {
   lines: TerminalLine[]
   editablePrompt: string | null
-  approvedPrompt: string | null
+  promptForLinks?: string | null
   awaitingQuestionConsent: boolean
   consentSelectedIndex: number | null
   answeringQuestions: boolean
   currentClarifyingQuestion: ClarifyingQuestion | null
   clarifyingSelectedOptionIndex: number | null
   editablePromptRef: React.RefObject<HTMLTextAreaElement | null>
-  isPromptEditable: boolean
-  isPromptFinalized: boolean
   scrollRef: React.RefObject<HTMLDivElement | null>
   inputRef: React.RefObject<HTMLTextAreaElement | null>
   clarifyingAnswersCount: number
@@ -27,8 +25,17 @@ export type TerminalOutputAreaProps = {
   onRevise: () => void
   onEditableChange: (text: string) => void
   onCopyEditable: () => void
-  onEditClick: () => void
-  onApproveClick: () => void
+  onStartNewConversation: () => void
+  onLike?: () => void
+  onDislike?: () => void
+  likeState?: 'none' | 'liked' | 'disliked'
+  isAskingPreferenceQuestions?: boolean
+  currentPreferenceQuestionKey?: keyof Preferences | null
+  preferenceSelectedOptionIndex?: number | null
+  onPreferenceOptionClick?: (index: number) => void
+  getPreferenceOptions?: (key: keyof Preferences) => Array<{ id: string; label: string }>
+  getPreferenceQuestionText?: (key: keyof Preferences) => string
+  getPreferencesToAsk?: () => Array<keyof Preferences>
 }
 
 /**
@@ -120,6 +127,62 @@ const ConsentButtons = memo(function ConsentButtons({
 })
 
 /**
+ * Memoized preference question options
+ */
+const PreferenceOptions = memo(function PreferenceOptions({
+  questionText,
+  options,
+  selectedOptionIndex,
+  currentIndex,
+  totalCount,
+  onOptionClick,
+}: {
+  questionText: string
+  options: Array<{ id: string; label: string }>
+  selectedOptionIndex: number | null
+  currentIndex: number
+  totalCount: number
+  onOptionClick: (index: number) => void
+}) {
+  if (options.length === 0) return null
+
+  return (
+    <div className="mt-6 border-t border-slate-800 pt-4 text-[14px] text-slate-300 space-y-2">
+      <div className="text-[15px] text-slate-50 font-mono leading-relaxed">
+        Preference {currentIndex + 1}/{totalCount}: {questionText}
+      </div>
+      <div className="text-[13px] uppercase tracking-wide text-slate-500">
+        Choose an option (or answer in your own words)
+      </div>
+      <div className="flex flex-col gap-1">
+        {options.map((opt, index) => {
+          const isSelected = index === selectedOptionIndex
+          return (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => onOptionClick(index)}
+              className="cursor-pointer group flex w-full items-start gap-2 rounded-md px-2 py-1 text-left text-[14px] text-slate-300"
+            >
+              <span className="mt-0.5 text-[13px] text-slate-500">{opt.id})</span>
+              <span
+                className={`font-mono text-[14px] ${
+                  isSelected
+                    ? 'text-slate-50 underline underline-offset-4'
+                    : 'text-slate-100 group-hover:underline group-hover:underline-offset-4'
+                }`}
+              >
+                {opt.label}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+})
+
+/**
  * Memoized clarifying question options
  */
 const ClarifyingOptions = memo(function ClarifyingOptions({
@@ -184,26 +247,18 @@ const ClarifyingOptions = memo(function ClarifyingOptions({
  */
 const EditablePromptSection = memo(function EditablePromptSection({
   editablePrompt,
-  approvedPrompt,
   editablePromptRef,
-  isPromptEditable,
-  isPromptFinalized,
   onRevise,
-  onApproveClick,
   onCopyEditable,
-  onEditClick,
   onEditableChange,
+  onStartNewConversation,
 }: {
   editablePrompt: string
-  approvedPrompt: string | null
   editablePromptRef: React.RefObject<HTMLTextAreaElement | null>
-  isPromptEditable: boolean
-  isPromptFinalized: boolean
   onRevise: () => void
-  onApproveClick: () => void
   onCopyEditable: () => void
-  onEditClick: () => void
   onEditableChange: (text: string) => void
+  onStartNewConversation: () => void
 }) {
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -218,44 +273,29 @@ const EditablePromptSection = memo(function EditablePromptSection({
   return (
     <div className="mt-6 border-t border-slate-800 pt-4 space-y-2">
       <div className="mb-1 flex items-center justify-between text-[13px] uppercase tracking-wide text-slate-500">
-        <span>{isPromptEditable ? 'Editable prompt' : 'Generated prompt'}</span>
+        <span>Editable prompt</span>
         <div className="flex items-center gap-2">
           <button type="button" onClick={onRevise} className={textButtonClass}>
             Revise task &amp; answers
           </button>
-          {!isPromptFinalized && (
-            <>
-              <button type="button" onClick={onApproveClick} className={textButtonClass}>
-                Approve &amp; copy
-              </button>
-              {isPromptEditable ? (
-                <button type="button" onClick={onCopyEditable} className={textButtonClass}>
-                  Copy
-                </button>
-              ) : (
-                <button type="button" onClick={onEditClick} className={textButtonClass}>
-                  Edit
-                </button>
-              )}
-            </>
-          )}
-          {isPromptFinalized && (
-            <span className="text-[13px] uppercase tracking-wide text-emerald-400">Approved — still editable</span>
-          )}
+          <button type="button" onClick={onCopyEditable} className={textButtonClass}>
+            Copy
+          </button>
+          <button type="button" onClick={onStartNewConversation} className={textButtonClass}>
+            Start new conversation
+          </button>
         </div>
       </div>
       <div className="flex items-start">
         <span className="pr-1 text-zinc-500" />
         <textarea
-          ref={isPromptEditable ? editablePromptRef : undefined}
+          ref={editablePromptRef}
           value={editablePrompt}
-          onChange={isPromptEditable ? (e) => onEditableChange(e.target.value) : undefined}
+          onChange={(e) => onEditableChange(e.target.value)}
           onKeyDown={handleKeyDown}
-          readOnly={!isPromptEditable}
           className="terminal-input w-full min-h-50 resize-none overflow-hidden bg-transparent px-0 py-0 text-[15px] leading-relaxed text-slate-50 outline-none font-mono"
         />
       </div>
-      {isPromptFinalized && approvedPrompt && <ApprovedPromptLinks prompt={approvedPrompt} />}
     </div>
   )
 })
@@ -321,15 +361,13 @@ const ApprovedPromptLinks = memo(function ApprovedPromptLinks({ prompt }: { prom
 export const TerminalOutputArea = memo(function TerminalOutputArea({
   lines,
   editablePrompt,
-  approvedPrompt,
+  promptForLinks = null,
   awaitingQuestionConsent,
   consentSelectedIndex,
   answeringQuestions,
   currentClarifyingQuestion,
   clarifyingSelectedOptionIndex,
   editablePromptRef,
-  isPromptEditable,
-  isPromptFinalized,
   scrollRef,
   inputRef,
   clarifyingAnswersCount,
@@ -340,8 +378,17 @@ export const TerminalOutputArea = memo(function TerminalOutputArea({
   onRevise,
   onEditableChange,
   onCopyEditable,
-  onEditClick,
-  onApproveClick,
+  onStartNewConversation,
+  onLike,
+  onDislike,
+  likeState = 'none',
+  isAskingPreferenceQuestions = false,
+  currentPreferenceQuestionKey = null,
+  preferenceSelectedOptionIndex = null,
+  onPreferenceOptionClick,
+  getPreferenceOptions,
+  getPreferenceQuestionText,
+  getPreferencesToAsk,
 }: TerminalOutputAreaProps) {
   // Memoize the rendered lines to prevent recalculation on every render
   const renderedLines = useMemo(
@@ -355,7 +402,7 @@ export const TerminalOutputArea = memo(function TerminalOutputArea({
   return (
     <div
       ref={scrollRef}
-      className="terminal-scroll flex-1 space-y-2 overflow-y-auto px-3 pt-3 pb-4 text-[15px] leading-relaxed text-slate-200 font-mono"
+      className="terminal-scroll relative flex-1 space-y-2 overflow-y-auto px-3 pt-3 pb-4 text-[15px] leading-relaxed text-slate-200 font-mono"
     >
       {renderedLines}
 
@@ -373,19 +420,78 @@ export const TerminalOutputArea = memo(function TerminalOutputArea({
         />
       )}
 
+      {isAskingPreferenceQuestions &&
+        currentPreferenceQuestionKey &&
+        getPreferenceOptions &&
+        getPreferenceQuestionText &&
+        getPreferencesToAsk &&
+        onPreferenceOptionClick &&
+        (() => {
+          const options = getPreferenceOptions(currentPreferenceQuestionKey)
+          const prefsToAsk = getPreferencesToAsk()
+          const currentIndex = prefsToAsk.indexOf(currentPreferenceQuestionKey)
+          if (options.length > 0) {
+            return (
+              <PreferenceOptions
+                questionText={getPreferenceQuestionText(currentPreferenceQuestionKey)}
+                options={options}
+                selectedOptionIndex={preferenceSelectedOptionIndex ?? null}
+                currentIndex={currentIndex}
+                totalCount={prefsToAsk.length}
+                onOptionClick={onPreferenceOptionClick}
+              />
+            )
+          }
+          return null
+        })()}
+
       {editablePrompt !== null && (
         <EditablePromptSection
           editablePrompt={editablePrompt}
-          approvedPrompt={approvedPrompt}
           editablePromptRef={editablePromptRef}
-          isPromptEditable={isPromptEditable}
-          isPromptFinalized={isPromptFinalized}
           onRevise={onRevise}
-          onApproveClick={onApproveClick}
           onCopyEditable={onCopyEditable}
-          onEditClick={onEditClick}
           onEditableChange={onEditableChange}
+          onStartNewConversation={onStartNewConversation}
         />
+      )}
+
+      {promptForLinks && (
+        <div className="mt-4 flex items-end justify-between gap-4">
+          <ApprovedPromptLinks prompt={promptForLinks} />
+          {(onLike || onDislike) && (
+            <div className="flex gap-2 pb-1">
+              {onLike && (
+                <button
+                  type="button"
+                  disabled={likeState === 'liked'}
+                  onClick={likeState === 'liked' ? undefined : onLike}
+                  className={`${textButtonClass} text-[20px] ${
+                    likeState === 'liked' ? 'text-emerald-300 cursor-not-allowed opacity-60' : ''
+                  }`}
+                  aria-label="Like prompt"
+                  title="Like prompt"
+                >
+                  👍
+                </button>
+              )}
+              {onDislike && (
+                <button
+                  type="button"
+                  disabled={likeState === 'disliked'}
+                  onClick={likeState === 'disliked' ? undefined : onDislike}
+                  className={`${textButtonClass} text-[20px] ${
+                    likeState === 'disliked' ? 'text-rose-300 cursor-not-allowed opacity-60' : ''
+                  }`}
+                  aria-label="Dislike prompt"
+                  title="Dislike prompt"
+                >
+                  👎
+                </button>
+              )}
+            </div>
+          )}
+        </div>
       )}
 
       {!editablePrompt && <div className="min-h-50" aria-hidden />}

@@ -121,6 +121,7 @@ function mapPreferences(row?: PreferenceRow | null): Preferences {
     personaHints: coerceString(row.persona_hints),
     uiDefaults: coerceObject(row.ui_defaults),
     sharingLinks: coerceObject(row.sharing_links),
+    doNotAskAgain: coerceObject(row.do_not_ask_again),
   }
 }
 
@@ -168,7 +169,7 @@ export async function loadUserPreferences(): Promise<{ preferences: Preferences;
   const { data, error } = await supabase
     .from('user_preferences')
     .select(
-      'tone, audience, domain, default_model, temperature, style_guidelines, output_format, language, depth, citation_preference, persona_hints, ui_defaults, sharing_links'
+      'tone, audience, domain, default_model, temperature, style_guidelines, output_format, language, depth, citation_preference, persona_hints, ui_defaults, sharing_links, do_not_ask_again'
     )
     .maybeSingle()
 
