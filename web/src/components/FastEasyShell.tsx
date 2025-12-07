@@ -1502,8 +1502,6 @@ export function FastEasyShell({
       <UserManagementModal
         open={isUserManagementOpen}
         user={user}
-        preferences={preferences}
-        preferenceSource={preferenceSource}
         onClose={() => {
           setIsUserManagementOpen(false)
           setIsPreferencesOpen(false)

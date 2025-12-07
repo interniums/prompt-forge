@@ -3,14 +3,16 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { TOAST_DURATION_MS } from '@/lib/constants'
 
+type UseToastReturn = {
+  message: string | null
+  showToast: (message: string) => void
+  hideToast: () => void
+}
+
 /**
  * A simple toast hook for displaying temporary messages.
- *
- * @returns {Object} Toast state and controls
- * @returns {string | null} message - Current toast message or null
- * @returns {Function} showToast - Function to display a toast message
  */
-export function useToast(duration = TOAST_DURATION_MS) {
+export function useToast(duration = TOAST_DURATION_MS): UseToastReturn {
   const [message, setMessage] = useState<string | null>(null)
   const timeoutRef = useRef<number | null>(null)
 

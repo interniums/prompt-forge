@@ -261,7 +261,11 @@ const EditablePromptSection = memo(function EditablePromptSection({
 })
 
 const ApprovedPromptLinks = memo(function ApprovedPromptLinks({ prompt }: { prompt: string }) {
-  const providers = useMemo(() => {
+  type PromptProvider =
+    | { id: string; label: string; href: string; action?: undefined; hint?: undefined }
+    | { id: string; label: string; href?: undefined; action: () => void; hint?: string }
+
+  const providers: PromptProvider[] = useMemo(() => {
     const encoded = encodeURIComponent(prompt)
     return [
       { id: 'chatgpt', label: 'ChatGPT', href: `https://chatgpt.com/?q=${encoded}` },
@@ -282,7 +286,17 @@ const ApprovedPromptLinks = memo(function ApprovedPromptLinks({ prompt }: { prom
       </div>
       <div className="flex flex-wrap gap-3">
         {providers.map((provider) =>
-          provider.href ? (
+          'action' in provider ? (
+            <button
+              key={provider.id}
+              type="button"
+              onClick={provider.action}
+              className="cursor-pointer bg-transparent text-[13px] text-slate-100 underline-offset-4 hover:underline"
+              title={provider.hint ?? 'Copies prompt, then opens in new tab'}
+            >
+              {provider.label}
+            </button>
+          ) : (
             <a
               key={provider.id}
               href={provider.href}
@@ -293,16 +307,6 @@ const ApprovedPromptLinks = memo(function ApprovedPromptLinks({ prompt }: { prom
             >
               {provider.label}
             </a>
-          ) : (
-            <button
-              key={provider.id}
-              type="button"
-              onClick={provider.action}
-              className="cursor-pointer bg-transparent text-[13px] text-slate-100 underline-offset-4 hover:underline"
-              title={provider.hint ?? 'Copies prompt, then opens in new tab'}
-            >
-              {provider.label}
-            </button>
           )
         )}
       </div>

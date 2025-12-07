@@ -1,13 +1,11 @@
 'use client'
 
 import React from 'react'
-import type { UserIdentity, Preferences, PreferenceSource } from '@/lib/types'
+import type { UserIdentity } from '@/lib/types'
 
 type UserManagementModalProps = {
   open: boolean
   user: UserIdentity | null
-  preferences: Preferences
-  preferenceSource: PreferenceSource
   onClose: () => void
   onOpenPreferences: () => void
   onSignIn: () => void
@@ -17,8 +15,6 @@ type UserManagementModalProps = {
 export function UserManagementModal({
   open,
   user,
-  preferences,
-  preferenceSource,
   onClose,
   onOpenPreferences,
   onSignIn,

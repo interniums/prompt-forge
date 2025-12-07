@@ -1,6 +1,5 @@
 'use client'
 
-import React from 'react'
 import { textButtonClass } from './styles'
 
 export type TerminalChromeButtonsProps = {

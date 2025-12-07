@@ -1,4 +1,4 @@
-import { redirect } from 'next/navigation'
+
 import { FastEasyShell } from '@/components/FastEasyShell'
 import { loadSessionState } from '../../session'
 import { ROLE, MESSAGE } from '@/lib/constants'

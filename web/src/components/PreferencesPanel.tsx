@@ -6,13 +6,36 @@ import {
   OUTPUT_FORMAT_OPTIONS,
   DEPTH_OPTIONS,
   CITATION_OPTIONS,
-  LANGUAGE_OPTIONS,
   TONE_OPTIONS,
   AUDIENCE_OPTIONS,
 } from '@/lib/constants'
 import type { Preferences, PreferenceSource, UserIdentity } from '@/lib/types'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
+
+type CheckedState = boolean | 'indeterminate'
+
+type ClearButtonProps = {
+  onClick: () => void
+  show?: boolean
+  rightOffset?: string
+}
+
+const ClearButton = ({ onClick, show = true, rightOffset = 'right-2' }: ClearButtonProps) => {
+  if (!show) return null
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`absolute ${rightOffset} top-1/2 -translate-y-1/2 flex items-center justify-center w-5 h-5 rounded hover:bg-slate-700 text-slate-400 hover:text-slate-100 transition-colors z-10`}
+      aria-label="Clear"
+    >
+      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+      </svg>
+    </button>
+  )
+}
 
 type PreferencesPanelProps = {
   open: boolean
@@ -102,6 +125,21 @@ export function PreferencesPanel({
     debouncedOnChange(updated)
   }
 
+  const clearPreference = useCallback(
+    (key: keyof Preferences) => {
+      setLocalValues((prev) => {
+        const updated =
+          key === 'temperature' ? { ...prev, temperature: null } : ({ ...prev, [key]: undefined } as Preferences)
+        if (key === 'temperature') {
+          setTemperatureInput('')
+        }
+        debouncedOnChange(updated)
+        return updated
+      })
+    },
+    [debouncedOnChange]
+  )
+
   const handleDoNotAskAgainChange = (key: keyof NonNullable<Preferences['doNotAskAgain']>) => (checked: boolean) => {
     const updatedDoNotAskAgain = { ...doNotAskAgain, [key]: checked }
     const updated = { ...localValues, doNotAskAgain: updatedDoNotAskAgain }
@@ -177,80 +215,95 @@ export function PreferencesPanel({
             <h3 className="font-mono text-lg font-semibold text-slate-200 mb-4">Basic Preferences</h3>
             <div className="grid grid-cols-1 gap-x-6 gap-y-5 md:grid-cols-2">
               <div className="space-y-2">
-                <div className="flex items-start justify-between gap-3 min-h-12">
-                  <div className="flex-1">
+                <div className="flex items-start gap-3 h-18">
+                  <div className="flex-1 min-w-0">
                     <span className="block font-mono text-base font-medium text-slate-300">Tone</span>
                     <span className="block font-mono text-sm text-slate-500">Writing style and voice for prompts</span>
                   </div>
-                  <label className="mt-4 flex items-center gap-1.5 text-sm text-slate-500 whitespace-nowrap cursor-pointer">
-                    <Checkbox
-                      checked={doNotAskAgain.tone === false}
-                      onCheckedChange={(checked) => {
-                        handleDoNotAskAgainChange('tone')(checked === false)
-                      }}
-                    />
-                    <span className="font-mono">Ask every time</span>
-                  </label>
+                  <div className="flex items-center gap-3 shrink-0 w-[140px] justify-end">
+                    <label className="flex items-center gap-1.5 text-sm text-slate-500 whitespace-nowrap cursor-pointer">
+                      <Checkbox
+                        checked={doNotAskAgain.tone === false}
+                        onCheckedChange={(checked: CheckedState) => {
+                          handleDoNotAskAgainChange('tone')(checked === false)
+                        }}
+                      />
+                      <span className="font-mono">Ask every time</span>
+                    </label>
+                  </div>
                 </div>
-                <input
-                  type="text"
-                  value={localValues.tone ?? ''}
-                  onChange={handleTextChange('tone')}
-                  placeholder={`e.g., ${Array.from(TONE_OPTIONS).join(', ')}`}
-                  className="w-full font-mono bg-[#050608] border border-slate-800 rounded-md px-3 py-2.5 text-base text-slate-100 placeholder-slate-600 focus:border-slate-600 focus:text-slate-50 focus:outline-none"
-                />
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={localValues.tone ?? ''}
+                    onChange={handleTextChange('tone')}
+                    placeholder={`e.g., ${Array.from(TONE_OPTIONS).join(', ')}`}
+                    className="w-full font-mono bg-[#0b1016] border border-slate-700 rounded-md px-3 py-2.5 pr-9 text-base text-slate-100 placeholder-slate-500 focus:border-slate-500 focus:text-slate-50 focus:outline-none"
+                  />
+                  <ClearButton onClick={() => clearPreference('tone')} show={!!localValues.tone} />
+                </div>
               </div>
 
               <div className="space-y-2">
-                <div className="flex items-start justify-between gap-3 min-h-12">
-                  <div className="flex-1">
+                <div className="flex items-start gap-3 h-18">
+                  <div className="flex-1 min-w-0">
                     <span className="block font-mono text-base font-medium text-slate-300">Audience</span>
                     <span className="block font-mono text-sm text-slate-500">
                       Target readers or users of the content
                     </span>
                   </div>
-                  <label className="mt-4 flex items-center gap-1.5 text-sm text-slate-500 whitespace-nowrap cursor-pointer">
-                    <Checkbox
-                      checked={doNotAskAgain.audience === false}
-                      onCheckedChange={(checked) => {
-                        handleDoNotAskAgainChange('audience')(checked === false)
-                      }}
-                    />
-                    <span className="font-mono">Ask every time</span>
-                  </label>
+                  <div className="flex items-center gap-3 shrink-0 w-[140px] justify-end">
+                    <label className="flex items-center gap-1.5 text-sm text-slate-500 whitespace-nowrap cursor-pointer">
+                      <Checkbox
+                        checked={doNotAskAgain.audience === false}
+                        onCheckedChange={(checked: CheckedState) => {
+                          handleDoNotAskAgainChange('audience')(checked === false)
+                        }}
+                      />
+                      <span className="font-mono">Ask every time</span>
+                    </label>
+                  </div>
                 </div>
-                <input
-                  type="text"
-                  value={localValues.audience ?? ''}
-                  onChange={handleTextChange('audience')}
-                  placeholder={`e.g., ${Array.from(AUDIENCE_OPTIONS).join(', ')}`}
-                  className="w-full font-mono bg-[#050608] border border-slate-800 rounded-md px-3 py-2.5 text-base text-slate-100 placeholder-slate-600 focus:border-slate-600 focus:text-slate-50 focus:outline-none"
-                />
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={localValues.audience ?? ''}
+                    onChange={handleTextChange('audience')}
+                    placeholder={`e.g., ${Array.from(AUDIENCE_OPTIONS).join(', ')}`}
+                    className="w-full font-mono bg-[#0b1016] border border-slate-700 rounded-md px-3 py-2.5 pr-9 text-base text-slate-100 placeholder-slate-500 focus:border-slate-500 focus:text-slate-50 focus:outline-none"
+                  />
+                  <ClearButton onClick={() => clearPreference('audience')} show={!!localValues.audience} />
+                </div>
               </div>
 
               <div className="space-y-2">
-                <div className="flex items-start justify-between gap-3 min-h-12">
-                  <div className="flex-1">
+                <div className="flex items-start gap-3 h-18">
+                  <div className="flex-1 min-w-0">
                     <span className="block font-mono text-base font-medium text-slate-300">Domain</span>
                     <span className="block font-mono text-sm text-slate-500">Industry or field of work context</span>
                   </div>
-                  <label className="mt-4 flex items-center gap-1.5 text-sm text-slate-500 whitespace-nowrap cursor-pointer">
-                    <Checkbox
-                      checked={doNotAskAgain.domain === false}
-                      onCheckedChange={(checked) => {
-                        handleDoNotAskAgainChange('domain')(checked === false)
-                      }}
-                    />
-                    <span className="font-mono">Ask every time</span>
-                  </label>
+                  <div className="flex items-center gap-3 shrink-0 w-[140px] justify-end">
+                    <label className="flex items-center gap-1.5 text-sm text-slate-500 whitespace-nowrap cursor-pointer">
+                      <Checkbox
+                        checked={doNotAskAgain.domain === false}
+                        onCheckedChange={(checked: CheckedState) => {
+                          handleDoNotAskAgainChange('domain')(checked === false)
+                        }}
+                      />
+                      <span className="font-mono">Ask every time</span>
+                    </label>
+                  </div>
                 </div>
-                <input
-                  type="text"
-                  value={localValues.domain ?? ''}
-                  onChange={handleTextChange('domain')}
-                  placeholder="e.g., marketing, product, engineering"
-                  className="w-full font-mono bg-[#050608] border border-slate-800 rounded-md px-3 py-2.5 text-base text-slate-100 placeholder-slate-600 focus:border-slate-600 focus:text-slate-50 focus:outline-none"
-                />
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={localValues.domain ?? ''}
+                    onChange={handleTextChange('domain')}
+                    placeholder="e.g., marketing, product, engineering"
+                    className="w-full font-mono bg-[#0b1016] border border-slate-700 rounded-md px-3 py-2.5 pr-9 text-base text-slate-100 placeholder-slate-500 focus:border-slate-500 focus:text-slate-50 focus:outline-none"
+                  />
+                  <ClearButton onClick={() => clearPreference('domain')} show={!!localValues.domain} />
+                </div>
               </div>
             </div>
           </div>
@@ -260,70 +313,85 @@ export function PreferencesPanel({
             <h3 className="font-mono text-lg font-semibold text-slate-200 mb-4">Model Configuration</h3>
             <div className="grid grid-cols-1 gap-x-6 gap-y-5 md:grid-cols-2">
               <div className="space-y-2">
-                <div className="flex items-start justify-between gap-3 min-h-12">
-                  <div className="flex-1">
+                <div className="flex items-start gap-3 h-18">
+                  <div className="flex-1 min-w-0">
                     <span className="block font-mono text-base font-medium text-slate-300">Target Model</span>
                     <span className="block font-mono text-sm text-slate-500">AI model to optimize prompts for</span>
                   </div>
-                  <label className="mt-4 flex items-center gap-1.5 text-sm text-slate-500 whitespace-nowrap cursor-pointer">
-                    <Checkbox
-                      checked={doNotAskAgain.defaultModel === false}
-                      onCheckedChange={(checked) => {
-                        handleDoNotAskAgainChange('defaultModel')(checked === false)
-                      }}
-                    />
-                    <span className="font-mono">Ask every time</span>
-                  </label>
+                  <div className="flex items-center gap-3 shrink-0 w-[140px] justify-end">
+                    <label className="flex items-center gap-1.5 text-sm text-slate-500 whitespace-nowrap cursor-pointer">
+                      <Checkbox
+                        checked={doNotAskAgain.defaultModel === false}
+                        onCheckedChange={(checked: CheckedState) => {
+                          handleDoNotAskAgainChange('defaultModel')(checked === false)
+                        }}
+                      />
+                      <span className="font-mono">Ask every time</span>
+                    </label>
+                  </div>
                 </div>
-                <Select
-                  value={localValues.defaultModel ?? ''}
-                  onValueChange={(value) => {
-                    const updated = { ...localValues, defaultModel: value || undefined }
-                    setLocalValues(updated)
-                    debouncedOnChange(updated)
-                  }}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a model" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {MODEL_OPTIONS.map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="relative">
+                  <Select
+                    value={localValues.defaultModel ?? ''}
+                    onValueChange={(value: string) => {
+                      const updated = { ...localValues, defaultModel: value || undefined }
+                      setLocalValues(updated)
+                      debouncedOnChange(updated)
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a model" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {MODEL_OPTIONS.map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <ClearButton
+                    onClick={() => clearPreference('defaultModel')}
+                    show={!!localValues.defaultModel}
+                    rightOffset="right-8"
+                  />
+                </div>
               </div>
 
               <div className="space-y-2">
-                <div className="flex items-start justify-between gap-3 min-h-12">
-                  <div className="flex-1">
+                <div className="flex items-start gap-3 h-18">
+                  <div className="flex-1 min-w-0 overflow-hidden">
                     <span className="block font-mono text-base font-medium text-slate-300">Temperature</span>
-                    <span className="block font-mono text-sm text-slate-500">
-                      Creativity level (0=focused, 1=creative)
-                    </span>
+                    <div className="font-mono text-sm text-slate-500 mt-0.5 leading-[1.2]">
+                      <div className="leading-none">Creativity level</div>
+                      <div className="leading-none text-xs">0=focused, 1=creative</div>
+                    </div>
                   </div>
-                  <label className="mt-4 flex items-center gap-1.5 text-sm text-slate-500 whitespace-nowrap cursor-pointer">
-                    <Checkbox
-                      checked={doNotAskAgain.temperature === false}
-                      onCheckedChange={(checked) => {
-                        handleDoNotAskAgainChange('temperature')(checked === false)
-                      }}
-                    />
-                    <span className="font-mono">Ask every time</span>
-                  </label>
+                  <div className="flex items-center gap-3 shrink-0 w-[140px] justify-end">
+                    <label className="flex items-center gap-1.5 text-sm text-slate-500 whitespace-nowrap cursor-pointer">
+                      <Checkbox
+                        checked={doNotAskAgain.temperature === false}
+                        onCheckedChange={(checked: CheckedState) => {
+                          handleDoNotAskAgainChange('temperature')(checked === false)
+                        }}
+                      />
+                      <span className="font-mono">Ask every time</span>
+                    </label>
+                  </div>
                 </div>
-                <input
-                  type="number"
-                  min="0"
-                  max="1"
-                  step="0.1"
-                  value={temperatureInput}
-                  onChange={handleTemperatureChange}
-                  placeholder="0.0 - 1.0"
-                  className="w-full font-mono bg-[#050608] border border-slate-800 rounded-md px-3 py-2.5 text-base text-slate-100 placeholder-slate-600 focus:border-slate-600 focus:text-slate-50 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                />
+                <div className="relative">
+                  <input
+                    type="number"
+                    min="0"
+                    max="1"
+                    step="0.1"
+                    value={temperatureInput}
+                    onChange={handleTemperatureChange}
+                    placeholder="0.0 - 1.0"
+                    className="w-full font-mono bg-[#0b1016] border border-slate-700 rounded-md px-3 py-2.5 pr-9 text-base text-slate-100 placeholder-slate-500 focus:border-slate-500 focus:text-slate-50 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  />
+                  <ClearButton onClick={() => clearPreference('temperature')} show={!!temperatureInput} />
+                </div>
               </div>
             </div>
           </div>
@@ -333,151 +401,171 @@ export function PreferencesPanel({
             <h3 className="font-mono text-lg font-semibold text-slate-200 mb-4">Output Settings</h3>
             <div className="grid grid-cols-1 gap-x-6 gap-y-5 md:grid-cols-2">
               <div className="space-y-2">
-                <div className="flex items-start justify-between gap-3 min-h-12">
-                  <div className="flex-1">
+                <div className="flex items-start gap-3 h-18">
+                  <div className="flex-1 min-w-0">
                     <span className="block font-mono text-base font-medium text-slate-300">Output Format</span>
                     <span className="block font-mono text-sm text-slate-500">Preferred structure for responses</span>
                   </div>
-                  <label className="mt-4 flex items-center gap-1.5 text-sm text-slate-500 whitespace-nowrap cursor-pointer">
-                    <Checkbox
-                      checked={doNotAskAgain.outputFormat === false}
-                      onCheckedChange={(checked) => {
-                        handleDoNotAskAgainChange('outputFormat')(checked === false)
-                      }}
-                    />
-                    <span className="font-mono">Ask every time</span>
-                  </label>
+                  <div className="flex items-center gap-3 shrink-0 w-[140px] justify-end">
+                    <label className="flex items-center gap-1.5 text-sm text-slate-500 whitespace-nowrap cursor-pointer">
+                      <Checkbox
+                        checked={doNotAskAgain.outputFormat === false}
+                        onCheckedChange={(checked: CheckedState) => {
+                          handleDoNotAskAgainChange('outputFormat')(checked === false)
+                        }}
+                      />
+                      <span className="font-mono">Ask every time</span>
+                    </label>
+                  </div>
                 </div>
-                <Select
-                  value={localValues.outputFormat ?? ''}
-                  onValueChange={(value) => {
-                    const updated = { ...localValues, outputFormat: value || undefined }
-                    setLocalValues(updated)
-                    debouncedOnChange(updated)
-                  }}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="No preference" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {OUTPUT_FORMAT_OPTIONS.map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="relative">
+                  <Select
+                    value={localValues.outputFormat ?? ''}
+                    onValueChange={(value: string) => {
+                      const updated = { ...localValues, outputFormat: value || undefined }
+                      setLocalValues(updated)
+                      debouncedOnChange(updated)
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="No preference" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {OUTPUT_FORMAT_OPTIONS.map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <ClearButton
+                    onClick={() => clearPreference('outputFormat')}
+                    show={!!localValues.outputFormat}
+                    rightOffset="right-8"
+                  />
+                </div>
               </div>
 
               <div className="space-y-2">
-                <div className="flex items-start justify-between gap-3 min-h-12">
-                  <div className="flex-1">
+                <div className="flex items-start gap-3 h-18">
+                  <div className="flex-1 min-w-0">
                     <span className="block font-mono text-base font-medium text-slate-300">Language</span>
                     <span className="block font-mono text-sm text-slate-500">Primary language for output</span>
                   </div>
-                  <label className="mt-4 flex items-center gap-1.5 text-sm text-slate-500 whitespace-nowrap cursor-pointer">
-                    <Checkbox
-                      checked={doNotAskAgain.language === false}
-                      onCheckedChange={(checked) => {
-                        handleDoNotAskAgainChange('language')(checked === false)
-                      }}
-                    />
-                    <span className="font-mono">Ask every time</span>
-                  </label>
+                  <div className="flex items-center gap-3 shrink-0 w-[140px] justify-end">
+                    <label className="flex items-center gap-1.5 text-sm text-slate-500 whitespace-nowrap cursor-pointer">
+                      <Checkbox
+                        checked={doNotAskAgain.language === false}
+                        onCheckedChange={(checked: CheckedState) => {
+                          handleDoNotAskAgainChange('language')(checked === false)
+                        }}
+                      />
+                      <span className="font-mono">Ask every time</span>
+                    </label>
+                  </div>
                 </div>
-                <Select
-                  value={localValues.language ?? ''}
-                  onValueChange={(value) => {
-                    const updated = { ...localValues, language: value || undefined }
-                    setLocalValues(updated)
-                    debouncedOnChange(updated)
-                  }}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="No preference" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {LANGUAGE_OPTIONS.map((lang) => (
-                      <SelectItem key={lang} value={lang}>
-                        {lang}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={localValues.language ?? ''}
+                    onChange={handleTextChange('language')}
+                    placeholder="e.g., English, Spanish, Hindi"
+                    className="w-full font-mono bg-[#0b1016] border border-slate-700 rounded-md px-3 py-2.5 pr-9 text-base text-slate-100 placeholder-slate-500 focus:border-slate-500 focus:text-slate-50 focus:outline-none"
+                  />
+                  <ClearButton onClick={() => clearPreference('language')} show={!!localValues.language} />
+                </div>
               </div>
 
               <div className="space-y-2">
-                <div className="flex items-start justify-between gap-3 min-h-12">
-                  <div className="flex-1">
+                <div className="flex items-start gap-3 h-18">
+                  <div className="flex-1 min-w-0">
                     <span className="block font-mono text-base font-medium text-slate-300">Depth</span>
                     <span className="block font-mono text-sm text-slate-500">Level of detail in responses</span>
                   </div>
-                  <label className="mt-4 flex items-center gap-1.5 text-sm text-slate-500 whitespace-nowrap cursor-pointer">
-                    <Checkbox
-                      checked={doNotAskAgain.depth === false}
-                      onCheckedChange={(checked) => {
-                        handleDoNotAskAgainChange('depth')(checked === false)
-                      }}
-                    />
-                    <span className="font-mono">Ask every time</span>
-                  </label>
+                  <div className="flex items-center gap-3 shrink-0 w-[140px] justify-end">
+                    <label className="flex items-center gap-1.5 text-sm text-slate-500 whitespace-nowrap cursor-pointer">
+                      <Checkbox
+                        checked={doNotAskAgain.depth === false}
+                        onCheckedChange={(checked: CheckedState) => {
+                          handleDoNotAskAgainChange('depth')(checked === false)
+                        }}
+                      />
+                      <span className="font-mono">Ask every time</span>
+                    </label>
+                  </div>
                 </div>
-                <Select
-                  value={localValues.depth ?? ''}
-                  onValueChange={(value) => {
-                    const updated = { ...localValues, depth: value || undefined }
-                    setLocalValues(updated)
-                    debouncedOnChange(updated)
-                  }}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="No preference" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {DEPTH_OPTIONS.map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="relative">
+                  <Select
+                    value={localValues.depth ?? ''}
+                    onValueChange={(value: string) => {
+                      const updated = { ...localValues, depth: value || undefined }
+                      setLocalValues(updated)
+                      debouncedOnChange(updated)
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="No preference" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {DEPTH_OPTIONS.map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <ClearButton
+                    onClick={() => clearPreference('depth')}
+                    show={!!localValues.depth}
+                    rightOffset="right-8"
+                  />
+                </div>
               </div>
 
               <div className="space-y-2">
-                <div className="flex items-start justify-between gap-3 min-h-12">
-                  <div className="flex-1">
+                <div className="flex items-start gap-3 h-18">
+                  <div className="flex-1 min-w-0">
                     <span className="block font-mono text-base font-medium text-slate-300">Citations</span>
                     <span className="block font-mono text-sm text-slate-500">How to handle references and sources</span>
                   </div>
-                  <label className="mt-4 flex items-center gap-1.5 text-sm text-slate-500 whitespace-nowrap cursor-pointer">
-                    <Checkbox
-                      checked={doNotAskAgain.citationPreference === false}
-                      onCheckedChange={(checked) => {
-                        handleDoNotAskAgainChange('citationPreference')(checked === false)
-                      }}
-                    />
-                    <span className="font-mono">Ask every time</span>
-                  </label>
+                  <div className="flex items-center gap-3 shrink-0 w-[140px] justify-end">
+                    <label className="flex items-center gap-1.5 text-sm text-slate-500 whitespace-nowrap cursor-pointer">
+                      <Checkbox
+                        checked={doNotAskAgain.citationPreference === false}
+                        onCheckedChange={(checked: CheckedState) => {
+                          handleDoNotAskAgainChange('citationPreference')(checked === false)
+                        }}
+                      />
+                      <span className="font-mono">Ask every time</span>
+                    </label>
+                  </div>
                 </div>
-                <Select
-                  value={localValues.citationPreference ?? ''}
-                  onValueChange={(value) => {
-                    const updated = { ...localValues, citationPreference: value || undefined }
-                    setLocalValues(updated)
-                    debouncedOnChange(updated)
-                  }}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="No preference" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {CITATION_OPTIONS.map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="relative">
+                  <Select
+                    value={localValues.citationPreference ?? ''}
+                    onValueChange={(value: string) => {
+                      const updated = { ...localValues, citationPreference: value || undefined }
+                      setLocalValues(updated)
+                      debouncedOnChange(updated)
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="No preference" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {CITATION_OPTIONS.map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <ClearButton
+                    onClick={() => clearPreference('citationPreference')}
+                    show={!!localValues.citationPreference}
+                    rightOffset="right-8"
+                  />
+                </div>
               </div>
             </div>
           </div>
@@ -487,55 +575,68 @@ export function PreferencesPanel({
             <h3 className="font-mono text-lg font-semibold text-slate-200 mb-4">Advanced Settings</h3>
             <div className="grid grid-cols-1 gap-4">
               <div className="space-y-2">
-                <div className="flex items-start justify-between gap-3 min-h-12">
-                  <div className="flex-1">
+                <div className="flex items-start gap-3 h-18">
+                  <div className="flex-1 min-w-0">
                     <span className="block font-mono text-base font-medium text-slate-300">Style Guidelines</span>
                     <span className="block font-mono text-sm text-slate-500">
                       Custom instructions for formatting and structure
                     </span>
                   </div>
-                  <label className="mt-4 flex items-center gap-1.5 text-sm text-slate-500 whitespace-nowrap cursor-pointer">
-                    <Checkbox
-                      checked={doNotAskAgain.styleGuidelines === false}
-                      onCheckedChange={(checked) => {
-                        handleDoNotAskAgainChange('styleGuidelines')(checked === false)
-                      }}
-                    />
-                    <span className="font-mono">Ask every time</span>
-                  </label>
+                  <div className="flex items-center gap-3 shrink-0 w-[140px] justify-end">
+                    <label className="flex items-center gap-1.5 text-sm text-slate-500 whitespace-nowrap cursor-pointer">
+                      <Checkbox
+                        checked={doNotAskAgain.styleGuidelines === false}
+                        onCheckedChange={(checked: CheckedState) => {
+                          handleDoNotAskAgainChange('styleGuidelines')(checked === false)
+                        }}
+                      />
+                      <span className="font-mono">Ask every time</span>
+                    </label>
+                  </div>
                 </div>
-                <textarea
-                  value={localValues.styleGuidelines ?? ''}
-                  onChange={handleTextChange('styleGuidelines')}
-                  rows={3}
-                  placeholder="e.g., Always use bullet points, keep paragraphs under 3 sentences, use active voice"
-                  className="w-full font-mono bg-[#050608] border border-slate-800 rounded-md px-3 py-2.5 text-base text-slate-100 placeholder-slate-600 focus:border-slate-600 focus:text-slate-50 focus:outline-none resize-none"
-                />
+                <div className="relative">
+                  <textarea
+                    value={localValues.styleGuidelines ?? ''}
+                    onChange={handleTextChange('styleGuidelines')}
+                    rows={3}
+                    placeholder="e.g., Always use bullet points, keep paragraphs under 3 sentences, use active voice"
+                    className="w-full font-mono bg-[#0b1016] border border-slate-700 rounded-md px-3 py-2.5 pr-9 text-base text-slate-100 placeholder-slate-500 focus:border-slate-500 focus:text-slate-50 focus:outline-none resize-none"
+                  />
+                  <ClearButton
+                    onClick={() => clearPreference('styleGuidelines')}
+                    show={!!localValues.styleGuidelines}
+                  />
+                </div>
               </div>
 
               <div className="space-y-2">
-                <div className="flex items-start justify-between gap-3 min-h-12">
-                  <div className="flex-1">
+                <div className="flex items-start gap-3 h-18">
+                  <div className="flex-1 min-w-0">
                     <span className="block font-mono text-base font-medium text-slate-300">Persona Hints</span>
                     <span className="block font-mono text-sm text-slate-500">Voice, role, or character to emulate</span>
                   </div>
-                  <label className="mt-4 flex items-center gap-1.5 text-sm text-slate-500 whitespace-nowrap cursor-pointer">
-                    <Checkbox
-                      checked={doNotAskAgain.personaHints === false}
-                      onCheckedChange={(checked) => {
-                        handleDoNotAskAgainChange('personaHints')(checked === false)
-                      }}
-                    />
-                    <span className="font-mono">Ask every time</span>
-                  </label>
+                  <div className="flex items-center gap-3 shrink-0 w-[140px] justify-end">
+                    <label className="flex items-center gap-1.5 text-sm text-slate-500 whitespace-nowrap cursor-pointer">
+                      <Checkbox
+                        checked={doNotAskAgain.personaHints === false}
+                        onCheckedChange={(checked: CheckedState) => {
+                          handleDoNotAskAgainChange('personaHints')(checked === false)
+                        }}
+                      />
+                      <span className="font-mono">Ask every time</span>
+                    </label>
+                  </div>
                 </div>
-                <textarea
-                  value={localValues.personaHints ?? ''}
-                  onChange={handleTextChange('personaHints')}
-                  rows={3}
-                  placeholder="e.g., Write as a senior engineer, be helpful but concise, use technical terminology"
-                  className="w-full font-mono bg-[#050608] border border-slate-800 rounded-md px-3 py-2.5 text-base text-slate-100 placeholder-slate-600 focus:border-slate-600 focus:text-slate-50 focus:outline-none resize-none"
-                />
+                <div className="relative">
+                  <textarea
+                    value={localValues.personaHints ?? ''}
+                    onChange={handleTextChange('personaHints')}
+                    rows={3}
+                    placeholder="e.g., Write as a senior engineer, be helpful but concise, use technical terminology"
+                    className="w-full font-mono bg-[#0b1016] border border-slate-700 rounded-md px-3 py-2.5 pr-9 text-base text-slate-100 placeholder-slate-500 focus:border-slate-500 focus:text-slate-50 focus:outline-none resize-none"
+                  />
+                  <ClearButton onClick={() => clearPreference('personaHints')} show={!!localValues.personaHints} />
+                </div>
               </div>
             </div>
           </div>
@@ -543,12 +644,12 @@ export function PreferencesPanel({
           {/* UI & Behavior Settings */}
           <div className="mb-6">
             <h3 className="font-mono text-lg font-semibold text-slate-200 mb-4">UI & Behavior</h3>
-            <div className="grid grid-cols-1 gap-x-6 gap-y-5 md:grid-cols-2">
+            <div className="grid grid-cols-1 gap-x-6 gap-y-5 md:grid-cols-2 items-start">
               <div className="space-y-4">
-                <label className="flex items-start gap-3 cursor-pointer">
+                <label className="flex items-center gap-3 cursor-pointer">
                   <Checkbox
                     checked={Boolean(uiDefaults.autoCopyApproved)}
-                    onCheckedChange={(checked) => {
+                    onCheckedChange={(checked: CheckedState) => {
                       const updated = {
                         ...localValues,
                         uiDefaults: { ...uiDefaults, autoCopyApproved: checked === true },
@@ -556,17 +657,16 @@ export function PreferencesPanel({
                       setLocalValues(updated)
                       onChange(updated)
                     }}
-                    className="mt-1"
                   />
                   <div className="flex-1">
                     <div className="font-mono text-base text-slate-300">Auto-copy approved prompts</div>
                     <div className="font-mono text-sm text-slate-500 mt-0.5">Copy to clipboard when you approve</div>
                   </div>
                 </label>
-                <label className="flex items-start gap-3 cursor-pointer">
+                <label className="flex items-center gap-3 cursor-pointer">
                   <Checkbox
                     checked={Boolean(uiDefaults.showClarifying)}
-                    onCheckedChange={(checked) => {
+                    onCheckedChange={(checked: CheckedState) => {
                       const updated = {
                         ...localValues,
                         uiDefaults: { ...uiDefaults, showClarifying: checked === true },
@@ -574,7 +674,6 @@ export function PreferencesPanel({
                       setLocalValues(updated)
                       onChange(updated)
                     }}
-                    className="mt-1"
                   />
                   <div className="flex-1">
                     <div className="font-mono text-base text-slate-300">Ask clarifying questions</div>
@@ -584,10 +683,10 @@ export function PreferencesPanel({
               </div>
 
               <div className="space-y-4">
-                <label className="flex items-start gap-3 cursor-pointer">
+                <label className="flex items-center gap-3 cursor-pointer">
                   <Checkbox
                     checked={Boolean(sharingLinks.allowPrefillLinks)}
-                    onCheckedChange={(checked) => {
+                    onCheckedChange={(checked: CheckedState) => {
                       const updated = {
                         ...localValues,
                         sharingLinks: { ...sharingLinks, allowPrefillLinks: checked === true },
@@ -595,7 +694,6 @@ export function PreferencesPanel({
                       setLocalValues(updated)
                       onChange(updated)
                     }}
-                    className="mt-1"
                   />
                   <div className="flex-1">
                     <div className="font-mono text-base text-slate-300">Allow prefill links</div>
@@ -604,10 +702,10 @@ export function PreferencesPanel({
                     </div>
                   </div>
                 </label>
-                <label className="flex items-start gap-3 cursor-pointer">
+                <label className="flex items-center gap-3 cursor-pointer">
                   <Checkbox
                     checked={Boolean(sharingLinks.warnSensitive)}
-                    onCheckedChange={(checked) => {
+                    onCheckedChange={(checked: CheckedState) => {
                       const updated = {
                         ...localValues,
                         sharingLinks: { ...sharingLinks, warnSensitive: checked === true },
@@ -615,7 +713,6 @@ export function PreferencesPanel({
                       setLocalValues(updated)
                       onChange(updated)
                     }}
-                    className="mt-1"
                   />
                   <div className="flex-1">
                     <div className="font-mono text-base text-slate-300">Warn about sensitive data</div>
