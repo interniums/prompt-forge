@@ -10,32 +10,13 @@ import {
   AUDIENCE_OPTIONS,
 } from '@/lib/constants'
 import type { Preferences, PreferenceSource, UserIdentity } from '@/lib/types'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { ClearButton } from '@/features/preferences/ClearButton'
+import { PreferenceTextField } from '@/features/preferences/PreferenceTextField'
+import { PreferenceSelectField } from '@/features/preferences/PreferenceSelectField'
 
 type CheckedState = boolean | 'indeterminate'
-
-type ClearButtonProps = {
-  onClick: () => void
-  show?: boolean
-  rightOffset?: string
-}
-
-const ClearButton = ({ onClick, show = true, rightOffset = 'right-2' }: ClearButtonProps) => {
-  if (!show) return null
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`absolute ${rightOffset} top-1/2 -translate-y-1/2 flex items-center justify-center w-6 h-6 rounded hover:bg-slate-700 text-slate-400 hover:text-slate-100 transition-colors z-10 cursor-pointer`}
-      aria-label="Clear"
-    >
-      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-      </svg>
-    </button>
-  )
-}
 
 type PreferencesPanelProps = {
   open: boolean
@@ -214,12 +195,16 @@ export function PreferencesPanel({
           <div className="mb-10">
             <h3 className="font-mono text-lg font-semibold text-slate-200 mb-2">Basic Preferences</h3>
             <div className="grid grid-cols-1 gap-x-5 gap-y-3 xl:grid-cols-2">
-              <div className="space-y-2">
-                <div className="flex items-end gap-3 h-14">
-                  <div className="flex-1 min-w-0">
-                    <span className="block font-mono text-base font-medium text-slate-300">Tone</span>
-                    <span className="block font-mono text-sm text-slate-500">Writing style and voice for prompts</span>
-                  </div>
+              <PreferenceTextField
+                label="Tone"
+                description="Writing style and voice for prompts"
+                value={localValues.tone ?? ''}
+                placeholder={`e.g., ${Array.from(TONE_OPTIONS).join(', ')}`}
+                onChange={(val) =>
+                  handleTextChange('tone')({ target: { value: val } } as React.ChangeEvent<HTMLInputElement>)
+                }
+                onClear={() => clearPreference('tone')}
+                rightSlot={
                   <div className="flex items-center gap-3 shrink-0 w-[140px] justify-end">
                     <label className="flex items-center gap-1.5 text-sm text-slate-500 whitespace-nowrap cursor-pointer">
                       <Checkbox
@@ -231,27 +216,19 @@ export function PreferencesPanel({
                       <span className="font-mono">Ask every time</span>
                     </label>
                   </div>
-                </div>
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={localValues.tone ?? ''}
-                    onChange={handleTextChange('tone')}
-                    placeholder={`e.g., ${Array.from(TONE_OPTIONS).join(', ')}`}
-                    className="w-full font-mono bg-[#0b1016] border border-slate-700 rounded-md px-3 py-2.5 pr-16 text-base text-slate-100 placeholder-slate-500 shadow-[0_8px_18px_rgba(0,0,0,0.22)] focus:border-slate-500 focus:text-slate-50 focus:outline-none"
-                  />
-                  <ClearButton onClick={() => clearPreference('tone')} show={!!localValues.tone} />
-                </div>
-              </div>
+                }
+              />
 
-              <div className="space-y-2">
-                <div className="flex items-end gap-3 h-14">
-                  <div className="flex-1 min-w-0">
-                    <span className="block font-mono text-base font-medium text-slate-300">Audience</span>
-                    <span className="block font-mono text-sm text-slate-500">
-                      Target readers or users of the content
-                    </span>
-                  </div>
+              <PreferenceTextField
+                label="Audience"
+                description="Target readers or users of the content"
+                value={localValues.audience ?? ''}
+                placeholder={`e.g., ${Array.from(AUDIENCE_OPTIONS).join(', ')}`}
+                onChange={(val) =>
+                  handleTextChange('audience')({ target: { value: val } } as React.ChangeEvent<HTMLInputElement>)
+                }
+                onClear={() => clearPreference('audience')}
+                rightSlot={
                   <div className="flex items-center gap-3 shrink-0 w-[140px] justify-end">
                     <label className="flex items-center gap-1.5 text-sm text-slate-500 whitespace-nowrap cursor-pointer">
                       <Checkbox
@@ -263,47 +240,33 @@ export function PreferencesPanel({
                       <span className="font-mono">Ask every time</span>
                     </label>
                   </div>
-                </div>
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={localValues.audience ?? ''}
-                    onChange={handleTextChange('audience')}
-                    placeholder={`e.g., ${Array.from(AUDIENCE_OPTIONS).join(', ')}`}
-                    className="w-full font-mono bg-[#0b1016] border border-slate-700 rounded-md px-3 py-2.5 pr-16 text-base text-slate-100 placeholder-slate-500 shadow-[0_8px_18px_rgba(0,0,0,0.22)] focus:border-slate-500 focus:text-slate-50 focus:outline-none"
-                  />
-                  <ClearButton onClick={() => clearPreference('audience')} show={!!localValues.audience} />
-                </div>
-              </div>
+                }
+              />
 
-              <div className="space-y-2 md:col-span-2">
-                <div className="flex items-end gap-3 h-14">
-                  <div className="flex-1 min-w-0">
-                    <span className="block font-mono text-base font-medium text-slate-300">Domain</span>
-                    <span className="block font-mono text-sm text-slate-500">Industry or field of work context</span>
-                  </div>
-                  <div className="flex items-center gap-3 shrink-0 w-[140px] justify-end">
-                    <label className="flex items-center gap-1.5 text-sm text-slate-500 whitespace-nowrap cursor-pointer">
-                      <Checkbox
-                        checked={doNotAskAgain.domain === false}
-                        onCheckedChange={(checked: CheckedState) => {
-                          handleDoNotAskAgainChange('domain')(checked === false)
-                        }}
-                      />
-                      <span className="font-mono">Ask every time</span>
-                    </label>
-                  </div>
-                </div>
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={localValues.domain ?? ''}
-                    onChange={handleTextChange('domain')}
-                    placeholder="e.g., marketing, product, engineering"
-                    className="w-full font-mono bg-[#0b1016] border border-slate-700 rounded-md px-3 py-2.5 pr-16 text-base text-slate-100 placeholder-slate-500 shadow-[0_8px_18px_rgba(0,0,0,0.22)] focus:border-slate-500 focus:text-slate-50 focus:outline-none"
-                  />
-                  <ClearButton onClick={() => clearPreference('domain')} show={!!localValues.domain} />
-                </div>
+              <div className="md:col-span-2">
+                <PreferenceTextField
+                  label="Domain"
+                  description="Industry or field of work context"
+                  value={localValues.domain ?? ''}
+                  placeholder="e.g., marketing, product, engineering"
+                  onChange={(val) =>
+                    handleTextChange('domain')({ target: { value: val } } as React.ChangeEvent<HTMLInputElement>)
+                  }
+                  onClear={() => clearPreference('domain')}
+                  rightSlot={
+                    <div className="flex items-center gap-3 shrink-0 w-[140px] justify-end">
+                      <label className="flex items-center gap-1.5 text-sm text-slate-500 whitespace-nowrap cursor-pointer">
+                        <Checkbox
+                          checked={doNotAskAgain.domain === false}
+                          onCheckedChange={(checked: CheckedState) => {
+                            handleDoNotAskAgainChange('domain')(checked === false)
+                          }}
+                        />
+                        <span className="font-mono">Ask every time</span>
+                      </label>
+                    </div>
+                  }
+                />
               </div>
             </div>
           </div>
@@ -312,12 +275,19 @@ export function PreferencesPanel({
           <div className="mb-10">
             <h3 className="font-mono text-lg font-semibold text-slate-200 mb-2">Model Configuration</h3>
             <div className="grid grid-cols-1 gap-x-5 gap-y-3 xl:grid-cols-2">
-              <div className="space-y-2">
-                <div className="flex items-end gap-3 h-14">
-                  <div className="flex-1 min-w-0">
-                    <span className="block font-mono text-base font-medium text-slate-300">Target Model</span>
-                    <span className="block font-mono text-sm text-slate-500">AI model to optimize prompts for</span>
-                  </div>
+              <PreferenceSelectField
+                label="Target Model"
+                description="AI model to optimize prompts for"
+                value={localValues.defaultModel ?? ''}
+                placeholder="Select a model"
+                options={MODEL_OPTIONS}
+                onChange={(value) => {
+                  const updated = { ...localValues, defaultModel: value || undefined }
+                  setLocalValues(updated)
+                  debouncedOnChange(updated)
+                }}
+                onClear={() => clearPreference('defaultModel')}
+                rightSlot={
                   <div className="flex items-center gap-3 shrink-0 w-[140px] justify-end">
                     <label className="flex items-center gap-1.5 text-sm text-slate-500 whitespace-nowrap cursor-pointer">
                       <Checkbox
@@ -329,30 +299,8 @@ export function PreferencesPanel({
                       <span className="font-mono">Ask every time</span>
                     </label>
                   </div>
-                </div>
-                <div className="relative">
-                  <Select
-                    value={localValues.defaultModel ?? ''}
-                    onValueChange={(value: string) => {
-                      const updated = { ...localValues, defaultModel: value || undefined }
-                      setLocalValues(updated)
-                      debouncedOnChange(updated)
-                    }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select a model" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {MODEL_OPTIONS.map((opt) => (
-                        <SelectItem key={opt.value} value={opt.value}>
-                          {opt.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <ClearButton onClick={() => clearPreference('defaultModel')} show={!!localValues.defaultModel} />
-                </div>
-              </div>
+                }
+              />
 
               <div className="space-y-2">
                 <div className="flex items-end gap-3 h-14">

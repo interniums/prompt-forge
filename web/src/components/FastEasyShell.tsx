@@ -12,7 +12,6 @@ import {
   loadUserPreferences,
   type SavePreferencesResult,
 } from '@/app/terminalActions'
-import { CenteredToast } from './terminal/CenteredToast'
 import { TerminalHeader } from './terminal/TerminalHeader'
 import { TerminalOutputArea } from './terminal/TerminalOutputArea'
 import { TerminalInputBar } from './terminal/TerminalInputBar'
@@ -38,6 +37,7 @@ import {
   type TerminalRole,
 } from '@/lib/constants'
 import { getSupabaseBrowserClient } from '@/lib/supabase/client'
+import { TerminalShellView } from '@/features/terminal/TerminalShellView'
 import {
   TerminalStateProvider,
   useTerminalState,
@@ -1923,20 +1923,16 @@ function FastEasyShellInner({
     ? `Provide feedback about the generated prompt or press ${isMac ? SHORTCUT.COPY_MAC : SHORTCUT.COPY_WIN} to copy`
     : 'Give us context to create an effective prompt'
 
-  return (
-    <div
-      className="relative mx-auto flex h-[70vh] w-[92vw] max-w-6xl flex-col gap-3 rounded-2xl bg-[#050608] p-4 shadow-[0_0_160px_rgba(15,23,42,0.95)]"
-      role="region"
-      aria-label="PromptForge Terminal"
-    >
-      <CenteredToast message={toastMessage} />
+  const headerNode = (
+    <TerminalHeader
+      onProfileClick={() => {
+        setUserManagementOpen(true)
+      }}
+    />
+  )
 
-      <TerminalHeader
-        onProfileClick={() => {
-          setUserManagementOpen(true)
-        }}
-      />
-
+  const panelsNode = (
+    <>
       <PreferencesPanel
         open={isPreferencesOpen}
         values={preferences}
@@ -1973,75 +1969,79 @@ function FastEasyShellInner({
         }}
         onSignIn={handleSignIn}
       />
+    </>
+  )
 
-      <form onSubmit={handleFormSubmit} className="relative flex-1 text-sm">
-        <div className="absolute inset-0 flex min-h-0 flex-col overflow-hidden border-t border-slate-800 bg-[#050608]">
-          <TerminalOutputArea
-            lines={lines}
-            editablePrompt={editablePrompt}
-            promptForLinks={editablePrompt ?? lastApprovedPrompt}
-            awaitingQuestionConsent={awaitingQuestionConsent}
-            consentSelectedIndex={consentSelectedIndex}
-            answeringQuestions={answeringQuestions}
-            clarifyingAnswersCount={clarifyingAnswers.length}
-            currentClarifyingQuestion={
-              answeringQuestions &&
-              clarifyingQuestions &&
-              clarifyingQuestions.length > 0 &&
-              currentQuestionIndex < clarifyingQuestions.length
-                ? clarifyingQuestions[currentQuestionIndex]
-                : null
-            }
-            clarifyingSelectedOptionIndex={clarifyingSelectedOptionIndex}
-            editablePromptRef={editablePromptRef}
-            scrollRef={scrollRef}
-            inputRef={inputRef}
-            onHelpCommandClick={(cmd) => {
-              setValue(cmd)
-              if (inputRef.current) inputRef.current.focus()
-            }}
-            onConsentOptionClick={(index) => {
-              const v = index === 0 ? 'yes' : 'no'
-              setConsentSelectedIndex(index)
-              void handleQuestionConsent(v)
-            }}
-            onClarifyingOptionClick={handleClarifyingOptionClick}
-            onUndoAnswer={handleUndoAnswer}
-            onRevise={handleReviseFlow}
-            onEditableChange={handleEditableChange}
-            onCopyEditable={() => void copyEditablePrompt()}
-            onStartNewConversation={handleStartNewConversation}
-            onLike={handleLikePrompt}
-            onDislike={handleDislikePrompt}
-            likeState={likeState}
-            isAskingPreferenceQuestions={isAskingPreferenceQuestions}
-            currentPreferenceQuestionKey={currentPreferenceQuestionKey}
-            preferenceSelectedOptionIndex={preferenceSelectedOptionIndex}
-            onPreferenceOptionClick={handlePreferenceOptionClick}
-            getPreferenceOptions={getPreferenceOptions}
-            getPreferenceQuestionText={getPreferenceQuestionText}
-            getPreferencesToAsk={getPreferencesToAsk}
-          />
-
-          <TerminalInputBar
-            value={value}
-            onChange={setValue}
-            onKeyDown={handleKeyDown}
-            placeholder={inputPlaceholder}
-            inputRef={inputRef}
-            disabled={inputDisabled}
-          />
-        </div>
-
-        <TerminalChromeButtons
-          isGenerating={isGenerating}
-          onStop={handleStopClick}
-          onSubmit={() => {
-            submitCurrent()
+  const mainNode = (
+    <form onSubmit={handleFormSubmit} className="relative flex-1 text-sm">
+      <div className="absolute inset-0 flex min-h-0 flex-col overflow-hidden border-t border-slate-800 bg-[#050608]">
+        <TerminalOutputArea
+          lines={lines}
+          editablePrompt={editablePrompt}
+          promptForLinks={editablePrompt ?? lastApprovedPrompt}
+          awaitingQuestionConsent={awaitingQuestionConsent}
+          consentSelectedIndex={consentSelectedIndex}
+          answeringQuestions={answeringQuestions}
+          clarifyingAnswersCount={clarifyingAnswers.length}
+          currentClarifyingQuestion={
+            answeringQuestions &&
+            clarifyingQuestions &&
+            clarifyingQuestions.length > 0 &&
+            currentQuestionIndex < clarifyingQuestions.length
+              ? clarifyingQuestions[currentQuestionIndex]
+              : null
+          }
+          clarifyingSelectedOptionIndex={clarifyingSelectedOptionIndex}
+          editablePromptRef={editablePromptRef}
+          scrollRef={scrollRef}
+          inputRef={inputRef}
+          onHelpCommandClick={(cmd) => {
+            setValue(cmd)
             if (inputRef.current) inputRef.current.focus()
           }}
+          onConsentOptionClick={(index) => {
+            const v = index === 0 ? 'yes' : 'no'
+            setConsentSelectedIndex(index)
+            void handleQuestionConsent(v)
+          }}
+          onClarifyingOptionClick={handleClarifyingOptionClick}
+          onUndoAnswer={handleUndoAnswer}
+          onRevise={handleReviseFlow}
+          onEditableChange={handleEditableChange}
+          onCopyEditable={() => void copyEditablePrompt()}
+          onStartNewConversation={handleStartNewConversation}
+          onLike={handleLikePrompt}
+          onDislike={handleDislikePrompt}
+          likeState={likeState}
+          isAskingPreferenceQuestions={isAskingPreferenceQuestions}
+          currentPreferenceQuestionKey={currentPreferenceQuestionKey}
+          preferenceSelectedOptionIndex={preferenceSelectedOptionIndex}
+          onPreferenceOptionClick={handlePreferenceOptionClick}
+          getPreferenceOptions={getPreferenceOptions}
+          getPreferenceQuestionText={getPreferenceQuestionText}
+          getPreferencesToAsk={getPreferencesToAsk}
         />
-      </form>
-    </div>
+
+        <TerminalInputBar
+          value={value}
+          onChange={setValue}
+          onKeyDown={handleKeyDown}
+          placeholder={inputPlaceholder}
+          inputRef={inputRef}
+          disabled={inputDisabled}
+        />
+      </div>
+
+      <TerminalChromeButtons
+        isGenerating={isGenerating}
+        onStop={handleStopClick}
+        onSubmit={() => {
+          submitCurrent()
+          if (inputRef.current) inputRef.current.focus()
+        }}
+      />
+    </form>
   )
+
+  return <TerminalShellView toastMessage={toastMessage} header={headerNode} panels={panelsNode} main={mainNode} />
 }
