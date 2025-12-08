@@ -5,6 +5,13 @@ import type { TerminalLine, ClarifyingQuestion, Preferences } from '@/lib/types'
 import { ROLE } from '@/lib/constants'
 import { textButtonClass } from './styles'
 
+const providerIcons: Record<string, { src: string; alt: string }> = {
+  chatgpt: { src: 'https://cdn.simpleicons.org/openai', alt: 'OpenAI logo' },
+  claude: { src: 'https://cdn.simpleicons.org/anthropic', alt: 'Anthropic logo' },
+  perplexity: { src: 'https://cdn.simpleicons.org/perplexity', alt: 'Perplexity logo' },
+  gemini: { src: 'https://cdn.simpleicons.org/googlegemini', alt: 'Google Gemini logo' },
+}
+
 export type TerminalOutputAreaProps = {
   lines: TerminalLine[]
   editablePrompt: string | null
@@ -319,6 +326,24 @@ const ApprovedPromptLinks = memo(function ApprovedPromptLinks({ prompt }: { prom
     ]
   }, [prompt])
 
+  const renderProviderLabel = (provider: PromptProvider) => {
+    const icon = providerIcons[provider.id]
+    return (
+      <span className="inline-flex items-center gap-2">
+        {icon ? (
+          <img
+            src={icon.src}
+            alt={icon.alt}
+            className="h-4 w-4 rounded-sm"
+            loading="lazy"
+            referrerPolicy="no-referrer"
+          />
+        ) : null}
+        <span>{provider.label}</span>
+      </span>
+    )
+  }
+
   return (
     <div className="mt-4 space-y-2 text-[14px] text-slate-200">
       <div className="flex items-center justify-between text-[13px] uppercase tracking-wide text-slate-500">
@@ -331,10 +356,10 @@ const ApprovedPromptLinks = memo(function ApprovedPromptLinks({ prompt }: { prom
               key={provider.id}
               type="button"
               onClick={provider.action}
-              className="cursor-pointer bg-transparent text-[13px] text-slate-100 underline-offset-4 hover:underline"
+              className="inline-flex items-center gap-2 cursor-pointer bg-transparent text-[13px] text-slate-100 underline decoration-transparent underline-offset-4 hover:decoration-current"
               title={provider.hint ?? 'Copies prompt, then opens in new tab'}
             >
-              {provider.label}
+              {renderProviderLabel(provider)}
             </button>
           ) : (
             <a
@@ -342,10 +367,10 @@ const ApprovedPromptLinks = memo(function ApprovedPromptLinks({ prompt }: { prom
               href={provider.href}
               target="_blank"
               rel="noreferrer"
-              className="cursor-pointer text-[13px] text-slate-100 underline-offset-4 hover:underline"
+              className="inline-flex items-center gap-2 cursor-pointer text-[13px] text-slate-100 underline decoration-transparent underline-offset-4 hover:decoration-current"
               title="Prefills and opens in a new tab"
             >
-              {provider.label}
+              {renderProviderLabel(provider)}
             </a>
           )
         )}
@@ -466,7 +491,7 @@ export const TerminalOutputArea = memo(function TerminalOutputArea({
                   type="button"
                   disabled={likeState === 'liked'}
                   onClick={likeState === 'liked' ? undefined : onLike}
-                  className={`${textButtonClass} text-[20px] ${
+                  className={`${textButtonClass} text-[20px] disabled:hover:no-underline ${
                     likeState === 'liked' ? 'text-emerald-300 cursor-not-allowed opacity-60' : ''
                   }`}
                   aria-label="Like prompt"
@@ -480,7 +505,7 @@ export const TerminalOutputArea = memo(function TerminalOutputArea({
                   type="button"
                   disabled={likeState === 'disliked'}
                   onClick={likeState === 'disliked' ? undefined : onDislike}
-                  className={`${textButtonClass} text-[20px] ${
+                  className={`${textButtonClass} text-[20px] disabled:hover:no-underline ${
                     likeState === 'disliked' ? 'text-rose-300 cursor-not-allowed opacity-60' : ''
                   }`}
                   aria-label="Dislike prompt"

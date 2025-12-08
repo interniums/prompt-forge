@@ -182,7 +182,7 @@ export function PreferencesPanel({
       onClick={handleBackdropClick}
     >
       <div
-        className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-xl bg-[#050608] p-6 shadow-[0_0_80px_rgba(15,23,42,0.95)]"
+        className="w-full max-w-5xl max-h-[90vh] overflow-y-auto rounded-xl bg-[#050608] p-6 shadow-[0_0_80px_rgba(15,23,42,0.95)] terminal-scroll"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-6 flex items-start justify-between">
@@ -211,11 +211,11 @@ export function PreferencesPanel({
 
         <div className="space-y-4">
           {/* Basic Preferences */}
-          <div className="mb-6">
-            <h3 className="font-mono text-lg font-semibold text-slate-200 mb-4">Basic Preferences</h3>
-            <div className="grid grid-cols-1 gap-x-6 gap-y-5 md:grid-cols-2">
+          <div className="mb-10">
+            <h3 className="font-mono text-lg font-semibold text-slate-200 mb-2">Basic Preferences</h3>
+            <div className="grid grid-cols-1 gap-x-5 gap-y-3 xl:grid-cols-2">
               <div className="space-y-2">
-                <div className="flex items-start gap-3 h-18">
+                <div className="flex items-end gap-3 h-14">
                   <div className="flex-1 min-w-0">
                     <span className="block font-mono text-base font-medium text-slate-300">Tone</span>
                     <span className="block font-mono text-sm text-slate-500">Writing style and voice for prompts</span>
@@ -238,14 +238,14 @@ export function PreferencesPanel({
                     value={localValues.tone ?? ''}
                     onChange={handleTextChange('tone')}
                     placeholder={`e.g., ${Array.from(TONE_OPTIONS).join(', ')}`}
-                    className="w-full font-mono bg-[#0b1016] border border-slate-700 rounded-md px-3 py-2.5 pr-9 text-base text-slate-100 placeholder-slate-500 focus:border-slate-500 focus:text-slate-50 focus:outline-none"
+                    className="w-full font-mono bg-[#0b1016] border border-slate-700 rounded-md px-3 py-2.5 pr-16 text-base text-slate-100 placeholder-slate-500 shadow-[0_8px_18px_rgba(0,0,0,0.22)] focus:border-slate-500 focus:text-slate-50 focus:outline-none"
                   />
                   <ClearButton onClick={() => clearPreference('tone')} show={!!localValues.tone} />
                 </div>
               </div>
 
               <div className="space-y-2">
-                <div className="flex items-start gap-3 h-18">
+                <div className="flex items-end gap-3 h-14">
                   <div className="flex-1 min-w-0">
                     <span className="block font-mono text-base font-medium text-slate-300">Audience</span>
                     <span className="block font-mono text-sm text-slate-500">
@@ -270,14 +270,14 @@ export function PreferencesPanel({
                     value={localValues.audience ?? ''}
                     onChange={handleTextChange('audience')}
                     placeholder={`e.g., ${Array.from(AUDIENCE_OPTIONS).join(', ')}`}
-                    className="w-full font-mono bg-[#0b1016] border border-slate-700 rounded-md px-3 py-2.5 pr-9 text-base text-slate-100 placeholder-slate-500 focus:border-slate-500 focus:text-slate-50 focus:outline-none"
+                    className="w-full font-mono bg-[#0b1016] border border-slate-700 rounded-md px-3 py-2.5 pr-16 text-base text-slate-100 placeholder-slate-500 shadow-[0_8px_18px_rgba(0,0,0,0.22)] focus:border-slate-500 focus:text-slate-50 focus:outline-none"
                   />
                   <ClearButton onClick={() => clearPreference('audience')} show={!!localValues.audience} />
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <div className="flex items-start gap-3 h-18">
+              <div className="space-y-2 md:col-span-2">
+                <div className="flex items-end gap-3 h-14">
                   <div className="flex-1 min-w-0">
                     <span className="block font-mono text-base font-medium text-slate-300">Domain</span>
                     <span className="block font-mono text-sm text-slate-500">Industry or field of work context</span>
@@ -300,7 +300,7 @@ export function PreferencesPanel({
                     value={localValues.domain ?? ''}
                     onChange={handleTextChange('domain')}
                     placeholder="e.g., marketing, product, engineering"
-                    className="w-full font-mono bg-[#0b1016] border border-slate-700 rounded-md px-3 py-2.5 pr-9 text-base text-slate-100 placeholder-slate-500 focus:border-slate-500 focus:text-slate-50 focus:outline-none"
+                    className="w-full font-mono bg-[#0b1016] border border-slate-700 rounded-md px-3 py-2.5 pr-16 text-base text-slate-100 placeholder-slate-500 shadow-[0_8px_18px_rgba(0,0,0,0.22)] focus:border-slate-500 focus:text-slate-50 focus:outline-none"
                   />
                   <ClearButton onClick={() => clearPreference('domain')} show={!!localValues.domain} />
                 </div>
@@ -309,11 +309,11 @@ export function PreferencesPanel({
           </div>
 
           {/* Model Configuration */}
-          <div className="mb-6">
-            <h3 className="font-mono text-lg font-semibold text-slate-200 mb-4">Model Configuration</h3>
-            <div className="grid grid-cols-1 gap-x-6 gap-y-5 md:grid-cols-2">
+          <div className="mb-10">
+            <h3 className="font-mono text-lg font-semibold text-slate-200 mb-2">Model Configuration</h3>
+            <div className="grid grid-cols-1 gap-x-5 gap-y-3 xl:grid-cols-2">
               <div className="space-y-2">
-                <div className="flex items-start gap-3 h-18">
+                <div className="flex items-end gap-3 h-14">
                   <div className="flex-1 min-w-0">
                     <span className="block font-mono text-base font-medium text-slate-300">Target Model</span>
                     <span className="block font-mono text-sm text-slate-500">AI model to optimize prompts for</span>
@@ -355,7 +355,7 @@ export function PreferencesPanel({
               </div>
 
               <div className="space-y-2">
-                <div className="flex items-start gap-3 h-18">
+                <div className="flex items-end gap-3 h-14">
                   <div className="flex-1 min-w-0 overflow-hidden">
                     <span className="block font-mono text-base font-medium text-slate-300">Temperature</span>
                     <div className="font-mono text-sm text-slate-500 mt-0.5 leading-[1.2]">
@@ -384,7 +384,7 @@ export function PreferencesPanel({
                     value={temperatureInput}
                     onChange={handleTemperatureChange}
                     placeholder="0.0 - 1.0"
-                    className="w-full font-mono bg-[#0b1016] border border-slate-700 rounded-md px-3 py-2.5 pr-9 text-base text-slate-100 placeholder-slate-500 focus:border-slate-500 focus:text-slate-50 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    className="w-full font-mono bg-[#0b1016] border border-slate-700 rounded-md px-3 py-2.5 pr-16 text-base text-slate-100 placeholder-slate-500 shadow-[0_8px_18px_rgba(0,0,0,0.22)] focus:border-slate-500 focus:text-slate-50 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                   />
                   <ClearButton onClick={() => clearPreference('temperature')} show={!!temperatureInput} />
                 </div>
@@ -393,11 +393,11 @@ export function PreferencesPanel({
           </div>
 
           {/* Output Settings */}
-          <div className="mb-6">
-            <h3 className="font-mono text-lg font-semibold text-slate-200 mb-4">Output Settings</h3>
-            <div className="grid grid-cols-1 gap-x-6 gap-y-5 md:grid-cols-2">
+          <div className="mb-10">
+            <h3 className="font-mono text-lg font-semibold text-slate-200 mb-2">Output Settings</h3>
+            <div className="grid grid-cols-1 gap-x-5 gap-y-3 xl:grid-cols-2">
               <div className="space-y-2">
-                <div className="flex items-start gap-3 h-18">
+                <div className="flex items-end gap-3 h-14">
                   <div className="flex-1 min-w-0">
                     <span className="block font-mono text-base font-medium text-slate-300">Output Format</span>
                     <span className="block font-mono text-sm text-slate-500">Preferred structure for responses</span>
@@ -439,7 +439,7 @@ export function PreferencesPanel({
               </div>
 
               <div className="space-y-2">
-                <div className="flex items-start gap-3 h-18">
+                <div className="flex items-end gap-3 h-14">
                   <div className="flex-1 min-w-0">
                     <span className="block font-mono text-base font-medium text-slate-300">Language</span>
                     <span className="block font-mono text-sm text-slate-500">Primary language for output</span>
@@ -462,14 +462,14 @@ export function PreferencesPanel({
                     value={localValues.language ?? ''}
                     onChange={handleTextChange('language')}
                     placeholder="e.g., English, Spanish, Hindi"
-                    className="w-full font-mono bg-[#0b1016] border border-slate-700 rounded-md px-3 py-2.5 pr-9 text-base text-slate-100 placeholder-slate-500 focus:border-slate-500 focus:text-slate-50 focus:outline-none"
+                    className="w-full font-mono bg-[#0b1016] border border-slate-700 rounded-md px-3 py-2.5 pr-16 text-base text-slate-100 placeholder-slate-500 shadow-[0_8px_18px_rgba(0,0,0,0.22)] focus:border-slate-500 focus:text-slate-50 focus:outline-none"
                   />
                   <ClearButton onClick={() => clearPreference('language')} show={!!localValues.language} />
                 </div>
               </div>
 
               <div className="space-y-2">
-                <div className="flex items-start gap-3 h-18">
+                <div className="flex items-end gap-3 h-14">
                   <div className="flex-1 min-w-0">
                     <span className="block font-mono text-base font-medium text-slate-300">Depth</span>
                     <span className="block font-mono text-sm text-slate-500">Level of detail in responses</span>
@@ -511,7 +511,7 @@ export function PreferencesPanel({
               </div>
 
               <div className="space-y-2">
-                <div className="flex items-start gap-3 h-18">
+                <div className="flex items-end gap-3 h-14">
                   <div className="flex-1 min-w-0">
                     <span className="block font-mono text-base font-medium text-slate-300">Citations</span>
                     <span className="block font-mono text-sm text-slate-500">How to handle references and sources</span>
@@ -559,10 +559,10 @@ export function PreferencesPanel({
 
           {/* Advanced Settings */}
           <div className="mb-6">
-            <h3 className="font-mono text-lg font-semibold text-slate-200 mb-4">Advanced Settings</h3>
-            <div className="grid grid-cols-1 gap-4">
+            <h3 className="font-mono text-lg font-semibold text-slate-200 mb-2">Advanced Settings</h3>
+            <div className="grid grid-cols-1">
               <div className="space-y-2">
-                <div className="flex items-start gap-3 h-18">
+                <div className="flex items-end gap-3 h-14">
                   <div className="flex-1 min-w-0">
                     <span className="block font-mono text-base font-medium text-slate-300">Style Guidelines</span>
                     <span className="block font-mono text-sm text-slate-500">
@@ -587,7 +587,7 @@ export function PreferencesPanel({
                     onChange={handleTextChange('styleGuidelines')}
                     rows={3}
                     placeholder="e.g., Always use bullet points, keep paragraphs under 3 sentences, use active voice"
-                    className="w-full font-mono bg-[#0b1016] border border-slate-700 rounded-md px-3 py-2.5 pr-9 text-base text-slate-100 placeholder-slate-500 focus:border-slate-500 focus:text-slate-50 focus:outline-none resize-none"
+                    className="w-full font-mono bg-[#0b1016] border border-slate-700 rounded-md px-3 py-2.5 pr-12 text-base text-slate-100 placeholder-slate-500 shadow-[0_8px_18px_rgba(0,0,0,0.22)] focus:border-slate-500 focus:text-slate-50 focus:outline-none resize-none"
                   />
                   <ClearButton
                     onClick={() => clearPreference('styleGuidelines')}
@@ -597,7 +597,7 @@ export function PreferencesPanel({
               </div>
 
               <div className="space-y-2">
-                <div className="flex items-start gap-3 h-18">
+                <div className="flex items-end gap-3 h-14">
                   <div className="flex-1 min-w-0">
                     <span className="block font-mono text-base font-medium text-slate-300">Persona Hints</span>
                     <span className="block font-mono text-sm text-slate-500">Voice, role, or character to emulate</span>
@@ -620,7 +620,7 @@ export function PreferencesPanel({
                     onChange={handleTextChange('personaHints')}
                     rows={3}
                     placeholder="e.g., Write as a senior engineer, be helpful but concise, use technical terminology"
-                    className="w-full font-mono bg-[#0b1016] border border-slate-700 rounded-md px-3 py-2.5 pr-9 text-base text-slate-100 placeholder-slate-500 focus:border-slate-500 focus:text-slate-50 focus:outline-none resize-none"
+                    className="w-full font-mono bg-[#0b1016] border border-slate-700 rounded-md px-3 py-2.5 pr-12 text-base text-slate-100 placeholder-slate-500 shadow-[0_8px_18px_rgba(0,0,0,0.22)] focus:border-slate-500 focus:text-slate-50 focus:outline-none resize-none"
                   />
                   <ClearButton onClick={() => clearPreference('personaHints')} show={!!localValues.personaHints} />
                 </div>
@@ -629,9 +629,9 @@ export function PreferencesPanel({
           </div>
 
           {/* UI & Behavior Settings */}
-          <div className="mb-6">
-            <h3 className="font-mono text-lg font-semibold text-slate-200 mb-4">UI & Behavior</h3>
-            <div className="grid grid-cols-1 gap-x-6 gap-y-5 md:grid-cols-2 items-start">
+          <div className="mb-10">
+            <h3 className="font-mono text-lg font-semibold text-slate-200 mb-2">UI & Behavior</h3>
+            <div className="grid grid-cols-1 gap-x-5 gap-y-3 xl:grid-cols-2 items-start">
               <div className="space-y-4">
                 <label className="flex items-center gap-3 cursor-pointer">
                   <Checkbox

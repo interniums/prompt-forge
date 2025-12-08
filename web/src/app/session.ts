@@ -2,6 +2,7 @@ import { cookies } from 'next/headers'
 import { createServiceSupabaseClient, createServerSupabaseClient } from '@/lib/supabase/server'
 import { SESSION_COOKIE } from '@/lib/constants'
 import type { Preferences, HistoryItem, SessionState, PreferenceSource, UserIdentity } from '@/lib/types'
+import { mapPreferences } from '@/services/preferencesService'
 
 // Re-export types for backward compatibility
 export type { SessionState }
@@ -39,39 +40,6 @@ export async function getSessionId(): Promise<string | null> {
   }
 
   return existing
-}
-
-function coerceString(value: unknown): string | undefined {
-  if (typeof value === 'string') return value
-  if (typeof value === 'number') return String(value)
-  return undefined
-}
-
-function coerceObject<T extends Record<string, unknown>>(value: unknown): T | undefined {
-  if (value && typeof value === 'object' && !Array.isArray(value)) {
-    return value as T
-  }
-  return undefined
-}
-
-function mapPreferences(row?: Record<string, unknown> | null): Preferences {
-  if (!row) return {}
-  return {
-    tone: coerceString(row.tone),
-    audience: coerceString(row.audience),
-    domain: coerceString(row.domain),
-    defaultModel: coerceString(row.default_model),
-    temperature: typeof row.temperature === 'number' ? row.temperature : null,
-    styleGuidelines: coerceString(row.style_guidelines),
-    outputFormat: coerceString(row.output_format),
-    language: coerceString(row.language),
-    depth: coerceString(row.depth),
-    citationPreference: coerceString(row.citation_preference),
-    personaHints: coerceString(row.persona_hints),
-    uiDefaults: coerceObject(row.ui_defaults),
-    sharingLinks: coerceObject(row.sharing_links),
-    doNotAskAgain: coerceObject(row.do_not_ask_again),
-  }
 }
 
 export async function loadSessionState(): Promise<SessionState> {
