@@ -2,9 +2,9 @@
 
 import React from 'react'
 import { ClearButton } from './ClearButton'
-import { preferenceInputClass } from './styles'
+import { preferenceTextareaClass } from './styles'
 
-type PreferenceTextFieldProps = {
+type PreferenceTextareaFieldProps = {
   label: string
   description: string
   value: string
@@ -12,11 +12,10 @@ type PreferenceTextFieldProps = {
   onChange: (value: string) => void
   onClear: () => void
   rightSlot?: React.ReactNode
-  inputType?: React.HTMLInputTypeAttribute
-  inputProps?: Omit<React.InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange' | 'type' | 'placeholder'>
+  rows?: number
 }
 
-export function PreferenceTextField({
+export function PreferenceTextareaField({
   label,
   description,
   value,
@@ -24,9 +23,8 @@ export function PreferenceTextField({
   onChange,
   onClear,
   rightSlot,
-  inputType = 'text',
-  inputProps,
-}: PreferenceTextFieldProps) {
+  rows = 3,
+}: PreferenceTextareaFieldProps) {
   return (
     <div className="space-y-2">
       <div className="flex items-end gap-3 h-14">
@@ -37,13 +35,12 @@ export function PreferenceTextField({
         {rightSlot}
       </div>
       <div className="relative">
-        <input
+        <textarea
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
-          type={inputType}
-          {...inputProps}
-          className={preferenceInputClass}
+          rows={rows}
+          className={preferenceTextareaClass}
         />
         <ClearButton onClick={onClear} show={Boolean(value)} />
       </div>

@@ -1,334 +1,362 @@
 'use client'
 
-import { useReducer, useCallback, useRef } from 'react'
-import type { ClarifyingQuestion, ClarifyingAnswer } from '@/lib/types'
+import { useCallback } from 'react'
+import { generateClarifyingQuestions } from '@/services/promptService'
+import { recordEvent } from '@/services/eventsService'
+import { MESSAGE, ROLE } from '@/lib/constants'
+import type { TerminalRole } from '@/lib/constants'
+import type { ClarifyingAnswer, ClarifyingQuestion, Preferences } from '@/lib/types'
+import type { PreferenceKey } from '@/features/terminal/terminalState'
 
-/**
- * Flow states for the clarifying question process
- */
-export type FlowPhase =
-  | 'idle' // No active flow
-  | 'awaiting_consent' // Waiting for yes/no to questions
-  | 'generating_questions' // AI generating clarifying questions
-  | 'answering_questions' // User answering questions
-  | 'generating_prompt' // AI generating final prompt
-  | 'prompt_ready' // Prompt ready for review
-  | 'editing_prompt' // AI editing prompt
-  | 'revising' // User revising task/answers
-
-export type FlowState = {
-  phase: FlowPhase
-  task: string | null
-  questions: ClarifyingQuestion[] | null
+export type ClarifyingFlowDeps = {
+  pendingTask: string | null
+  preferences: Preferences
+  clarifyingQuestions: ClarifyingQuestion[] | null
   currentQuestionIndex: number
-  selectedOptionIndex: number | null
-  consentSelectedIndex: number | null
-  hasRunInitialTask: boolean
-  generationRunId: number
+  generationRunIdRef: React.MutableRefObject<number>
+  clarifyingAnswersRef: React.MutableRefObject<ClarifyingAnswer[]>
+  setIsGenerating: (value: boolean) => void
+  setClarifyingQuestions: (value: ClarifyingQuestion[] | null) => void
+  setClarifyingAnswers: (value: ClarifyingAnswer[], currentIndex: number) => void
+  setCurrentQuestionIndex: (value: number) => void
+  setAnsweringQuestions: (value: boolean) => void
+  setAwaitingQuestionConsent: (value: boolean) => void
+  setConsentSelectedIndex: (value: number | null) => void
+  setClarifyingSelectedOptionIndex: (value: number | null) => void
+  appendLine: (role: TerminalRole, text: string) => void
+  focusInputToEnd: () => void
+  getPreferencesToAsk: () => PreferenceKey[]
+  startPreferenceQuestions: () => Promise<void>
+  generateFinalPromptForTask: (
+    task: string,
+    answers: ClarifyingAnswer[],
+    options?: { skipConsentCheck?: boolean }
+  ) => Promise<void>
 }
 
-export type FlowAction =
-  | { type: 'START_TASK'; task: string }
-  | { type: 'CONSENT_YES' }
-  | { type: 'CONSENT_NO' }
-  | { type: 'START_GENERATING_QUESTIONS' }
-  | { type: 'QUESTIONS_READY'; questions: ClarifyingQuestion[] }
-  | { type: 'QUESTIONS_FAILED' }
-  | { type: 'ANSWER_QUESTION'; questionIndex: number }
-  | { type: 'NEXT_QUESTION' }
-  | { type: 'UNDO_ANSWER'; prevIndex: number }
-  | { type: 'START_GENERATING_PROMPT' }
-  | { type: 'PROMPT_READY' }
-  | { type: 'PROMPT_FAILED' }
-  | { type: 'START_EDITING_PROMPT' }
-  | { type: 'EDIT_COMPLETE' }
-  | { type: 'START_REVISING' }
-  | { type: 'SELECT_OPTION'; index: number | null }
-  | { type: 'SELECT_CONSENT'; index: number | null }
-  | { type: 'CANCEL_GENERATION' }
-  | { type: 'RESET' }
-
-const initialState: FlowState = {
-  phase: 'idle',
-  task: null,
-  questions: null,
-  currentQuestionIndex: 0,
-  selectedOptionIndex: null,
-  consentSelectedIndex: null,
-  hasRunInitialTask: false,
-  generationRunId: 0,
-}
-
-function flowReducer(state: FlowState, action: FlowAction): FlowState {
-  switch (action.type) {
-    case 'START_TASK':
-      return {
-        ...state,
-        phase: 'awaiting_consent',
-        task: action.task,
-        hasRunInitialTask: true,
-        questions: null,
-        currentQuestionIndex: 0,
-        selectedOptionIndex: null,
-        consentSelectedIndex: null,
+export function useClarifyingFlow({
+  pendingTask,
+  preferences,
+  clarifyingQuestions,
+  currentQuestionIndex,
+  generationRunIdRef,
+  clarifyingAnswersRef,
+  setIsGenerating,
+  setClarifyingQuestions,
+  setClarifyingAnswers,
+  setCurrentQuestionIndex,
+  setAnsweringQuestions,
+  setAwaitingQuestionConsent,
+  setConsentSelectedIndex,
+  setClarifyingSelectedOptionIndex,
+  appendLine,
+  focusInputToEnd,
+  getPreferencesToAsk,
+  startPreferenceQuestions,
+  generateFinalPromptForTask,
+}: ClarifyingFlowDeps) {
+  const selectForQuestion = useCallback(
+    (question: ClarifyingQuestion | null, hasBack: boolean) => {
+      if (!question) {
+        setClarifyingSelectedOptionIndex(null)
+        return
       }
-
-    case 'CONSENT_YES':
-      return {
-        ...state,
-        phase: state.questions ? 'answering_questions' : 'generating_questions',
-        consentSelectedIndex: null,
+      if (question.options.length > 0) {
+        setClarifyingSelectedOptionIndex(0)
+        return
       }
-
-    case 'CONSENT_NO':
-      return {
-        ...state,
-        phase: 'generating_prompt',
-        consentSelectedIndex: null,
+      if (hasBack) {
+        setClarifyingSelectedOptionIndex(-1)
+        return
       }
+      setClarifyingSelectedOptionIndex(null)
+    },
+    [setClarifyingSelectedOptionIndex]
+  )
 
-    case 'START_GENERATING_QUESTIONS':
-      return {
-        ...state,
-        phase: 'generating_questions',
-        generationRunId: state.generationRunId + 1,
-      }
+  const appendClarifyingQuestion = useCallback(
+    (question: ClarifyingQuestion, index: number, total: number) => {
+      appendLine(ROLE.APP, `Question ${index + 1}/${total}: ${question.question}`)
+    },
+    [appendLine]
+  )
 
-    case 'QUESTIONS_READY':
-      return {
-        ...state,
-        phase: action.questions.length > 0 ? 'answering_questions' : 'generating_prompt',
-        questions: action.questions,
-        currentQuestionIndex: 0,
-        selectedOptionIndex: action.questions[0]?.options?.length > 0 ? 0 : null,
-      }
+  const startClarifyingQuestions = useCallback(
+    async (task: string) => {
+      const runId = (generationRunIdRef.current += 1)
+      setIsGenerating(true)
+      appendLine(ROLE.APP, MESSAGE.ASKING_QUESTIONS)
 
-    case 'QUESTIONS_FAILED':
-      return {
-        ...state,
-        phase: 'generating_prompt',
-      }
+      try {
+        const questions = await generateClarifyingQuestions({ task, preferences })
 
-    case 'ANSWER_QUESTION':
-      return {
-        ...state,
-        currentQuestionIndex: action.questionIndex,
-      }
+        if (runId !== generationRunIdRef.current) {
+          return
+        }
 
-    case 'NEXT_QUESTION': {
-      const nextIndex = state.currentQuestionIndex + 1
-      const isLastQuestion = state.questions && nextIndex >= state.questions.length
+        setIsGenerating(false)
 
-      if (isLastQuestion) {
-        return {
-          ...state,
-          phase: 'generating_prompt',
-          selectedOptionIndex: null,
+        if (!questions.length) {
+          setAwaitingQuestionConsent(false)
+          setConsentSelectedIndex(null)
+          setAnsweringQuestions(false)
+
+          const prefsToAsk = getPreferencesToAsk()
+          if (prefsToAsk.length > 0) {
+            appendLine(
+              ROLE.APP,
+              'No clarifying questions needed. Asking your preferences, then I will generate the prompt.'
+            )
+            await startPreferenceQuestions()
+          } else {
+            appendLine(ROLE.APP, 'No clarifying questions needed. Generating your prompt now.')
+            await generateFinalPromptForTask(task, [], { skipConsentCheck: true })
+          }
+          return
+        }
+
+        setClarifyingQuestions(questions)
+        clarifyingAnswersRef.current = []
+        setClarifyingAnswers([], 0)
+        selectForQuestion(questions[0], false)
+        setAwaitingQuestionConsent(false)
+        setConsentSelectedIndex(null)
+        setAnsweringQuestions(true)
+
+        appendClarifyingQuestion(questions[0], 0, questions.length)
+        focusInputToEnd()
+      } catch (err) {
+        if (runId === generationRunIdRef.current) {
+          console.error('Failed to generate clarifying questions', err)
+          appendLine(
+            ROLE.APP,
+            'Something went wrong while generating questions. I will try to create a prompt from your task directly.'
+          )
+          setIsGenerating(false)
+          await generateFinalPromptForTask(task, [], { skipConsentCheck: true })
         }
       }
+    },
+    [
+      appendClarifyingQuestion,
+      appendLine,
+      clarifyingAnswersRef,
+      generateFinalPromptForTask,
+      generationRunIdRef,
+      getPreferencesToAsk,
+      preferences,
+      selectForQuestion,
+      setAnsweringQuestions,
+      setAwaitingQuestionConsent,
+      setClarifyingAnswers,
+      setClarifyingQuestions,
+      setConsentSelectedIndex,
+      setIsGenerating,
+      focusInputToEnd,
+      startPreferenceQuestions,
+    ]
+  )
 
-      const nextQuestion = state.questions?.[nextIndex]
-      return {
-        ...state,
-        currentQuestionIndex: nextIndex,
-        selectedOptionIndex: nextQuestion?.options?.length ? 0 : null,
+  const handleQuestionConsent = useCallback(
+    async (answer: string) => {
+      const normalized = answer.trim().toLowerCase()
+
+      if (!pendingTask) {
+        appendLine(ROLE.APP, 'No task in memory. Describe a task first.')
+        setAwaitingQuestionConsent(false)
+        return
       }
-    }
 
-    case 'UNDO_ANSWER': {
-      if (action.prevIndex < 0) {
-        // Go back to consent
-        return {
-          ...state,
-          phase: 'awaiting_consent',
-          currentQuestionIndex: 0,
-          selectedOptionIndex: null,
-          consentSelectedIndex: null,
+      void recordEvent('question_consent', { task: pendingTask, answer: normalized })
+
+      if (normalized === 'yes' || normalized === 'y') {
+        setAwaitingQuestionConsent(false)
+        setConsentSelectedIndex(null)
+        if (clarifyingQuestions && clarifyingQuestions.length > 0) {
+          const answered = clarifyingAnswersRef.current.length
+          setAnsweringQuestions(true)
+          setCurrentQuestionIndex(answered)
+          const nextQuestion = clarifyingQuestions[Math.min(answered, clarifyingQuestions.length - 1)]
+          selectForQuestion(nextQuestion ?? null, true)
+          appendClarifyingQuestion(nextQuestion!, answered, clarifyingQuestions.length)
+          focusInputToEnd()
+        } else {
+          await startClarifyingQuestions(pendingTask)
+        }
+        return
+      }
+
+      if (normalized === 'no' || normalized === 'n') {
+        setAwaitingQuestionConsent(false)
+        setConsentSelectedIndex(null)
+        setAnsweringQuestions(false)
+        appendLine(ROLE.APP, 'Skipping questions. Generating your prompt now.')
+        await generateFinalPromptForTask(pendingTask, [], { skipConsentCheck: true })
+        return
+      }
+
+      appendLine(ROLE.APP, 'Please answer "yes" or "no".')
+      focusInputToEnd()
+    },
+    [
+      appendClarifyingQuestion,
+      appendLine,
+      clarifyingAnswersRef,
+      clarifyingQuestions,
+      focusInputToEnd,
+      generateFinalPromptForTask,
+      pendingTask,
+      selectForQuestion,
+      setAnsweringQuestions,
+      setAwaitingQuestionConsent,
+      setConsentSelectedIndex,
+      setCurrentQuestionIndex,
+      startClarifyingQuestions,
+    ]
+  )
+
+  const handleClarifyingAnswer = useCallback(
+    async (answer: string) => {
+      if (!clarifyingQuestions || !pendingTask) {
+        appendLine(ROLE.APP, 'No active questions. Describe a task first.')
+        setAnsweringQuestions(false)
+        return
+      }
+
+      const index = currentQuestionIndex
+      if (index < 0 || index >= clarifyingQuestions.length) {
+        setAnsweringQuestions(false)
+        return
+      }
+
+      const question = clarifyingQuestions[index]
+      const trimmedAnswer = answer.trim()
+
+      appendLine(ROLE.USER, trimmedAnswer)
+
+      const updated: ClarifyingAnswer[] = [
+        ...clarifyingAnswersRef.current,
+        {
+          questionId: question.id,
+          question: question.question,
+          answer: trimmedAnswer,
+        },
+      ]
+      clarifyingAnswersRef.current = updated
+      setClarifyingAnswers(updated, updated.length)
+      void recordEvent('clarifying_answer', {
+        task: pendingTask,
+        questionId: question.id,
+        question: question.question,
+        answer: trimmedAnswer,
+      })
+
+      const nextIndex = index + 1
+      if (nextIndex < clarifyingQuestions.length) {
+        setCurrentQuestionIndex(nextIndex)
+        const nextQuestion = clarifyingQuestions[nextIndex]
+        selectForQuestion(nextQuestion, true)
+        appendClarifyingQuestion(nextQuestion, nextIndex, clarifyingQuestions.length)
+        focusInputToEnd()
+      } else {
+        setClarifyingSelectedOptionIndex(null)
+        setAnsweringQuestions(false)
+        const prefsToAsk = getPreferencesToAsk()
+        if (prefsToAsk.length > 0) {
+          void startPreferenceQuestions()
+        } else {
+          void generateFinalPromptForTask(pendingTask, updated)
         }
       }
-      const prevQuestion = state.questions?.[action.prevIndex]
-      return {
-        ...state,
-        currentQuestionIndex: action.prevIndex,
-        selectedOptionIndex: prevQuestion?.options?.length ? 0 : null,
-      }
+    },
+    [
+      appendClarifyingQuestion,
+      appendLine,
+      clarifyingAnswersRef,
+      clarifyingQuestions,
+      currentQuestionIndex,
+      focusInputToEnd,
+      generateFinalPromptForTask,
+      getPreferencesToAsk,
+      pendingTask,
+      selectForQuestion,
+      setAnsweringQuestions,
+      setClarifyingAnswers,
+      setClarifyingSelectedOptionIndex,
+      setCurrentQuestionIndex,
+      startPreferenceQuestions,
+    ]
+  )
+
+  const handleClarifyingOptionClick = useCallback(
+    (index: number) => {
+      if (!clarifyingQuestions || !pendingTask) return
+      const current = clarifyingQuestions[currentQuestionIndex]
+      if (!current || !current.options || index < 0 || index >= current.options.length) return
+      const chosen = current.options[index]
+      setClarifyingSelectedOptionIndex(index)
+      void handleClarifyingAnswer(chosen.label)
+      focusInputToEnd()
+    },
+    [
+      clarifyingQuestions,
+      currentQuestionIndex,
+      focusInputToEnd,
+      handleClarifyingAnswer,
+      pendingTask,
+      setClarifyingSelectedOptionIndex,
+    ]
+  )
+
+  const handleUndoAnswer = useCallback(() => {
+    if (!clarifyingQuestions || !pendingTask) {
+      appendLine(ROLE.APP, 'No clarifying flow active.')
+      return
     }
-
-    case 'START_GENERATING_PROMPT':
-      return {
-        ...state,
-        phase: 'generating_prompt',
-        generationRunId: state.generationRunId + 1,
-      }
-
-    case 'PROMPT_READY':
-      return {
-        ...state,
-        phase: 'prompt_ready',
-      }
-
-    case 'PROMPT_FAILED':
-      return {
-        ...state,
-        phase: 'prompt_ready', // Still show what we have
-      }
-
-    case 'START_EDITING_PROMPT':
-      return {
-        ...state,
-        phase: 'editing_prompt',
-        generationRunId: state.generationRunId + 1,
-      }
-
-    case 'EDIT_COMPLETE':
-      return {
-        ...state,
-        phase: 'prompt_ready',
-      }
-
-    case 'START_REVISING':
-      return {
-        ...state,
-        phase: 'revising',
-        hasRunInitialTask: false,
-      }
-
-    case 'SELECT_OPTION':
-      return {
-        ...state,
-        selectedOptionIndex: action.index,
-      }
-
-    case 'SELECT_CONSENT':
-      return {
-        ...state,
-        consentSelectedIndex: action.index,
-      }
-
-    case 'CANCEL_GENERATION':
-      return {
-        ...state,
-        phase: state.phase === 'generating_questions' ? 'idle' : 'prompt_ready',
-        generationRunId: state.generationRunId + 1,
-      }
-
-    case 'RESET':
-      return {
-        ...initialState,
-        generationRunId: state.generationRunId,
-      }
-
-    default:
-      return state
-  }
-}
-
-/**
- * Hook for managing the clarifying question flow state machine.
- * Provides a cleaner API than multiple useState calls.
- */
-export function useClarifyingFlow() {
-  const [state, dispatch] = useReducer(flowReducer, initialState)
-  const answersRef = useRef<ClarifyingAnswer[]>([])
-
-  // Helper to check if we're in a generating state
-  const isGenerating =
-    state.phase === 'generating_questions' || state.phase === 'generating_prompt' || state.phase === 'editing_prompt'
-
-  // Helper to check if we're awaiting user input for questions
-  const isAwaitingQuestionInput = state.phase === 'awaiting_consent' || state.phase === 'answering_questions'
-
-  // Actions with memoized callbacks
-  const startTask = useCallback((task: string) => {
-    answersRef.current = []
-    dispatch({ type: 'START_TASK', task })
-  }, [])
-
-  const consentYes = useCallback(() => dispatch({ type: 'CONSENT_YES' }), [])
-  const consentNo = useCallback(() => dispatch({ type: 'CONSENT_NO' }), [])
-
-  const questionsReady = useCallback((questions: ClarifyingQuestion[]) => {
-    dispatch({ type: 'QUESTIONS_READY', questions })
-  }, [])
-
-  const questionsFailed = useCallback(() => dispatch({ type: 'QUESTIONS_FAILED' }), [])
-
-  const addAnswer = useCallback((answer: ClarifyingAnswer) => {
-    answersRef.current = [...answersRef.current, answer]
-    dispatch({ type: 'NEXT_QUESTION' })
-  }, [])
-
-  const undoAnswer = useCallback(() => {
-    const prevIndex = answersRef.current.length - 1
-    if (prevIndex >= 0) {
-      answersRef.current = answersRef.current.slice(0, -1)
+    const answers = clarifyingAnswersRef.current
+    if (!answers.length) {
+      setAnsweringQuestions(false)
+      setAwaitingQuestionConsent(true)
+      setConsentSelectedIndex(0)
+      setClarifyingSelectedOptionIndex(null)
+      setCurrentQuestionIndex(0)
+      appendLine(ROLE.APP, 'Do you want to answer the clarifying questions? (yes/no)')
+      setTimeout(() => focusInputToEnd(), 0)
+      return
     }
-    dispatch({ type: 'UNDO_ANSWER', prevIndex })
-  }, [])
-
-  const promptReady = useCallback(() => dispatch({ type: 'PROMPT_READY' }), [])
-  const promptFailed = useCallback(() => dispatch({ type: 'PROMPT_FAILED' }), [])
-
-  const startEditing = useCallback(() => dispatch({ type: 'START_EDITING_PROMPT' }), [])
-  const editComplete = useCallback(() => dispatch({ type: 'EDIT_COMPLETE' }), [])
-
-  const startRevising = useCallback(() => dispatch({ type: 'START_REVISING' }), [])
-
-  const selectOption = useCallback((index: number | null) => {
-    dispatch({ type: 'SELECT_OPTION', index })
-  }, [])
-
-  const selectConsent = useCallback((index: number | null) => {
-    dispatch({ type: 'SELECT_CONSENT', index })
-  }, [])
-
-  const cancelGeneration = useCallback(() => dispatch({ type: 'CANCEL_GENERATION' }), [])
-
-  const reset = useCallback(() => {
-    answersRef.current = []
-    dispatch({ type: 'RESET' })
-  }, [])
-
-  const getAnswers = useCallback(() => answersRef.current, [])
-  const getAnswerCount = useCallback(() => answersRef.current.length, [])
+    const nextAnswers = answers.slice(0, -1)
+    clarifyingAnswersRef.current = nextAnswers
+    const prevIndex = Math.max(0, nextAnswers.length)
+    setClarifyingAnswers(nextAnswers, prevIndex)
+    setCurrentQuestionIndex(prevIndex)
+    const prevQuestion = clarifyingQuestions[prevIndex]
+    selectForQuestion(prevQuestion ?? null, true)
+    setAnsweringQuestions(true)
+    setAwaitingQuestionConsent(false)
+    appendLine(ROLE.APP, `Revisit question ${prevIndex + 1}: ${prevQuestion?.question ?? ''}`)
+    focusInputToEnd()
+  }, [
+    appendLine,
+    clarifyingAnswersRef,
+    clarifyingQuestions,
+    focusInputToEnd,
+    pendingTask,
+    selectForQuestion,
+    setAnsweringQuestions,
+    setAwaitingQuestionConsent,
+    setClarifyingAnswers,
+    setClarifyingSelectedOptionIndex,
+    setConsentSelectedIndex,
+    setCurrentQuestionIndex,
+  ])
 
   return {
-    // State
-    phase: state.phase,
-    task: state.task,
-    questions: state.questions,
-    currentQuestionIndex: state.currentQuestionIndex,
-    selectedOptionIndex: state.selectedOptionIndex,
-    consentSelectedIndex: state.consentSelectedIndex,
-    hasRunInitialTask: state.hasRunInitialTask,
-    generationRunId: state.generationRunId,
-
-    // Computed
-    isGenerating,
-    isAwaitingQuestionInput,
-    currentQuestion:
-      state.questions && state.currentQuestionIndex < state.questions.length
-        ? state.questions[state.currentQuestionIndex]
-        : null,
-
-    // Actions
-    startTask,
-    consentYes,
-    consentNo,
-    questionsReady,
-    questionsFailed,
-    addAnswer,
-    undoAnswer,
-    promptReady,
-    promptFailed,
-    startEditing,
-    editComplete,
-    startRevising,
-    selectOption,
-    selectConsent,
-    cancelGeneration,
-    reset,
-    getAnswers,
-    getAnswerCount,
+    startClarifyingQuestions,
+    handleQuestionConsent,
+    handleClarifyingOptionClick,
+    handleClarifyingAnswer,
+    handleUndoAnswer,
+    selectForQuestion,
+    appendClarifyingQuestion,
   }
 }

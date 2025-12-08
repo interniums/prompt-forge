@@ -12,6 +12,8 @@ export type TerminalLine = {
   text: string
 }
 
+export type ThemeName = 'dark' | 'dim' | 'light'
+
 /** User preferences for prompt shaping */
 export type Preferences = {
   tone?: string
@@ -29,6 +31,7 @@ export type Preferences = {
     autoCopyApproved?: boolean
     showClarifying?: boolean
     askPreferencesOnSkip?: boolean
+    theme?: ThemeName
   }
   sharingLinks?: {
     allowPrefillLinks?: boolean

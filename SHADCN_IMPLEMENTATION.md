@@ -119,7 +119,7 @@ export function cn(...inputs: ClassValue[]) {
 
 ### 7. ✅ Implemented localStorage for Non-Authenticated Users
 
-**Location**: `PreferencesPanel.tsx` and `FastEasyShell.tsx`
+**Location**: `PreferencesPanel.tsx` and `FastEasyShell.tsx` (PromptTerminal)
 
 **Features**:
 
@@ -216,7 +216,7 @@ Checked:   ☑  Ask every time
 3. `web/src/components/ui/select.tsx` - New Select component
 4. `web/src/components/ui/checkbox.tsx` - New Checkbox component
 5. `web/src/components/PreferencesPanel.tsx` - Updated to use shadcn components + localStorage
-6. `web/src/components/FastEasyShell.tsx` - Added localStorage loading logic
+6. `web/src/components/FastEasyShell.tsx` (PromptTerminal) - Added localStorage loading logic
 7. `web/src/lib/constants.ts` - Updated MODEL_OPTIONS array
 
 ## Testing Checklist
@@ -247,29 +247,9 @@ Checked:   ☑  Ask every time
 - [ ] Modal appears above all content
 - [ ] Scrolling works properly
 
-## Known Database Issue
+## Database note
 
-The server logs show errors about missing `do_not_ask_again` column. To fix:
-
-```bash
-# Run the migration in Supabase SQL editor:
-cat add-do-not-ask-again-migration.sql
-```
-
-This will add the column and resolve the save errors for authenticated users.
-
-## Migration Path for Existing Users
-
-1. **Authenticated users**:
-
-   - Existing preferences load from database
-   - New `do_not_ask_again` field requires migration
-   - After migration, full save/load works
-
-2. **Non-authenticated users**:
-   - Use localStorage automatically
-   - No setup needed
-   - Works immediately
+`user_preferences` must include `do_not_ask_again`. The column is present in `supabase-schema.sql`; apply that schema if authenticated preference saves fail.
 
 ## Development Notes
 

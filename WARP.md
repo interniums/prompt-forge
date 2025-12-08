@@ -4,9 +4,9 @@ This file provides guidance to WARP (warp.dev) when working with code in this re
 
 ## Repository status
 
-As of 2025-12-05 this repository contains both product docs and an implemented web application.
+As of 2025-12-08 this repository contains both product docs and an implemented web application.
 
-- The core product/docs live at the repo root (`README.md`, `docs-product-brief.md`, `docs-architecture.md`).
+- Core docs at the root (`README.md`, `docs-product-brief.md`, `docs-architecture.md`, `docs/DATA-FLOWS.md`).
 - The Next.js app lives in `web/` and renders the PromptForge terminal under `/generate` (catch-all: `/generate/**`). Modals (account, preferences) are **state-driven only**—no URL routing.
 
 The terminal is the primary user surface; any future features (templates, history, Task Helper) should be reachable through commands typed into this surface.
@@ -49,20 +49,15 @@ There is a single primary surface: the PromptForge terminal on `/`. Any addition
 
 These concepts and flows should shape both domain modeling and UI architecture once implementation begins.
 
-## Tech stack (initial plan)
+## Tech stack (current)
 
-As the implementation starts, the intended stack is:
+- Next.js (App Router), React 18, TypeScript
+- Tailwind CSS with shadcn-based select/checkbox primitives
+- Supabase (Postgres + Auth) for auth, session prefs/history/events
+- Reducer-driven terminal state in `features/terminal/terminalState.tsx` with typed actions in `stateActions.ts`
+- Server-only services for Supabase/LLM work in `web/src/services/*` (prompt, preferences, history, events, session); `app/terminalActions.ts` re-exports for API compatibility
 
-- **Framework**: Next.js (App Router) with React 18 and TypeScript.
-- **Styling**: Tailwind CSS with a small, focused design system.
-- **Database & auth**: Supabase (Postgres + Supabase Auth).
-- **State management**: React built-ins only (`useState`, `useReducer`, `useContext`, `useMemo`, etc.); no external global state managers.
-- **Data access**:
-  - Prefer server components and server actions for reads/writes.
-  - Use the Supabase JS client directly; Prisma can be introduced later if the data layer becomes complex.
-- **AI integration**: server-only utility modules wrapping LLM APIs (including Task Helper intent extraction and template ranking), with no keys exposed to the browser.
-
-For more detail, see `docs-architecture.md`.
+For more detail, see `docs-architecture.md` and `docs/DATA-FLOWS.md`.
 
 ## Future architecture guidance for agents
 

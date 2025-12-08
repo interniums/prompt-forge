@@ -3,6 +3,8 @@
  * Prevents magic strings scattered throughout the codebase.
  */
 
+import type { ThemeName } from './types'
+
 /** Terminal line roles */
 export const ROLE = {
   SYSTEM: 'system',
@@ -34,6 +36,13 @@ export const SESSION_COOKIE = 'pf_session_id'
 /** Preference defaults and option sets */
 export const DEFAULT_MODEL = 'gpt-4.1-mini'
 export const DEFAULT_TEMPERATURE = 0.4
+export const DEFAULT_THEME: ThemeName = 'dark'
+
+export const THEME_OPTIONS: ReadonlyArray<{ value: ThemeName; label: string }> = [
+  { value: 'light', label: 'White (Light)' },
+  { value: 'dim', label: 'Dim' },
+  { value: 'dark', label: 'Black (Dark)' },
+] as const
 
 export const MODEL_OPTIONS = [
   { value: 'gpt-4o', label: 'GPT-4o' },
@@ -94,8 +103,8 @@ export const TOAST_DURATION_MS = 2000
 
 /** Default terminal messages */
 export const MESSAGE = {
-  WELCOME: 'Describe your task and what kind of AI answer you expect.',
-  WELCOME_FRESH: 'Starting fresh. Describe your task and what kind of AI answer you expect.',
+  WELCOME: 'Starting fresh. Tell me your task + the result you want.',
+  WELCOME_FRESH: 'Starting fresh. Tell me your task + the result you want.',
   HISTORY_CLEARED: 'History cleared. Use /restore to bring it back.',
   NO_PREFERENCES: 'no preferences set yet',
   EMPTY_SUBMIT_WARNING: 'Nothing to submit. Type a command or describe a task.',
@@ -105,11 +114,9 @@ export const MESSAGE = {
   ASKING_QUESTIONS: 'Thinking about the best questions to ask...',
   CREATING_PROMPT: 'Creating your prompt...',
   EDITING_PROMPT: 'Editing your prompt...',
-  QUESTION_CONSENT:
-    'Before I craft your prompt, would you like to answer 3 quick questions to improve the context? (yes/no)',
+  QUESTION_CONSENT: 'Want to sharpen this before generating?',
   PROMPT_READY: 'Here is a prompt you can use or edit:',
-  PROMPT_APPROVED:
-    'Prompt approved and copied. You can now start a new task by typing /discard or continue updating this prompt.',
+  PROMPT_APPROVED: 'Prompt approved and copied. Use /discard to start new or keep editing.',
 } as const
 
 /** Keyboard shortcuts info */

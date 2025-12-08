@@ -1,5 +1,4 @@
-
-import { FastEasyShell } from '@/components/FastEasyShell'
+import { PromptTerminal } from '@/components/PromptTerminal'
 import { loadSessionState } from '../../session'
 import { ROLE, MESSAGE } from '@/lib/constants'
 import type { TerminalLine, Preferences, HistoryItem } from '@/lib/types'
@@ -52,7 +51,7 @@ export default async function GeneratePage() {
       {/* Background gradient */}
       <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top,rgba(148,163,184,0.18),transparent_55%),radial-gradient(circle_at_bottom,rgba(37,99,235,0.18),transparent_55%)] opacity-80" />
       <ErrorBoundary>
-        <FastEasyShell
+        <PromptTerminal
           initialLines={initialLines}
           initialPreferences={initialPreferences}
           initialUser={state.user}

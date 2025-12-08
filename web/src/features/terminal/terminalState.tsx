@@ -5,6 +5,27 @@ import type { TerminalLine, ClarifyingQuestion, ClarifyingAnswer, Preferences, H
 
 export type LikeState = 'none' | 'liked' | 'disliked'
 export type PreferenceKey = Extract<keyof Preferences, string>
+export type SessionSnapshot = {
+  lines: TerminalLine[]
+  editablePrompt: string | null
+  pendingTask: string | null
+  clarifyingQuestions: ClarifyingQuestion[] | null
+  clarifyingAnswers: ClarifyingAnswer[]
+  currentQuestionIndex: number
+  answeringQuestions: boolean
+  awaitingQuestionConsent: boolean
+  consentSelectedIndex: number | null
+  clarifyingSelectedOptionIndex: number | null
+  isPromptEditable: boolean
+  isPromptFinalized: boolean
+  lastApprovedPrompt: string | null
+  headerHelpShown: boolean
+  hasRunInitialTask: boolean
+  isAskingPreferenceQuestions: boolean
+  currentPreferenceQuestionKey: PreferenceKey | null
+  preferenceSelectedOptionIndex: number | null
+  pendingPreferenceUpdates: Partial<Preferences>
+}
 
 export type TerminalState = {
   inputValue: string
@@ -35,6 +56,7 @@ export type TerminalState = {
   draftRestoredShown: boolean
   emptySubmitWarned: boolean
   lastHistory: HistoryItem[] | null
+  lastSnapshot: SessionSnapshot | null
 }
 
 export const createInitialTerminalState = (initialLines: TerminalLine[]): TerminalState => ({
@@ -66,6 +88,7 @@ export const createInitialTerminalState = (initialLines: TerminalLine[]): Termin
   draftRestoredShown: false,
   emptySubmitWarned: false,
   lastHistory: null,
+  lastSnapshot: null,
 })
 
 export type TerminalAction =
@@ -98,6 +121,7 @@ export type TerminalAction =
   | { type: 'set_draft_restored_shown'; value: boolean }
   | { type: 'set_empty_submit_warned'; value: boolean }
   | { type: 'set_last_history'; value: HistoryItem[] | null }
+  | { type: 'set_last_snapshot'; value: SessionSnapshot | null }
 
 function terminalReducer(state: TerminalState, action: TerminalAction): TerminalState {
   switch (action.type) {
@@ -163,6 +187,8 @@ function terminalReducer(state: TerminalState, action: TerminalAction): Terminal
       return { ...state, emptySubmitWarned: action.value }
     case 'set_last_history':
       return { ...state, lastHistory: action.value }
+    case 'set_last_snapshot':
+      return { ...state, lastSnapshot: action.value }
     default:
       return state
   }

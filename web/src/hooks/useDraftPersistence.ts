@@ -11,6 +11,7 @@
 
 import { useEffect, useRef, useCallback, useState } from 'react'
 import type { TerminalLine, ClarifyingQuestion } from '@/lib/types'
+import type { LikeState } from '@/features/terminal/terminalState'
 
 const STORAGE_KEY = 'pf_draft'
 const DRAFT_EXPIRY_MS = 24 * 60 * 60 * 1000 // 24 hours
@@ -45,6 +46,14 @@ export interface DraftState {
   headerHelpShown: boolean
   /** Last approved prompt text, if any */
   lastApprovedPrompt: string | null
+  /** Whether the prompt was liked or disliked */
+  likeState: LikeState
+  /** Whether the preferences panel was open */
+  isPreferencesOpen: boolean
+  /** Whether the account/user management modal was open */
+  isUserManagementOpen: boolean
+  /** Whether the login-required modal was open */
+  isLoginRequiredOpen: boolean
 }
 
 interface StoredDraft extends DraftState {
@@ -54,7 +63,7 @@ interface StoredDraft extends DraftState {
   version: number
 }
 
-const CURRENT_VERSION = 3
+const CURRENT_VERSION = 4
 
 /**
  * Check if localStorage is available (can be disabled or full).
@@ -82,9 +91,8 @@ export function loadDraft(): DraftState | null {
 
     const stored: StoredDraft = JSON.parse(raw)
 
-    // Check version compatibility - allow migration from v2 to v3
-    if (stored.version && stored.version > CURRENT_VERSION) {
-      console.info('Draft version too new, clearing')
+    // Require exact version match; clear any older/newer drafts
+    if (stored.version !== CURRENT_VERSION) {
       localStorage.removeItem(STORAGE_KEY)
       return null
     }
@@ -118,6 +126,10 @@ export function loadDraft(): DraftState | null {
       isPromptFinalized: stored.isPromptFinalized ?? false,
       headerHelpShown: stored.headerHelpShown ?? false,
       lastApprovedPrompt: stored.lastApprovedPrompt ?? null,
+      likeState: stored.likeState ?? 'none',
+      isPreferencesOpen: stored.isPreferencesOpen ?? false,
+      isUserManagementOpen: stored.isUserManagementOpen ?? false,
+      isLoginRequiredOpen: stored.isLoginRequiredOpen ?? false,
     }
   } catch (err) {
     console.warn('Failed to load draft', err)
@@ -133,7 +145,8 @@ function saveDraft(draft: DraftState): void {
 
   // Don't save empty drafts
   const hasLines = draft.lines && draft.lines.length > 0
-  if (!draft.task && !draft.editablePrompt && !draft.clarifyingAnswers?.length && !hasLines) {
+  const hasUiState = draft.isPreferencesOpen || draft.isUserManagementOpen || draft.isLoginRequiredOpen
+  if (!draft.task && !draft.editablePrompt && !draft.clarifyingAnswers?.length && !hasLines && !hasUiState) {
     localStorage.removeItem(STORAGE_KEY)
     return
   }

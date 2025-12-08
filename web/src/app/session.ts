@@ -1,13 +1,8 @@
 import { cookies } from 'next/headers'
 import { createServiceSupabaseClient, createServerSupabaseClient } from '@/lib/supabase/server'
 import { SESSION_COOKIE } from '@/lib/constants'
-import type { Preferences, HistoryItem, SessionState, PreferenceSource, UserIdentity } from '@/lib/types'
+import type { Preferences, SessionState, PreferenceSource, UserIdentity } from '@/lib/types'
 import { mapPreferences } from '@/services/preferencesService'
-
-// Re-export types for backward compatibility
-export type { SessionState }
-export type SessionPreferences = Preferences
-export type SessionGeneration = HistoryItem
 
 /**
  * Validate that a string is a valid UUID v4 format.
@@ -128,7 +123,7 @@ export async function loadSessionState(): Promise<SessionState> {
     console.error('Failed to load generations history', generationsError)
   }
 
-  const generations: SessionGeneration[] = (generationsRows ?? []).map((g) => ({
+  const generations = (generationsRows ?? []).map((g) => ({
     id: g.id as string,
     task: g.task as string,
     label: g.label as string,

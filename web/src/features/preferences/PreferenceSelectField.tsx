@@ -3,6 +3,7 @@
 import React from 'react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ClearButton } from './ClearButton'
+import { preferenceSelectTriggerClass } from './styles'
 
 type Option = { value: string; label: string }
 
@@ -15,6 +16,7 @@ type PreferenceSelectFieldProps = {
   onChange: (value: string) => void
   onClear: () => void
   rightSlot?: React.ReactNode
+  hideClear?: boolean
 }
 
 export function PreferenceSelectField({
@@ -26,6 +28,7 @@ export function PreferenceSelectField({
   onChange,
   onClear,
   rightSlot,
+  hideClear = false,
 }: PreferenceSelectFieldProps) {
   return (
     <div className="space-y-2">
@@ -38,7 +41,7 @@ export function PreferenceSelectField({
       </div>
       <div className="relative">
         <Select value={value} onValueChange={onChange}>
-          <SelectTrigger className="w-full font-mono bg-[#0b1016] border border-slate-700 rounded-md px-3 py-2.5 text-base text-slate-100 shadow-[0_8px_18px_rgba(0,0,0,0.22)] focus:border-slate-500 focus:text-slate-50 focus:outline-none">
+          <SelectTrigger className={preferenceSelectTriggerClass}>
             <SelectValue placeholder={placeholder} />
           </SelectTrigger>
           <SelectContent>
@@ -49,7 +52,7 @@ export function PreferenceSelectField({
             ))}
           </SelectContent>
         </Select>
-        <ClearButton onClick={onClear} show={Boolean(value)} />
+        {!hideClear && <ClearButton onClick={onClear} show={Boolean(value)} />}
       </div>
     </div>
   )

@@ -3,7 +3,7 @@
 import React from 'react'
 
 const toastClassName =
-  'rounded-lg border border-slate-700/70 bg-[#050608] px-6 py-3 text-sm text-slate-100 shadow-[0_0_10px_rgba(15,23,42,0.5)] font-mono flex items-center gap-2'
+  'rounded-lg border border-slate-700/70 bg-slate-950 px-6 py-3 text-sm text-slate-100 shadow-[0_0_10px_rgba(15,23,42,0.5)] font-mono flex items-center gap-2'
 
 export type CenteredToastProps = {
   message: string | null

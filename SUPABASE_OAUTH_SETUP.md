@@ -16,13 +16,7 @@ This guide will walk you through activating Google OAuth for your PromptForge ap
    - Enter a project name (e.g., "PromptForge")
    - Click "Create"
 
-3. **Enable Google+ API**
-
-   - Go to "APIs & Services" > "Library"
-   - Search for "Google+ API"
-   - Click on it and press "Enable"
-
-4. **Configure OAuth Consent Screen**
+3. **Configure OAuth Consent Screen**
 
    - Go to "APIs & Services" > "OAuth consent screen"
    - Choose "External" (unless you have a Google Workspace)
@@ -35,7 +29,7 @@ This guide will walk you through activating Google OAuth for your PromptForge ap
    - On "Test users" page, add your email if needed, then "Save and Continue"
    - Review and go back to dashboard
 
-5. **Create OAuth 2.0 Credentials**
+4. **Create OAuth 2.0 Credentials**
    - Go to "APIs & Services" > "Credentials"
    - Click "Create Credentials" > "OAuth client ID"
    - Application type: **Web application**
@@ -134,7 +128,7 @@ You can find these in Supabase Dashboard > Settings > API:
 ### "OAuth client not found" error
 
 - Verify your Client ID and Client Secret are correct in Supabase
-- Make sure Google+ API is enabled in Google Cloud Console
+- Ensure the OAuth consent screen is published and the correct project is selected
 
 ### "Invalid client" error
 

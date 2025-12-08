@@ -1,5 +1,5 @@
 import type { TerminalLine, ClarifyingQuestion, ClarifyingAnswer, Preferences } from '@/lib/types'
-import type { TerminalAction, LikeState, PreferenceKey } from './terminalState'
+import type { TerminalAction, LikeState, PreferenceKey, SessionSnapshot } from './terminalState'
 import type { HistoryItem } from '@/lib/types'
 
 export const setInput = (value: string): TerminalAction => ({ type: 'set_input', value })
@@ -66,3 +66,4 @@ export const setLoginRequiredOpen = (value: boolean): TerminalAction => ({ type:
 export const setDraftRestoredShown = (value: boolean): TerminalAction => ({ type: 'set_draft_restored_shown', value })
 export const setEmptySubmitWarned = (value: boolean): TerminalAction => ({ type: 'set_empty_submit_warned', value })
 export const setLastHistory = (value: HistoryItem[] | null): TerminalAction => ({ type: 'set_last_history', value })
+export const setLastSnapshot = (value: SessionSnapshot | null): TerminalAction => ({ type: 'set_last_snapshot', value })

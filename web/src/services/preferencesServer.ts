@@ -5,8 +5,6 @@ import {
   mapPreferences,
   buildUserPreferencesPayload,
   buildSessionPreferencesPayload,
-  resolveTemperature,
-  clampTemperature,
 } from '@/services/preferencesService'
 import { ensureSessionExists, getOrCreateActionSessionId } from '@/services/sessionService'
 import { recordEvent } from '@/services/eventsService'
@@ -110,15 +108,4 @@ export async function savePreferences(preferences: Preferences): Promise<SavePre
 
   void recordEvent('preferences_updated', { scope: 'session', ...preferences })
   return { success: true, scope: 'session' }
-}
-
-/**
- * Convenience to pick a temperature for downstream callers using shared logic.
- */
-export function resolvePreferenceTemperature(preferences?: Preferences): number {
-  return resolveTemperature(preferences)
-}
-
-export function clampPreferenceTemperature(value: number | null | undefined): number | null {
-  return clampTemperature(value)
 }

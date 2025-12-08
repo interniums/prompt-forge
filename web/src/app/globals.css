@@ -1,36 +1,167 @@
 @import 'tailwindcss';
 
 :root {
-  /* Warp dark–inspired palette */
-  --background: #050608;
-  --background-elevated: #101218;
-  --foreground: #e5e7eb;
-  --foreground-muted: #9ca3af;
-  --accent: #7ee787;
+  --pf-theme: dark;
+  --pf-background: #050608;
+  --pf-background-elevated: #101218;
+  --pf-foreground: #e5e7eb;
+  --pf-foreground-muted: #9ca3af;
+  --pf-accent: #7ee787;
+  --background: var(--pf-background);
+  --background-elevated: var(--pf-background-elevated);
+  --foreground: var(--pf-foreground);
+  --foreground-muted: var(--pf-foreground-muted);
+  --accent: var(--pf-accent);
+
+  /* Slate palette overrides (black theme) */
+  --color-slate-50: #f8fafc;
+  --color-slate-100: #f1f5f9;
+  --color-slate-200: #e2e8f0;
+  --color-slate-300: #cbd5e1;
+  --color-slate-400: #94a3b8;
+  --color-slate-500: #64748b;
+  --color-slate-600: #475569;
+  --color-slate-700: #334155;
+  --color-slate-800: #1f2937;
+  --color-slate-900: #0f172a;
+  --color-slate-950: #050608;
+
+  /* Zinc palette overrides (black theme) */
+  --color-zinc-50: #fafafa;
+  --color-zinc-100: #f4f4f5;
+  --color-zinc-200: #e4e4e7;
+  --color-zinc-300: #d4d4d8;
+  --color-zinc-400: #a1a1aa;
+  --color-zinc-500: #71717a;
+  --color-zinc-600: #52525b;
+  --color-zinc-700: #3f3f46;
+  --color-zinc-800: #27272a;
+  --color-zinc-900: #18181b;
+  --color-zinc-950: #0b0b0f;
+
+  --color-black: #000000;
+  --color-white: #ffffff;
+
+  --pf-shadow-input: 0 16px 40px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  --pf-shadow-popover: 0 22px 60px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.06);
+
+  color-scheme: dark;
+}
+
+:root[data-theme='dim'] {
+  --pf-theme: dim;
+  --pf-background: #161c2b;
+  --pf-background-elevated: #20283a;
+  --pf-foreground: #e8ecf3;
+  --pf-foreground-muted: #b4bcc9;
+  --pf-accent: #7ee787;
+  --background: var(--pf-background);
+  --background-elevated: var(--pf-background-elevated);
+  --foreground: var(--pf-foreground);
+  --foreground-muted: var(--pf-foreground-muted);
+  --accent: var(--pf-accent);
+
+  --color-slate-50: #f3f5f8;
+  --color-slate-100: #e4e8ee;
+  --color-slate-200: #ccd3dd;
+  --color-slate-300: #b3becc;
+  --color-slate-400: #8d9ab0;
+  --color-slate-500: #6f7d96;
+  --color-slate-600: #56627c;
+  --color-slate-700: #434e66;
+  --color-slate-800: #323d53;
+  --color-slate-900: #252f43;
+  --color-slate-950: #161c2b;
+
+  --color-zinc-50: #f5f6f8;
+  --color-zinc-100: #e7e9ee;
+  --color-zinc-200: #d1d4dc;
+  --color-zinc-300: #b8bdc8;
+  --color-zinc-400: #979daa;
+  --color-zinc-500: #7a8090;
+  --color-zinc-600: #606776;
+  --color-zinc-700: #4d535f;
+  --color-zinc-800: #3a404c;
+  --color-zinc-900: #2b303c;
+  --color-zinc-950: #1d232e;
+
+  --color-black: #0a0d12;
+  --color-white: #ffffff;
+
+  --pf-shadow-input: 0 14px 36px rgba(8, 12, 24, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.06);
+  --pf-shadow-popover: 0 20px 52px rgba(8, 12, 24, 0.52), 0 0 0 1px rgba(255, 255, 255, 0.08);
+
+  color-scheme: dark;
+}
+
+:root[data-theme='light'] {
+  --pf-theme: light;
+  --pf-background: #ffffff;
+  --pf-background-elevated: #f3f5fb;
+  --pf-foreground: #0f172a;
+  --pf-foreground-muted: #475569;
+  --pf-accent: #2563eb;
+  --background: var(--pf-background);
+  --background-elevated: var(--pf-background-elevated);
+  --foreground: var(--pf-foreground);
+  --foreground-muted: var(--pf-foreground-muted);
+  --accent: var(--pf-accent);
+
+  --color-slate-50: #0f172a;
+  --color-slate-100: #1f2937;
+  --color-slate-200: #334155;
+  --color-slate-300: #475569;
+  --color-slate-400: #64748b;
+  --color-slate-500: #94a3b8;
+  --color-slate-600: #cbd5e1;
+  --color-slate-700: #e2e8f0;
+  --color-slate-800: #edf1f7;
+  --color-slate-900: #f4f6fb;
+  --color-slate-950: #ffffff;
+
+  --color-zinc-50: #18181b;
+  --color-zinc-100: #27272a;
+  --color-zinc-200: #3f3f46;
+  --color-zinc-300: #52525b;
+  --color-zinc-400: #71717a;
+  --color-zinc-500: #9ca3af;
+  --color-zinc-600: #d4d4d8;
+  --color-zinc-700: #e4e4e7;
+  --color-zinc-800: #f4f4f5;
+  --color-zinc-900: #fafafa;
+  --color-zinc-950: #ffffff;
+
+  --color-black: #0a0a0a;
+  --color-white: #ffffff;
+
+  --pf-shadow-input: 0 14px 32px rgba(15, 23, 42, 0.16), 0 0 0 1px rgba(15, 23, 42, 0.06);
+  --pf-shadow-popover: 0 20px 48px rgba(15, 23, 42, 0.18), 0 0 0 1px rgba(15, 23, 42, 0.08);
+
+  color-scheme: light;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-background: var(--pf-background);
+  --color-foreground: var(--pf-foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
 body {
-  background: #050608;
-  color: var(--foreground);
+  background: var(--pf-background);
+  color: var(--pf-foreground);
   font-family: system-ui, -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
 }
 
 /* Terminal-style caret and selection for the input area */
 .terminal-input {
-  caret-color: #ffffff;
+  caret-color: var(--pf-foreground);
   scrollbar-width: thin;
-  scrollbar-color: #4b5563 transparent;
+  scrollbar-color: var(--color-slate-500) transparent;
 }
 
 .terminal-input::selection {
-  background-color: rgba(148, 163, 184, 0.35);
+  background-color: color-mix(in srgb, var(--color-slate-400) 35%, transparent);
 }
 
 .terminal-input::-webkit-scrollbar {
@@ -42,18 +173,18 @@ body {
 }
 
 .terminal-input::-webkit-scrollbar-thumb {
-  background-color: #4b5563;
+  background-color: var(--color-slate-500);
   border-radius: 9999px;
 }
 
 .terminal-input::-webkit-scrollbar-thumb:hover {
-  background-color: #9ca3af;
+  background-color: var(--color-slate-400);
 }
 
 /* Custom scrollbar to match app style */
 .terminal-scroll {
   scrollbar-width: thin;
-  scrollbar-color: #4b5563 transparent;
+  scrollbar-color: var(--color-slate-500) transparent;
 }
 
 .terminal-scroll::-webkit-scrollbar {
@@ -65,10 +196,10 @@ body {
 }
 
 .terminal-scroll::-webkit-scrollbar-thumb {
-  background-color: #4b5563;
+  background-color: var(--color-slate-500);
   border-radius: 9999px;
 }
 
 .terminal-scroll::-webkit-scrollbar-thumb:hover {
-  background-color: #9ca3af;
+  background-color: var(--color-slate-400);
 }

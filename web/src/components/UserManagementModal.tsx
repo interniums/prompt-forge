@@ -2,6 +2,7 @@
 
 import React from 'react'
 import type { UserIdentity } from '@/lib/types'
+import { modalBackdropClass, modalCardClass } from '@/features/preferences/styles'
 
 type UserManagementModalProps = {
   open: boolean
@@ -29,11 +30,8 @@ export function UserManagementModal({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
-      onClick={handleBackdropClick}
-    >
-      <div className="w-full max-w-md rounded-xl bg-[#050608] p-6 shadow-[0_0_80px_rgba(15,23,42,0.95)]">
+    <div className={modalBackdropClass} onClick={handleBackdropClick}>
+      <div className={`${modalCardClass} max-w-md`}>
         {/* Header */}
         <div className="mb-6 flex items-start justify-between">
           <div>

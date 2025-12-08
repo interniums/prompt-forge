@@ -1,6 +1,7 @@
 'use client'
 
 import React, { memo, useMemo, useCallback } from 'react'
+import Image from 'next/image'
 import type { TerminalLine, ClarifyingQuestion, Preferences } from '@/lib/types'
 import { ROLE } from '@/lib/constants'
 import { textButtonClass } from './styles'
@@ -43,6 +44,11 @@ export type TerminalOutputAreaProps = {
   getPreferenceOptions?: (key: keyof Preferences) => Array<{ id: string; label: string }>
   getPreferenceQuestionText?: (key: keyof Preferences) => string
   getPreferencesToAsk?: () => Array<keyof Preferences>
+  showStarter?: boolean
+  starterExamples?: string[]
+  starterTitle?: string
+  starterSubtitle?: string
+  onExampleInsert?: (text: string) => void
 }
 
 /**
@@ -101,12 +107,12 @@ const ConsentButtons = memo(function ConsentButtons({
   consentSelectedIndex: number | null
   onConsentOptionClick: (index: number) => void
 }) {
-  const options = useMemo(() => ['yes', 'no'], [])
+  const options = useMemo(() => ['Generate now', 'Sharpen first (3 quick questions)'], [])
 
   return (
     <div className="mt-5 border-t border-slate-800 pt-4 text-[14px] text-slate-300">
-      <div className="mb-2 text-[13px] uppercase tracking-wide text-slate-500">Answer consent (yes/no)</div>
-      <div className="flex flex-row gap-2">
+      <div className="mb-2 text-[13px] uppercase tracking-wide text-slate-500">How do you want to continue?</div>
+      <div className="flex flex-col gap-2">
         {options.map((label, index) => {
           const isSelected = index === consentSelectedIndex
           return (
@@ -114,17 +120,11 @@ const ConsentButtons = memo(function ConsentButtons({
               key={label}
               type="button"
               onClick={() => onConsentOptionClick(index)}
-              className="cursor-pointer group flex items-center gap-1 rounded-md px-2 py-0.5 text-left text-[14px] text-slate-300"
+              className={`cursor-pointer rounded-md px-0 py-0 text-left text-[14px] font-mono ${
+                isSelected ? 'text-slate-50 underline underline-offset-4' : 'text-slate-300 hover:text-slate-50'
+              }`}
             >
-              <span
-                className={`font-mono text-[14px] ${
-                  isSelected
-                    ? 'text-slate-50 underline underline-offset-4'
-                    : 'text-slate-100 group-hover:underline group-hover:underline-offset-4'
-                }`}
-              >
-                {label}
-              </span>
+              <span className="font-mono text-[13px]">{label}</span>
             </button>
           )
         })}
@@ -162,6 +162,13 @@ const PreferenceOptions = memo(function PreferenceOptions({
         Choose an option (or answer in your own words)
       </div>
       <div className="flex flex-col gap-1">
+        <button
+          type="button"
+          onClick={() => onOptionClick(-1)}
+          className="cursor-pointer text-left text-[14px] text-slate-300 hover:text-slate-50"
+        >
+          Skip and generate now
+        </button>
         {options.map((opt, index) => {
           const isSelected = index === selectedOptionIndex
           return (
@@ -169,7 +176,7 @@ const PreferenceOptions = memo(function PreferenceOptions({
               key={opt.id}
               type="button"
               onClick={() => onOptionClick(index)}
-              className="cursor-pointer group flex w-full items-start gap-2 rounded-md px-2 py-1 text-left text-[14px] text-slate-300"
+              className="cursor-pointer group flex w-full items-start gap-2 px-0 py-1 text-left text-[14px] text-slate-300"
             >
               <span className="mt-0.5 text-[13px] text-slate-500">{opt.id})</span>
               <span
@@ -331,12 +338,14 @@ const ApprovedPromptLinks = memo(function ApprovedPromptLinks({ prompt }: { prom
     return (
       <span className="inline-flex items-center gap-2">
         {icon ? (
-          <img
+          <Image
             src={icon.src}
             alt={icon.alt}
+            width={16}
+            height={16}
             className="h-4 w-4 rounded-sm"
             loading="lazy"
-            referrerPolicy="no-referrer"
+            unoptimized
           />
         ) : null}
         <span>{provider.label}</span>
@@ -414,12 +423,22 @@ export const TerminalOutputArea = memo(function TerminalOutputArea({
   getPreferenceOptions,
   getPreferenceQuestionText,
   getPreferencesToAsk,
+  showStarter = false,
+  starterExamples = [],
+  starterTitle = 'No history yet. Generate your first prompt to get started.',
+  starterSubtitle = "You'll get 1–3 prompt options plus quick refinements.",
+  onExampleInsert,
 }: TerminalOutputAreaProps) {
   // Memoize the rendered lines to prevent recalculation on every render
   const renderedLines = useMemo(
     () =>
-      lines.map((line) => (
-        <TerminalLineItem key={line.id} line={line} onHelpCommandClick={onHelpCommandClick} inputRef={inputRef} />
+      lines.map((line, index) => (
+        <TerminalLineItem
+          key={`${line.id}-${index}`}
+          line={line}
+          onHelpCommandClick={onHelpCommandClick}
+          inputRef={inputRef}
+        />
       )),
     [lines, onHelpCommandClick, inputRef]
   )
@@ -430,6 +449,26 @@ export const TerminalOutputArea = memo(function TerminalOutputArea({
       className="terminal-scroll relative flex-1 space-y-2 overflow-y-auto px-3 pt-3 pb-4 text-[15px] leading-relaxed text-slate-200 font-mono"
     >
       {renderedLines}
+
+      {showStarter && starterExamples.length > 0 && onExampleInsert && (
+        <div className="mt-2 rounded-xl border border-slate-800/80 bg-slate-900/60 p-4 shadow-[0_12px_32px_rgba(0,0,0,0.35)]">
+          <div className="text-[15px] font-mono text-slate-50">{starterTitle}</div>
+          {starterSubtitle ? <div className="mt-1 text-[13px] text-slate-300">{starterSubtitle}</div> : null}
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            {starterExamples.map((example, idx) => (
+              <button
+                key={`${idx}-${example.slice(0, 16)}`}
+                type="button"
+                onClick={() => onExampleInsert(example)}
+                className="w-full cursor-pointer rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-3 text-left text-[14px] text-slate-100 transition hover:border-slate-600 hover:bg-slate-900/80"
+              >
+                <span className="block font-mono leading-relaxed">{example}</span>
+                <span className="mt-2 block text-[12px] text-slate-400">Click to paste into the input</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {awaitingQuestionConsent && (
         <ConsentButtons consentSelectedIndex={consentSelectedIndex} onConsentOptionClick={onConsentOptionClick} />
