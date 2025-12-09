@@ -1,41 +1,11 @@
 import { PromptTerminal } from '@/components/PromptTerminal'
 import { loadSessionState } from '../../session'
-import { ROLE, MESSAGE } from '@/lib/constants'
-import type { TerminalLine, Preferences, HistoryItem } from '@/lib/types'
+import type { TerminalLine, Preferences } from '@/lib/types'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 
 // Force dynamic rendering to always check latest session
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
-
-function buildInitialLines(generations: HistoryItem[]): TerminalLine[] {
-  const lines: TerminalLine[] = [
-    {
-      id: 0,
-      role: ROLE.SYSTEM,
-      text: MESSAGE.WELCOME,
-    },
-  ]
-
-  let nextId = 1
-
-  for (const g of generations.slice().reverse()) {
-    lines.push(
-      {
-        id: nextId++,
-        role: ROLE.USER,
-        text: g.task,
-      },
-      {
-        id: nextId++,
-        role: ROLE.APP,
-        text: `Previous prompt (${g.label}):\n\n${g.body}`,
-      }
-    )
-  }
-
-  return lines
-}
 
 export default async function GeneratePage() {
   const state = await loadSessionState()
@@ -43,7 +13,7 @@ export default async function GeneratePage() {
   // Allow unauthenticated access - users can explore the app without logging in
   // Login will be required before generating the first prompt
 
-  const initialLines = buildInitialLines(state.generations)
+  const initialLines: TerminalLine[] = []
   const initialPreferences: Preferences = state.preferences
 
   return (

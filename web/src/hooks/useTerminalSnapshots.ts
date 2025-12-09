@@ -2,12 +2,22 @@
 
 import { useCallback } from 'react'
 import type React from 'react'
-import type { ClarifyingAnswer, ClarifyingQuestion, HistoryItem, Preferences, TerminalLine } from '@/lib/types'
+import type {
+  ClarifyingAnswer,
+  ClarifyingQuestion,
+  GenerationMode,
+  HistoryItem,
+  Preferences,
+  TerminalLine,
+  TaskActivity,
+} from '@/lib/types'
 import type { PreferenceKey, SessionSnapshot } from '@/features/terminal/terminalState'
 import { ROLE, MESSAGE, type TerminalRole } from '@/lib/constants'
+import type { TerminalStatus } from '@/lib/types'
 
 type SnapshotDeps = {
   lines: TerminalLine[]
+  activity: TaskActivity | null
   editablePrompt: string | null
   pendingTask: string | null
   clarifyingQuestions: ClarifyingQuestion[] | null
@@ -17,6 +27,7 @@ type SnapshotDeps = {
   awaitingQuestionConsent: boolean
   consentSelectedIndex: number | null
   clarifyingSelectedOptionIndex: number | null
+  generationMode: GenerationMode
   isPromptEditable: boolean
   isPromptFinalized: boolean
   lastApprovedPrompt: string | null
@@ -27,8 +38,9 @@ type SnapshotDeps = {
   preferenceSelectedOptionIndex: number | null
   pendingPreferenceUpdates: Partial<Preferences>
   lastSnapshot: SessionSnapshot | null
-  appendLine: (role: TerminalRole, text: string) => void
+  appendLine: (role: TerminalRole, text: string | TerminalStatus) => void
   setLines: (next: TerminalLine[]) => void
+  setActivity: (value: TaskActivity | null) => void
   setEditablePrompt: (value: string | null) => void
   setPendingTask: (value: string | null) => void
   setClarifyingQuestions: (questions: ClarifyingQuestion[] | null) => void
@@ -38,6 +50,7 @@ type SnapshotDeps = {
   setAwaitingQuestionConsent: (value: boolean) => void
   setConsentSelectedIndex: (value: number | null) => void
   setClarifyingSelectedOptionIndex: (value: number | null) => void
+  setGenerationMode: (value: GenerationMode) => void
   setIsPromptEditable: (value: boolean) => void
   setIsPromptFinalized: (value: boolean) => void
   setLastApprovedPrompt: (value: string | null) => void
@@ -67,6 +80,7 @@ export function useTerminalSnapshots(deps: SnapshotDeps) {
     awaitingQuestionConsent,
     consentSelectedIndex,
     clarifyingSelectedOptionIndex,
+    generationMode,
     isPromptEditable,
     isPromptFinalized,
     lastApprovedPrompt,
@@ -79,6 +93,7 @@ export function useTerminalSnapshots(deps: SnapshotDeps) {
     lastSnapshot,
     appendLine,
     setLines,
+    setActivity,
     setEditablePrompt,
     setPendingTask,
     setClarifyingQuestions,
@@ -88,6 +103,7 @@ export function useTerminalSnapshots(deps: SnapshotDeps) {
     setAwaitingQuestionConsent,
     setConsentSelectedIndex,
     setClarifyingSelectedOptionIndex,
+    setGenerationMode,
     setIsPromptEditable,
     setIsPromptFinalized,
     setLastApprovedPrompt,
@@ -117,6 +133,7 @@ export function useTerminalSnapshots(deps: SnapshotDeps) {
       awaitingQuestionConsent,
       consentSelectedIndex,
       clarifyingSelectedOptionIndex,
+      generationMode,
       isPromptEditable,
       isPromptFinalized,
       lastApprovedPrompt,
@@ -134,6 +151,7 @@ export function useTerminalSnapshots(deps: SnapshotDeps) {
     clarifyingQuestions,
     clarifyingSelectedOptionIndex,
     consentSelectedIndex,
+    generationMode,
     currentPreferenceQuestionKey,
     currentQuestionIndex,
     editablePrompt,
@@ -164,27 +182,17 @@ export function useTerminalSnapshots(deps: SnapshotDeps) {
 
     saveSnapshot()
     setHeaderHelpShown(false)
-    setLines([
-      {
-        id: 0,
-        role: ROLE.SYSTEM,
-        text: MESSAGE.HISTORY_CLEARED,
-      },
-    ])
+    setActivity(null)
+    setLines([])
     setPendingTask(null)
     resetClarifyingFlowState()
-  }, [lines, resetClarifyingFlowState, saveSnapshot, setHeaderHelpShown, setLines, setPendingTask])
+  }, [lines, resetClarifyingFlowState, saveSnapshot, setActivity, setHeaderHelpShown, setLines, setPendingTask])
 
   const handleDiscard = useCallback(() => {
     setHeaderHelpShown(false)
     setLastSnapshot(null)
-    setLines([
-      {
-        id: 0,
-        role: ROLE.SYSTEM,
-        text: MESSAGE.WELCOME_FRESH,
-      },
-    ])
+    setActivity(null)
+    setLines([])
     setEditablePrompt(null)
     setIsPromptEditable(true)
     setIsPromptFinalized(false)
@@ -200,6 +208,7 @@ export function useTerminalSnapshots(deps: SnapshotDeps) {
     clearDraft()
   }, [
     clearDraft,
+    setActivity,
     resetClarifyingFlowState,
     setCurrentPreferenceQuestionKey,
     setEditablePrompt,
@@ -219,13 +228,8 @@ export function useTerminalSnapshots(deps: SnapshotDeps) {
 
   const handleStartNewConversation = useCallback(() => {
     saveSnapshot()
-    setLines([
-      {
-        id: 0,
-        role: ROLE.SYSTEM,
-        text: MESSAGE.WELCOME_FRESH,
-      },
-    ])
+    setActivity(null)
+    setLines([])
     setEditablePrompt(null)
     setIsPromptEditable(true)
     setIsPromptFinalized(false)
@@ -238,6 +242,7 @@ export function useTerminalSnapshots(deps: SnapshotDeps) {
   }, [
     resetClarifyingFlowState,
     saveSnapshot,
+    setActivity,
     setEditablePrompt,
     setHasRunInitialTask,
     setIsPromptEditable,
@@ -274,6 +279,9 @@ export function useTerminalSnapshots(deps: SnapshotDeps) {
     setCurrentPreferenceQuestionKey(lastSnapshot.currentPreferenceQuestionKey)
     setPreferenceSelectedOptionIndex(lastSnapshot.preferenceSelectedOptionIndex)
     setPendingPreferenceUpdates(lastSnapshot.pendingPreferenceUpdates)
+    if (lastSnapshot.generationMode === 'quick' || lastSnapshot.generationMode === 'guided') {
+      setGenerationMode(lastSnapshot.generationMode)
+    }
     setLastSnapshot(null)
   }, [
     appendLine,
@@ -287,6 +295,7 @@ export function useTerminalSnapshots(deps: SnapshotDeps) {
     setConsentSelectedIndex,
     setCurrentPreferenceQuestionKey,
     setEditablePrompt,
+    setGenerationMode,
     setHasRunInitialTask,
     setHeaderHelpShown,
     setIsAskingPreferenceQuestions,

@@ -11,7 +11,7 @@ import {
   THEME_OPTIONS,
   DEFAULT_THEME,
 } from '@/lib/constants'
-import type { Preferences, PreferenceSource, UserIdentity, ThemeName } from '@/lib/types'
+import type { GenerationMode, Preferences, PreferenceSource, UserIdentity, ThemeName } from '@/lib/types'
 import { Checkbox } from '@/components/ui/checkbox'
 import { ClearButton } from '@/features/preferences/ClearButton'
 import { PreferenceSelectField } from '@/features/preferences/PreferenceSelectField'
@@ -62,10 +62,12 @@ export function PreferencesPanel({
     })
   }, [open, values])
 
-  const uiDefaults = localValues.uiDefaults ?? {}
-  const sharingLinks = localValues.sharingLinks ?? {}
+  const uiDefaults = useMemo(() => localValues.uiDefaults ?? {}, [localValues.uiDefaults])
+  const sharingLinks = useMemo(() => localValues.sharingLinks ?? {}, [localValues.sharingLinks])
   const doNotAskAgain = useMemo(() => localValues.doNotAskAgain ?? {}, [localValues.doNotAskAgain])
   const selectedTheme = (uiDefaults.theme as ThemeName | undefined) ?? DEFAULT_THEME
+  const generationMode: GenerationMode =
+    uiDefaults.generationMode === 'quick' ? 'quick' : uiDefaults.showClarifying === false ? 'quick' : 'guided'
 
   // Debounce timeout ref
   const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null)
@@ -173,6 +175,21 @@ export function PreferencesPanel({
     }
   }
 
+  const handleModeChange = useCallback(
+    (mode: GenerationMode) => {
+      const updated = {
+        ...localValues,
+        uiDefaults: {
+          ...uiDefaults,
+          generationMode: mode,
+        },
+      }
+      setLocalValues(updated)
+      onChange(updated)
+    },
+    [localValues, onChange, uiDefaults]
+  )
+
   if (!open) return null
 
   const handleBackdropClick = async (e: React.MouseEvent) => {
@@ -185,7 +202,7 @@ export function PreferencesPanel({
 
   return (
     <div className={modalBackdropClass} onClick={handleBackdropClick}>
-      <div className={modalCardClass} onClick={(e) => e.stopPropagation()}>
+      <div className={`${modalCardClass} space-y-6`} onClick={(e) => e.stopPropagation()}>
         <div className="mb-6 flex items-start justify-between">
           <div className="space-y-2">
             <div className="font-mono text-lg font-semibold text-slate-50">Preferences</div>
@@ -460,10 +477,10 @@ export function PreferencesPanel({
           </div>
 
           {/* UI & Behavior Settings */}
-          <div className="mb-10">
-            <h3 className="font-mono text-lg font-semibold text-slate-200 mb-2">UI & Behavior</h3>
+          <div className="mb-10 space-y-3">
+            <h3 className="font-mono text-lg font-semibold text-slate-200">UI & Behavior</h3>
             <div className="grid grid-cols-1 gap-x-5 gap-y-3 xl:grid-cols-2 items-start">
-              <div className="xl:col-span-2">
+              <div className="xl:col-span-1 pb-2">
                 <PreferenceSelectField
                   label="Theme"
                   description="Choose between black, dim, or white interface styles"
@@ -482,6 +499,60 @@ export function PreferencesPanel({
               </div>
 
               <div className="space-y-4">
+                <div className="space-y-2 rounded-xl bg-transparent p-3">
+                  <div className="font-mono text-base text-slate-200">Default prompt mode</div>
+                  <div className="font-mono text-sm text-slate-500">
+                    Quick Start skips clarifying + preference questions. Guided Build asks short questions for higher
+                    quality prompts.
+                  </div>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    {(
+                      [
+                        { id: 'quick' as GenerationMode, title: 'Quick Start', hint: 'Fastest, no questions' },
+                        { id: 'guided' as GenerationMode, title: 'Guided Build', hint: 'Clarifying + preferences' },
+                      ] as const
+                    ).map((option) => {
+                      const isActive = generationMode === option.id
+                      return (
+                        <button
+                          key={option.id}
+                          type="button"
+                          onClick={() => handleModeChange(option.id)}
+                          className={`flex w-full cursor-pointer flex-col items-start rounded-lg border px-3 py-2 text-left shadow-[0_8px_24px_rgba(0,0,0,0.25)] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-1 focus-visible:ring-offset-slate-950 ${
+                            isActive
+                              ? 'border-slate-500 bg-slate-900 text-slate-50'
+                              : 'border-slate-800 bg-slate-950 text-slate-200 hover:border-slate-600 hover:text-slate-50'
+                          }`}
+                          aria-pressed={isActive}
+                        >
+                          <span className="font-mono text-[15px] font-semibold">{option.title}</span>
+                          <span className="font-mono text-[13px] text-slate-400">{option.hint}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <Checkbox
+                    checked={Boolean(uiDefaults.askPreferencesInGuided ?? true)}
+                    onCheckedChange={(checked: CheckedState) => {
+                      const updated = {
+                        ...localValues,
+                        uiDefaults: { ...uiDefaults, askPreferencesInGuided: checked !== false },
+                      }
+                      setLocalValues(updated)
+                      onChange(updated)
+                    }}
+                  />
+                  <div className="flex-1">
+                    <div className="font-mono text-base text-slate-300">Ask preference follow-ups in Guided mode</div>
+                    <div className="font-mono text-sm text-slate-500 mt-0.5">
+                      After clarifying, collect missing preferences before generating.
+                    </div>
+                  </div>
+                </label>
+
                 <label className="flex items-center gap-3 cursor-pointer">
                   <Checkbox
                     checked={Boolean(uiDefaults.autoCopyApproved)}
@@ -499,45 +570,7 @@ export function PreferencesPanel({
                     <div className="font-mono text-sm text-slate-500 mt-0.5">Copy to clipboard when you approve</div>
                   </div>
                 </label>
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <Checkbox
-                    checked={Boolean(uiDefaults.showClarifying)}
-                    onCheckedChange={(checked: CheckedState) => {
-                      const updated = {
-                        ...localValues,
-                        uiDefaults: { ...uiDefaults, showClarifying: checked === true },
-                      }
-                      setLocalValues(updated)
-                      onChange(updated)
-                    }}
-                  />
-                  <div className="flex-1">
-                    <div className="font-mono text-base text-slate-300">Ask clarifying questions</div>
-                    <div className="font-mono text-sm text-slate-500 mt-0.5">Enable follow-up questions by default</div>
-                  </div>
-                </label>
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <Checkbox
-                    checked={Boolean(uiDefaults.askPreferencesOnSkip)}
-                    onCheckedChange={(checked: CheckedState) => {
-                      const updated = {
-                        ...localValues,
-                        uiDefaults: { ...uiDefaults, askPreferencesOnSkip: checked === true },
-                      }
-                      setLocalValues(updated)
-                      onChange(updated)
-                    }}
-                  />
-                  <div className="flex-1">
-                    <div className="font-mono text-base text-slate-300">Ask preferences if clarifying skipped</div>
-                    <div className="font-mono text-sm text-slate-500 mt-0.5">
-                      When you choose “no” for clarifying, still ask preference questions
-                    </div>
-                  </div>
-                </label>
-              </div>
 
-              <div className="space-y-4">
                 <label className="flex items-center gap-3 cursor-pointer">
                   <Checkbox
                     checked={Boolean(sharingLinks.allowPrefillLinks)}

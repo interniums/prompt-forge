@@ -30,6 +30,8 @@ export function TerminalInputBar({
   onVoiceClick,
   voiceAvailable = true,
 }: TerminalInputBarProps) {
+  // Keep the action button enabled while generating so users can stop the run.
+  const isActionDisabled = !isGenerating && (disabled || !value.trim())
   return (
     <div className={terminalInputContainerClass}>
       <label htmlFor="terminal-input" className="sr-only">
@@ -83,10 +85,13 @@ export function TerminalInputBar({
               onSubmit()
             }
           }}
-          className={`inline-flex h-[44px] w-[48px] cursor-pointer items-center justify-center rounded-lg px-0 text-[15px] font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-1 focus-visible:ring-offset-slate-950 ${
+          disabled={isActionDisabled}
+          className={`inline-flex h-[44px] w-[48px] items-center justify-center rounded-lg px-0 text-[15px] font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-1 focus-visible:ring-offset-slate-950 ${
             isGenerating
-              ? 'border border-slate-700/80 bg-slate-800 text-slate-50 hover:bg-slate-700'
-              : 'border border-slate-700/80 bg-slate-950 text-slate-200 hover:border-slate-500 hover:text-slate-50'
+              ? 'cursor-pointer border border-slate-700/80 bg-slate-800 text-slate-50 hover:bg-slate-700'
+              : isActionDisabled
+              ? 'cursor-not-allowed border border-slate-800 bg-slate-900 text-slate-500'
+              : 'cursor-pointer border border-slate-700/80 bg-slate-950 text-slate-200 hover:border-slate-500 hover:text-slate-50'
           }`}
         >
           {isGenerating ? (

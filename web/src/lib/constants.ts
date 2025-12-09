@@ -37,6 +37,8 @@ export const SESSION_COOKIE = 'pf_session_id'
 export const DEFAULT_MODEL = 'gpt-4.1-mini'
 export const DEFAULT_TEMPERATURE = 0.4
 export const DEFAULT_THEME: ThemeName = 'dark'
+export const MIN_TASK_LENGTH = 6
+export const MAX_TASK_LENGTH = 4000
 
 export const THEME_OPTIONS: ReadonlyArray<{ value: ThemeName; label: string }> = [
   { value: 'light', label: 'White (Light)' },
@@ -103,11 +105,11 @@ export const TOAST_DURATION_MS = 2000
 
 /** Default terminal messages */
 export const MESSAGE = {
-  WELCOME: 'Starting fresh. Tell me your task + the result you want.',
-  WELCOME_FRESH: 'Starting fresh. Tell me your task + the result you want.',
-  HISTORY_CLEARED: 'History cleared. Use /restore to bring it back.',
+  WELCOME: "Let's choose a mode and generate your prompt.",
+  WELCOME_FRESH: "Let's choose a mode and generate your prompt.",
+  HISTORY_CLEARED: 'New session. Choose a mode to generate your prompt.',
   NO_PREFERENCES: 'no preferences set yet',
-  EMPTY_SUBMIT_WARNING: 'Nothing to submit. Type a command or describe a task.',
+  EMPTY_SUBMIT_WARNING: '',
   PROMPT_COPIED: 'Prompt copied',
   GENERATING_WAIT: 'Please wait for the AI to finish before submitting.',
   AI_STOPPED: 'Stopped AI generation for the current task.',

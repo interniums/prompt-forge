@@ -1,9 +1,15 @@
 'use client'
 
 import { useCallback } from 'react'
-import { ROLE, type TerminalRole } from '@/lib/constants'
-import type { ClarifyingAnswer, Preferences } from '@/lib/types'
+import type { ClarifyingAnswer, Preferences, TaskActivity } from '@/lib/types'
 import type { PreferenceKey } from '@/features/terminal/terminalState'
+
+const debugFlow = process.env.NEXT_PUBLIC_DEBUG_FLOW === 'true'
+const logFlow = (...args: unknown[]) => {
+  if (!debugFlow) return
+
+  console.info('[pf:flow]', ...args)
+}
 
 type PreferenceQuestionDeps = {
   preferences: Preferences
@@ -12,15 +18,19 @@ type PreferenceQuestionDeps = {
   isAskingPreferenceQuestions: boolean
   preferenceSelectedOptionIndex: number | null
   pendingPreferenceUpdates: Partial<Preferences>
+  preferenceQuestionsEnabled: boolean
   setIsAskingPreferenceQuestions: (value: boolean) => void
   setCurrentPreferenceQuestionKey: (value: PreferenceKey | null) => void
   setPreferenceSelectedOptionIndex: (value: number | null) => void
   setPendingPreferenceUpdates: (value: Partial<Preferences>) => void
-  updatePreferencesLocally: (next: Preferences) => void
-  appendLine: (role: TerminalRole, text: string) => void
+  setActivity: (activity: TaskActivity | null) => void
   focusInputToEnd: () => void
   clarifyingAnswersRef: React.MutableRefObject<ClarifyingAnswer[]>
-  generateFinalPromptForTask: (task: string, answers: ClarifyingAnswer[]) => Promise<void>
+  generateFinalPromptForTask: (
+    task: string,
+    answers: ClarifyingAnswer[],
+    options?: { skipConsentCheck?: boolean; preferencesOverride?: Preferences }
+  ) => Promise<void>
 }
 
 type KeyEventInfo = {
@@ -37,12 +47,12 @@ export function usePreferenceQuestions({
   isAskingPreferenceQuestions,
   preferenceSelectedOptionIndex,
   pendingPreferenceUpdates,
+  preferenceQuestionsEnabled,
   setIsAskingPreferenceQuestions,
   setCurrentPreferenceQuestionKey,
   setPreferenceSelectedOptionIndex,
   setPendingPreferenceUpdates,
-  updatePreferencesLocally,
-  appendLine,
+  setActivity,
   focusInputToEnd,
   clarifyingAnswersRef,
   generateFinalPromptForTask,
@@ -142,6 +152,7 @@ export function usePreferenceQuestions({
   }, [])
 
   const getPreferencesToAsk = useCallback((): PreferenceKey[] => {
+    if (!preferenceQuestionsEnabled) return []
     const doNotAskAgain = preferences.doNotAskAgain ?? {}
     const askablePreferenceKeys: PreferenceKey[] = [
       'tone',
@@ -158,41 +169,75 @@ export function usePreferenceQuestions({
     ]
     return askablePreferenceKeys.filter((key) => {
       const doNotAskKey = key as keyof NonNullable<Preferences['doNotAskAgain']>
-      return doNotAskAgain[doNotAskKey] === false
+      const value = preferences[key]
+      const hasValue = value !== undefined && value !== null && value !== ''
+      return doNotAskAgain[doNotAskKey] !== true && !hasValue
     })
-  }, [preferences.doNotAskAgain])
+  }, [preferenceQuestionsEnabled, preferences])
 
   const startPreferenceQuestions = useCallback(async () => {
+    if (!preferenceQuestionsEnabled) {
+      logFlow('preferences:skip_disabled')
+      setActivity({
+        task: pendingTask ?? '',
+        stage: 'preferences',
+        status: 'success',
+        message: 'Preferences skipped',
+        detail: 'Generating your prompt without preference questions.',
+      })
+      if (pendingTask) {
+        await generateFinalPromptForTask(pendingTask, clarifyingAnswersRef.current)
+      }
+      return
+    }
+    setActivity({
+      task: pendingTask ?? '',
+      stage: 'preferences',
+      status: 'loading',
+      message: 'Collecting preferences',
+      detail: 'Answer a couple of quick questions to sharpen the prompt.',
+    })
     const prefsToAsk = getPreferencesToAsk()
     if (prefsToAsk.length === 0) {
+      setActivity({
+        task: pendingTask ?? '',
+        stage: 'preferences',
+        status: 'success',
+        message: 'Preferences up to date',
+        detail: 'Using your saved preferences. Generating your prompt now.',
+      })
       if (pendingTask) {
         await generateFinalPromptForTask(pendingTask, clarifyingAnswersRef.current)
       }
       return
     }
 
+    logFlow('preferences:start', { pendingTask, count: prefsToAsk.length })
     setIsAskingPreferenceQuestions(true)
     setCurrentPreferenceQuestionKey(prefsToAsk[0])
     setPendingPreferenceUpdates({})
     const firstKeyOptions = getPreferenceOptions(prefsToAsk[0])
     setPreferenceSelectedOptionIndex(firstKeyOptions.length > 0 ? 0 : null)
+    setActivity({
+      task: pendingTask ?? '',
+      stage: 'preferences',
+      status: 'loading',
+      message: `Preferences ${1}/${prefsToAsk.length}`,
+      detail: getPreferenceQuestionText(prefsToAsk[0]),
+    })
 
-    if (prefsToAsk.length > 1) {
-      appendLine(ROLE.APP, `Now let's set some preferences for this prompt (${prefsToAsk.length} questions):`)
-    } else {
-      appendLine(ROLE.APP, "Now let's set a preference for this prompt:")
-    }
-    appendLine(ROLE.APP, `Preference 1/${prefsToAsk.length}: ${getPreferenceQuestionText(prefsToAsk[0])}`)
+    // UI renders preference questions; avoid duplicating in transcript.
     focusInputToEnd()
   }, [
-    appendLine,
     clarifyingAnswersRef,
     focusInputToEnd,
     generateFinalPromptForTask,
     getPreferenceOptions,
     getPreferenceQuestionText,
     getPreferencesToAsk,
+    preferenceQuestionsEnabled,
     pendingTask,
+    setActivity,
     setCurrentPreferenceQuestionKey,
     setIsAskingPreferenceQuestions,
     setPendingPreferenceUpdates,
@@ -204,7 +249,7 @@ export function usePreferenceQuestions({
       if (!currentPreferenceQuestionKey) return
 
       const trimmedAnswer = answer.trim()
-      appendLine(ROLE.USER, trimmedAnswer)
+      logFlow('preferences:answer', { key: currentPreferenceQuestionKey, answer: trimmedAnswer })
 
       let value: string | number | undefined = trimmedAnswer
       if (currentPreferenceQuestionKey === 'temperature') {
@@ -221,26 +266,41 @@ export function usePreferenceQuestions({
 
       if (nextIndex < prefsToAsk.length) {
         const nextKey = prefsToAsk[nextIndex]
+        logFlow('preferences:next', { nextKey, index: nextIndex })
         setCurrentPreferenceQuestionKey(nextKey)
         const nextKeyOptions = getPreferenceOptions(nextKey)
         setPreferenceSelectedOptionIndex(nextKeyOptions.length > 0 ? 0 : null)
-        appendLine(ROLE.APP, `Preference ${nextIndex + 1}/${prefsToAsk.length}: ${getPreferenceQuestionText(nextKey)}`)
+        setActivity({
+          task: pendingTask ?? '',
+          stage: 'preferences',
+          status: 'loading',
+          message: `Preferences ${nextIndex + 1}/${prefsToAsk.length}`,
+          detail: getPreferenceQuestionText(nextKey),
+        })
         focusInputToEnd()
       } else {
+        logFlow('preferences:complete', { updates })
         setIsAskingPreferenceQuestions(false)
         setCurrentPreferenceQuestionKey(null)
         setPreferenceSelectedOptionIndex(null)
         const updatedPrefs = { ...preferences, ...updates }
-        updatePreferencesLocally(updatedPrefs)
         setPendingPreferenceUpdates({})
 
+        setActivity({
+          task: pendingTask ?? '',
+          stage: 'preferences',
+          status: 'success',
+          message: 'Preferences captured for this prompt',
+          detail: 'Using these answers only for this prompt.',
+        })
         if (pendingTask) {
-          await generateFinalPromptForTask(pendingTask, clarifyingAnswersRef.current)
+          await generateFinalPromptForTask(pendingTask, clarifyingAnswersRef.current, {
+            preferencesOverride: updatedPrefs,
+          })
         }
       }
     },
     [
-      appendLine,
       clarifyingAnswersRef,
       currentPreferenceQuestionKey,
       focusInputToEnd,
@@ -251,22 +311,30 @@ export function usePreferenceQuestions({
       pendingPreferenceUpdates,
       pendingTask,
       preferences,
+      setActivity,
       setCurrentPreferenceQuestionKey,
       setIsAskingPreferenceQuestions,
       setPendingPreferenceUpdates,
       setPreferenceSelectedOptionIndex,
-      updatePreferencesLocally,
     ]
   )
 
   const handlePreferenceOptionClick = useCallback(
     (index: number) => {
       if (index === -1) {
+        logFlow('preferences:skip_option')
         setIsAskingPreferenceQuestions(false)
         setCurrentPreferenceQuestionKey(null)
         setPreferenceSelectedOptionIndex(null)
         setPendingPreferenceUpdates({})
         if (pendingTask) {
+          setActivity({
+            task: pendingTask,
+            stage: 'preferences',
+            status: 'success',
+            message: 'Preferences skipped',
+            detail: 'Generating your prompt without additional preferences.',
+          })
           void generateFinalPromptForTask(pendingTask, clarifyingAnswersRef.current)
         }
         return
@@ -276,6 +344,7 @@ export function usePreferenceQuestions({
       const options = getPreferenceOptions(currentPreferenceQuestionKey)
       if (index < 0 || index >= options.length) return
       const chosen = options[index]
+      logFlow('preferences:option', { key: currentPreferenceQuestionKey, option: chosen.label, index })
       setPreferenceSelectedOptionIndex(index)
       void handlePreferenceAnswer(chosen.label)
       focusInputToEnd()
@@ -288,6 +357,7 @@ export function usePreferenceQuestions({
       handlePreferenceAnswer,
       pendingTask,
       generateFinalPromptForTask,
+      setActivity,
       setCurrentPreferenceQuestionKey,
       setIsAskingPreferenceQuestions,
       setPendingPreferenceUpdates,

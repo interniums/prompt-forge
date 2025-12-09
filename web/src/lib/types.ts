@@ -5,14 +5,33 @@
 
 import type { TerminalRole } from './constants'
 
+export type TerminalStatus = {
+  title: string
+  description: string
+  state?: 'loading' | 'success' | 'error'
+}
+
+/**
+ * Single activity lifecycle for a task, rendered as a compact status card.
+ */
+export type TaskActivity = {
+  task: string
+  stage: 'collecting' | 'clarifying' | 'preferences' | 'generating' | 'ready' | 'error' | 'stopped'
+  status: 'loading' | 'success' | 'error'
+  message: string
+  detail?: string
+}
+
 /** A single line in the terminal output */
 export type TerminalLine = {
   id: number
   role: TerminalRole
   text: string
+  status?: TerminalStatus
 }
 
 export type ThemeName = 'dark' | 'dim' | 'light'
+export type GenerationMode = 'quick' | 'guided'
 
 /** User preferences for prompt shaping */
 export type Preferences = {
@@ -29,6 +48,21 @@ export type Preferences = {
   personaHints?: string
   uiDefaults?: {
     autoCopyApproved?: boolean
+    /**
+     * Default generation mode. Defaults to 'guided'.
+     * 'quick' = skip clarifying + preference questions.
+     * 'guided' = always ask clarifying, then preference questions (when enabled).
+     */
+    generationMode?: GenerationMode
+    /**
+     * Whether preference questions should run during guided mode.
+     * Defaults to true when unset.
+     */
+    askPreferencesInGuided?: boolean
+    /**
+     * Legacy flags retained for backwards compatibility with stored data.
+     * They are ignored by the current UI.
+     */
     showClarifying?: boolean
     askPreferencesOnSkip?: boolean
     theme?: ThemeName
@@ -104,7 +138,6 @@ export type SessionState = {
   preferences: Preferences
   preferencesSource: PreferenceSource
   user: UserIdentity | null
-  generations: HistoryItem[]
   isFirstLogin?: boolean
 }
 

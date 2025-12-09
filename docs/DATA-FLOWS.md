@@ -10,9 +10,8 @@ This document describes how the PromptForge terminal stores, retrieves, and sync
 ├──────────────┤   ├───────────────────────┤   ├────────────────────────┤
 │ Terminal UI  │   │ Server actions        │   │ pf_sessions            │
 │ Terminal reducer│ │ Services (prompt,    │   │ pf_preferences         │
-│ Draft in localStorage│ preferences, history,│ │ pf_generations        │
-│ pf_session_id cookie │ events, session)   │   │ pf_prompt_versions     │
-│                │   │ Supabase clients     │   │ pf_events              │
+│ Draft in localStorage│ preferences, history│   │ pf_generations        │
+│ pf_session_id cookie │ session)            │   │                       │
 └──────────────┘   └───────────────────────┘   │ user_preferences (auth)│
                                                └────────────────────────┘
 ```
@@ -41,9 +40,9 @@ This document describes how the PromptForge terminal stores, retrieves, and sync
 
 - `pf_sessions`: session ids (UUID).
 - `pf_preferences`: guest/session preferences (tone, audience, domain).
-- `pf_generations`: session-scoped history of prompts (task, label, body).
-- `pf_prompt_versions`: prompt snapshots for restores.
-- `pf_events`: analytics-style events for the session.
+- `pf_generations`: session-scoped history of prompts (task, label, body). Rows are retained per session with a server-side cap.
+- `pf_prompt_versions`: removed (legacy).
+- `pf_events`: removed (legacy analytics).
 - `user_preferences`: authenticated user preferences (tone, audience, domain, default model, temperature, language, depth, output format, citation preference, persona hints, ui_defaults, sharing_links, do_not_ask_again).
 
 ## Session management
@@ -55,7 +54,7 @@ This document describes how the PromptForge terminal stores, retrieves, and sync
    `getOrCreateActionSessionId()` issues a UUID, sets the cookie, and upserts `pf_sessions`.
 
 3. **Subsequent requests**  
-   `loadSessionState()` validates the cookie, fetches session preferences (if guest) or `user_preferences` (if authenticated), and hydrates the last 10 generations into the terminal lines.
+   `loadSessionState()` validates the cookie and fetches session preferences (if guest) or `user_preferences` (if authenticated). The terminal no longer auto-hydrates history; the surface stays clean on load.
 
 ## Preferences flow
 
@@ -68,14 +67,14 @@ This document describes how the PromptForge terminal stores, retrieves, and sync
 1. User types a task. Draft is saved to `localStorage` as they type.
 2. On submit, `promptService.generateClarifyingQuestions` may run; consent + clarifying answers live in reducer state and persist to draft storage.
 3. Approval triggers `promptService.generateFinalPrompt` (and optional edits via `promptService.editPrompt`).
-4. `historyService.recordGeneration` stores the result in `pf_generations` and `pf_prompt_versions`; `eventsService.recordEvent` logs `prompt_saved`.
-5. Draft is cleared; the approved prompt is copied when requested and logged via `recordEvent('prompt_copied', ...)`.
+4. `historyService.recordGeneration` stores the result in `pf_generations` (oldest rows beyond the cap are pruned per session).
+5. Draft is cleared; the approved prompt is copied when requested.
 
 ## History flow
 
-- `loadSessionState` preloads the 10 most recent generations for the session and renders them as system/user lines.
-- `/history` command routes through `historyService.listHistory` to render additional items.
-- Snapshots in `pf_prompt_versions` provide restore fidelity beyond the summary shown in history.
+- History is fetched on demand via the `/history` command (`historyService.listHistory`).
+- The terminal does not auto-render prior generations on load to avoid clutter; users pull history only when needed.
+- Prompt versions/events are removed; history relies on `pf_generations` with pruning.
 
 ## Error handling
 
@@ -83,6 +82,7 @@ This document describes how the PromptForge terminal stores, retrieves, and sync
 - Expected “no rows” responses (`PGRST116`) are treated as empty results.
 - Draft persistence guards against storage errors by catching/clearing bad payloads.
 - Cookie validation rejects non-UUID values to avoid injection.
+- Event logging and prompt_versions are removed to reduce stored PII.
 
 ## Performance notes
 

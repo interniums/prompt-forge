@@ -6,7 +6,7 @@ PromptForge is a single-surface, terminal-style Next.js app backed by Supabase. 
 
 - Next.js (App Router), React 18, TypeScript
 - Tailwind CSS with small shadcn-based UI primitives (select, checkbox)
-- Supabase (Postgres + Auth) for auth, preferences, events, and history
+- Supabase (Postgres + Auth) for auth, preferences, and history (events removed; prompt_versions removed)
 - Server-only services for LLM calls and Supabase access
 
 ## Runtime layout
@@ -28,8 +28,16 @@ PromptForge is a single-surface, terminal-style Next.js app backed by Supabase. 
 - Preferences:
   - Authenticated users: stored in `user_preferences` (tone, audience, domain, default model, temperature, language, depth, output format, citation preference, persona hints, UI defaults, sharing links, do_not_ask_again).
   - Guests: stored per session in `pf_preferences` (tone, audience, domain).
-- History: `pf_generations` stores session-scoped history; `pf_prompt_versions` mirrors prompts for restore. Last 10 generations hydrate the terminal on load.
+- History: `pf_generations` stores session-scoped history with server-side pruning (keep latest per session). `pf_prompt_versions` and events are removed; history is fetched on-demand (e.g., `/history`) to keep the terminal clean on load.
 - Events: `pf_events` records session analytics (prompt saved, prompt copied, preferences updated, etc.).
+- Auth:
+  - Login is required before generating or editing prompts. Server actions enforce authenticated Supabase sessions; client-side gating is a UX convenience only.
+  - Clarifying questions fall back to deterministic templates for guests to avoid anonymous OpenAI usage.
+- Task flow controller:
+  - `features/terminal/taskFlow.ts` encapsulates task submission, validation, consent/clarifying/preference branching, and revise flow. `PromptTerminal` consumes its handlers so the UI stays presentational and testable.
+- Mode and starter controllers:
+  - `features/terminal/modeController.ts` centralizes quick/guided switching and associated resets.
+  - `features/terminal/starterExamples.ts` owns starter prompts and focus behavior for inserts.
 
 ## UI composition rules
 

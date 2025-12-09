@@ -33,12 +33,7 @@ export async function middleware(request: NextRequest) {
 
   // If on login page and user is authenticated, redirect to home
   if (hasValidSession && request.nextUrl.pathname === '/login') {
-    return NextResponse.redirect(new URL('/', request.url))
-  }
-
-  // If on protected route and no user, redirect to login
-  if (!hasValidSession && request.nextUrl.pathname === '/') {
-    return NextResponse.redirect(new URL('/login', request.url))
+    return NextResponse.redirect(new URL('/generate', request.url))
   }
 
   return response

@@ -45,7 +45,7 @@ export function TerminalMain({
     <form onSubmit={onFormSubmit} className="relative flex-1 text-sm">
       <div className={terminalMainSurfaceClass}>
         <TerminalOutputAreaLazy {...outputProps} />
-        <div className="border-t border-slate-600 bg-slate-950 pt-3">
+        <div className="border-t border-slate-600 bg-slate-950 pt-3 px-4 rounded-b-2xl">
           <TerminalInputBar
             value={inputProps.value}
             onChange={inputProps.onChange}

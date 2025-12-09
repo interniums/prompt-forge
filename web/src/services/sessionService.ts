@@ -2,7 +2,8 @@
 
 import { cookies } from 'next/headers'
 import { SESSION_COOKIE } from '@/lib/constants'
-import { createServiceSupabaseClient } from '@/lib/supabase/server'
+import { createServiceSupabaseClient, createServerSupabaseClient } from '@/lib/supabase/server'
+import type { UserIdentity } from '@/lib/types'
 
 /**
  * Ensure a session row exists in the database.
@@ -54,4 +55,24 @@ export async function getOrCreateActionSessionId(): Promise<string> {
   }
 
   return id
+}
+
+/**
+ * Require an authenticated user (Supabase session).
+ * Throws a typed UNAUTHENTICATED error if no user is found.
+ */
+export async function requireAuthenticatedUser(): Promise<UserIdentity> {
+  const supabase = await createServerSupabaseClient()
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser()
+
+  if (!user || error) {
+    const err = new Error('UNAUTHENTICATED')
+    ;(err as { code?: string }).code = 'UNAUTHENTICATED'
+    throw err
+  }
+
+  return { id: user.id, email: user.email }
 }

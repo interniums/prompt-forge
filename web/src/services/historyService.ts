@@ -2,7 +2,6 @@
 
 import { createServiceSupabaseClient } from '@/lib/supabase/server'
 import { ensureSessionExists, getOrCreateActionSessionId } from '@/services/sessionService'
-import { recordEvent } from '@/services/eventsService'
 import type { GeneratedPrompt, HistoryItem } from '@/lib/types'
 
 /**
@@ -44,32 +43,6 @@ export async function recordGeneration(input: { task: string; prompt: GeneratedP
   }
 
   const generationId = data?.id as string | undefined
-
-  // Record the event (non-blocking)
-  void recordEvent('prompt_saved', {
-    task: input.task,
-    prompt: input.prompt,
-    generationId,
-  })
-
-  // Also store in prompt versions for detailed restore (non-blocking, but log errors)
-  const promptVersion = {
-    session_id: sessionId,
-    task: input.task,
-    label: input.prompt.label,
-    body: input.prompt.body,
-    revision: null,
-    source_event_id: null,
-  }
-
-  supabase
-    .from('pf_prompt_versions')
-    .insert(promptVersion)
-    .then(({ error: pvError }) => {
-      if (pvError) {
-        console.error('Failed to record prompt version', pvError)
-      }
-    })
 
   return generationId ?? null
 }

@@ -64,7 +64,6 @@ export async function loadSessionState(): Promise<SessionState> {
       preferences,
       preferencesSource,
       user,
-      generations: [],
       isFirstLogin: false,
     }
   }
@@ -112,24 +111,5 @@ export async function loadSessionState(): Promise<SessionState> {
     preferencesSource = prefsRow ? 'session' : 'none'
   }
 
-  const { data: generationsRows, error: generationsError } = await serviceSupabase
-    .from('pf_generations')
-    .select('id, task, label, body, created_at')
-    .eq('session_id', sessionId)
-    .order('created_at', { ascending: false })
-    .limit(10)
-
-  if (generationsError) {
-    console.error('Failed to load generations history', generationsError)
-  }
-
-  const generations = (generationsRows ?? []).map((g) => ({
-    id: g.id as string,
-    task: g.task as string,
-    label: g.label as string,
-    body: g.body as string,
-    created_at: g.created_at as string,
-  }))
-
-  return { sessionId, preferences, preferencesSource, user, generations, isFirstLogin }
+  return { sessionId, preferences, preferencesSource, user, isFirstLogin }
 }

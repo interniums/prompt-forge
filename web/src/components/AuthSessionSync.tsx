@@ -19,6 +19,18 @@ export function AuthSessionSync() {
   useEffect(() => {
     const supabase = getSupabaseBrowserClient()
     const cookieName = getAuthCookieName()
+    const secure = typeof window !== 'undefined' && window.location.protocol === 'https:'
+
+    const setSessionCookie = (session: unknown, maxAgeSeconds: number) => {
+      const encoded = encodeURIComponent(JSON.stringify(session))
+      const secureFlag = secure ? '; Secure' : ''
+      document.cookie = `${cookieName}=${encoded}; path=/; max-age=${maxAgeSeconds}; SameSite=Lax${secureFlag}`
+    }
+
+    const clearSessionCookie = () => {
+      const secureFlag = secure ? '; Secure' : ''
+      document.cookie = `${cookieName}=; path=/; max-age=0; SameSite=Lax${secureFlag}`
+    }
 
     // Sync current session to cookies
     const syncSession = async () => {
@@ -28,10 +40,10 @@ export function AuthSessionSync() {
 
       if (session) {
         // Store session in a cookie that the server can read
-        document.cookie = `${cookieName}=${JSON.stringify(session)}; path=/; max-age=${60 * 60 * 24 * 7}; SameSite=Lax`
+        setSessionCookie(session, 60 * 60 * 24 * 7)
       } else {
         // Clear the cookie if no session
-        document.cookie = `${cookieName}=; path=/; max-age=0`
+        clearSessionCookie()
       }
     }
 
@@ -43,9 +55,9 @@ export function AuthSessionSync() {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session) {
-        document.cookie = `${cookieName}=${JSON.stringify(session)}; path=/; max-age=${60 * 60 * 24 * 7}; SameSite=Lax`
+        setSessionCookie(session, 60 * 60 * 24 * 7)
       } else {
-        document.cookie = `${cookieName}=; path=/; max-age=0`
+        clearSessionCookie()
       }
     })
 

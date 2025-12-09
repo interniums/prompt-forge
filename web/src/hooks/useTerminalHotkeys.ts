@@ -39,7 +39,7 @@ type PromptControls = {
   editablePrompt: string | null
   setIsPromptEditable: (value: boolean) => void
   setIsPromptFinalized: (value: boolean) => void
-  editablePromptRef: React.RefObject<HTMLTextAreaElement | null>
+  editablePromptRef: React.RefObject<HTMLDivElement | null>
   inputRef: React.RefObject<HTMLTextAreaElement | null>
   onCopyEditablePrompt?: () => void
 }
@@ -153,14 +153,6 @@ export function useTerminalHotkeys({ consent, clarifying, preference, prompt }: 
       // Cmd/Ctrl+E focuses editable prompt when available
       if ((metaKey || ctrlKey) && key.toLowerCase() === 'e' && prompt.editablePrompt) {
         preventDefault()
-        prompt.setIsPromptEditable(true)
-        prompt.setIsPromptFinalized(false)
-        if (prompt.editablePromptRef.current) {
-          const el = prompt.editablePromptRef.current
-          const len = el.value.length
-          el.focus()
-          el.setSelectionRange(len, len)
-        }
         return
       }
 

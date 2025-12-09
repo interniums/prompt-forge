@@ -15,6 +15,9 @@ export function getSupabaseBrowserClient(): SupabaseClient {
     throw new Error('NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY must be set')
   }
 
+  const isSecureCookie =
+    (typeof window !== 'undefined' && window.location.protocol === 'https:') || process.env.NODE_ENV === 'production'
+
   browserClient = createClient(url, anonKey, {
     auth: {
       persistSession: true,
@@ -30,7 +33,8 @@ export function getSupabaseBrowserClient(): SupabaseClient {
             expires: 7, // 7 days
             path: '/',
             sameSite: 'lax',
-            secure: false, // Allow non-HTTPS for local development
+            // Avoid shipping auth cookies over insecure channels in production.
+            secure: isSecureCookie,
           })
         },
         removeItem: (key: string) => {

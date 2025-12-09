@@ -3,10 +3,37 @@
 import OpenAI from 'openai'
 import { GENERIC_QUESTION_TEMPLATES } from '@/app/terminalFallbacks'
 import { clampTemperature, resolveTemperature } from '@/services/preferencesService'
+import { requireAuthenticatedUser } from '@/services/sessionService'
 import { recordEvent } from '@/services/eventsService'
 import type { Preferences, ClarifyingQuestion, ClarifyingAnswer, ClarifyingOption } from '@/lib/types'
 
+const aiApiEnabled = (() => {
+  const raw = process.env.AI_API_ENABLED?.toLowerCase()
+  if (raw === 'false' || raw === '0' || raw === 'off') return false
+  if (raw === 'true' || raw === '1' || raw === 'on') return true
+  return true // default to enabled when unset
+})()
+
 export type PreferencesInput = Preferences
+
+const MIN_TASK_LENGTH = 6
+const MAX_TASK_LENGTH = 4000
+
+function assertValidTask(task: string) {
+  const trimmed = task.trim()
+  if (!trimmed || trimmed.length < MIN_TASK_LENGTH) {
+    const err = new Error('INVALID_INPUT')
+    ;(err as { code?: string; reason?: string }).code = 'INVALID_INPUT'
+    ;(err as { reason?: string }).reason = 'too_short'
+    throw err
+  }
+  if (trimmed.length > MAX_TASK_LENGTH) {
+    const err = new Error('INVALID_INPUT')
+    ;(err as { code?: string; reason?: string }).code = 'INVALID_INPUT'
+    ;(err as { reason?: string }).reason = 'too_long'
+    throw err
+  }
+}
 
 function buildStyleLine(preferences: PreferencesInput): string {
   const parts: string[] = []
@@ -41,10 +68,12 @@ export async function generateClarifyingQuestions(input: {
 }): Promise<ClarifyingQuestion[]> {
   const task = input.task.trim()
   if (!task) return []
+  assertValidTask(task)
 
-  const apiKey = process.env.OPENAI_API_KEY
+  const apiKey = aiApiEnabled ? process.env.OPENAI_API_KEY : undefined
   const temperature = Math.min(0.8, resolveTemperature(input.preferences))
   if (!apiKey) {
+    const reason = aiApiEnabled ? 'missing_api_key' : 'api_disabled'
     // Fallback: use generic, deterministic clarifying questions so the full flow
     // can be tested without an OpenAI connection.
     const questions = GENERIC_QUESTION_TEMPLATES.map((q) => ({
@@ -58,9 +87,28 @@ export async function generateClarifyingQuestions(input: {
       preferences: input.preferences ?? {},
       count: questions.length,
       source: 'fallback',
+      reason,
     })
 
     return questions
+  }
+
+  // Guests can still explore the flow, but we avoid hitting OpenAI for unauthenticated users.
+  try {
+    await requireAuthenticatedUser()
+  } catch {
+    void recordEvent('clarifying_questions_generated', {
+      task,
+      preferences: input.preferences ?? {},
+      count: GENERIC_QUESTION_TEMPLATES.length,
+      source: 'fallback',
+      reason: 'unauthenticated',
+    })
+    return GENERIC_QUESTION_TEMPLATES.map((q) => ({
+      id: q.id,
+      question: q.question,
+      options: q.options.map((o) => ({ id: o.id, label: o.label })),
+    }))
   }
 
   const client = new OpenAI({ apiKey })
@@ -205,8 +253,12 @@ export async function generateFinalPrompt(input: {
 }): Promise<string> {
   const task = input.task.trim()
   if (!task) return ''
+  assertValidTask(task)
 
-  const apiKey = process.env.OPENAI_API_KEY
+  // Enforce authentication at the server boundary to prevent anonymous OpenAI usage.
+  await requireAuthenticatedUser()
+
+  const apiKey = aiApiEnabled ? process.env.OPENAI_API_KEY : undefined
   const preferences = input.preferences ?? {}
   const styleLine = buildStyleLine(preferences)
   const preferenceLines: string[] = []
@@ -223,6 +275,7 @@ export async function generateFinalPrompt(input: {
 
   // Fallback: no API key, synthesize a simple direct-instruction prompt.
   if (!apiKey) {
+    const reason = aiApiEnabled ? 'missing_api_key' : 'api_disabled'
     const prompt = ['You are an AI assistant.', styleLine, ...preferenceLines, 'Task:', task].join('\n\n')
 
     void recordEvent('prompt_generated', {
@@ -231,6 +284,7 @@ export async function generateFinalPrompt(input: {
       answers: input.answers ?? [],
       prompt,
       source: 'fallback',
+      reason,
     })
 
     return prompt
@@ -309,12 +363,15 @@ export async function editPrompt(input: {
   const editRequest = input.editRequest.trim()
   if (!current || !editRequest) return current
 
-  const apiKey = process.env.OPENAI_API_KEY
+  await requireAuthenticatedUser()
+
+  const apiKey = aiApiEnabled ? process.env.OPENAI_API_KEY : undefined
   const preferences = input.preferences ?? {}
   const styleLine = buildStyleLine(preferences)
   const temperature = resolveTemperature(preferences)
 
   if (!apiKey) {
+    const reason = aiApiEnabled ? 'missing_api_key' : 'api_disabled'
     // Fallback: keep the existing prompt and surface the edit request as a comment
     // so the user can manually adjust it.
     const prompt = [
@@ -328,6 +385,7 @@ export async function editPrompt(input: {
       editRequest,
       prompt,
       source: 'fallback',
+      reason,
       preferences,
     })
 

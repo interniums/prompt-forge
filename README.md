@@ -31,12 +31,13 @@ Apply the schema in `supabase-schema.sql` to your Supabase project before runnin
 - Task → prompt: type a task, optionally answer clarifying questions, approve/copy the generated prompt.
 - Preferences: open the preferences modal or run the preference Q&A to set tone/audience/domain/model/etc.; stored per user when signed in, otherwise per session.
 - History: the last 10 prompts for the session are rendered into the terminal on load; full history is retrievable via `/history`.
-- Auth: the terminal is usable as a guest; sign-in is required before generating/saving prompts. Magic link and Google OAuth are supported.
+- Auth: the terminal is usable as a guest; sign-in is required before generating/saving prompts. Magic link and Google OAuth are supported. Prompt generation calls are server-guarded to require an authenticated session.
 
 ## Developer commands
 
 - Dev server: `cd web && npm run dev`
 - Lint: `cd web && npm run lint`
+- Tests: `cd web && npm run test`
 - Build: `cd web && npm run build`
 
 ## Docs
@@ -45,7 +46,15 @@ Apply the schema in `supabase-schema.sql` to your Supabase project before runnin
 - Architecture: `docs-architecture.md`
 - Data flows: `docs/DATA-FLOWS.md`
 - Supabase setup: `SUPABASE_OAUTH_SETUP.md`, `supabase-schema.sql`
+- Controller pattern: feature logic (task flow, mode switching, etc.) lives in `web/src/features/terminal/*` controllers so UI components stay presentational and testable (`PromptTerminal` wires them together).
+- History/snapshots: `useTerminalSnapshots` + `useTerminalSnapshotsController` manage clear/restore/discard/history flows; see `web/src/features/terminal/snapshotsController.test.ts` for expected behaviors.
+- Tests: run `npm test` (Vitest). Controller/unit tests cover task flow, mode, starter examples, snapshots, prompt service, and terminal input.
 
 ## Status
 
 The shipped surface is the PromptForge terminal at `/generate`. Templates/gallery are not yet implemented; the codebase is organized for future feature modules but keeps the experience on a single, calm screen.
+
+## SEO and security
+
+- Security headers are applied via `next.config.ts` (CSP, frame protections, referrer policy).
+- Robots and sitemap endpoints live under `src/app/robots.ts` and `src/app/sitemap.ts`.

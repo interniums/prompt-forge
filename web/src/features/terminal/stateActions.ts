@@ -1,10 +1,12 @@
-import type { TerminalLine, ClarifyingQuestion, ClarifyingAnswer, Preferences } from '@/lib/types'
+import type { TerminalLine, ClarifyingQuestion, ClarifyingAnswer, Preferences, TaskActivity } from '@/lib/types'
 import type { TerminalAction, LikeState, PreferenceKey, SessionSnapshot } from './terminalState'
+import type { GenerationMode } from '@/lib/types'
 import type { HistoryItem } from '@/lib/types'
 
 export const setInput = (value: string): TerminalAction => ({ type: 'set_input', value })
 export const appendLines = (lines: TerminalLine[]): TerminalAction => ({ type: 'append_lines', lines })
 export const replaceLines = (lines: TerminalLine[]): TerminalAction => ({ type: 'replace_lines', lines })
+export const setActivity = (activity: TaskActivity | null): TerminalAction => ({ type: 'set_activity', activity })
 export const setGenerating = (value: boolean): TerminalAction => ({ type: 'set_generating', value })
 export const setPendingTask = (value: string | null): TerminalAction => ({ type: 'set_pending_task', value })
 export const setEditablePrompt = (value: string | null): TerminalAction => ({ type: 'set_editable_prompt', value })
@@ -35,6 +37,7 @@ export const setClarifyingSelectedOption = (value: number | null): TerminalActio
   type: 'set_clarifying_selected_option',
   value,
 })
+export const setGenerationMode = (value: GenerationMode): TerminalAction => ({ type: 'set_generation_mode', value })
 export const setPromptEditable = (value: boolean): TerminalAction => ({ type: 'set_prompt_editable', value })
 export const setPromptFinalized = (value: boolean): TerminalAction => ({ type: 'set_prompt_finalized', value })
 export const setLikeState = (value: LikeState): TerminalAction => ({ type: 'set_like_state', value })

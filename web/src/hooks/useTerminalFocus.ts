@@ -29,10 +29,5 @@ export function useTerminalFocus({ editablePrompt, inputRef, copyEditablePrompt 
     return () => window.removeEventListener('keydown', handleGlobalCopy)
   }, [copyEditablePrompt, editablePrompt])
 
-  useEffect(() => {
-    if (!inputRef.current) return
-    inputRef.current.blur()
-  }, [inputRef])
-
   return { focusInputToEnd }
 }

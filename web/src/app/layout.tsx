@@ -15,9 +15,48 @@ const geistMono = Geist_Mono({
   subsets: ['latin'],
 })
 
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'
+
 export const metadata: Metadata = {
+  metadataBase: new URL(siteUrl),
   title: 'PromptForge',
   description: 'A minimalistic, high-craft prompt generator for turning fuzzy goals into clear, reusable prompts.',
+  keywords: [
+    'prompt engineering',
+    'ai prompts',
+    'prompt builder',
+    'clarifying questions',
+    'prompt generator',
+    'LLM',
+    'supabase',
+    'next.js',
+  ],
+  openGraph: {
+    type: 'website',
+    url: siteUrl,
+    siteName: 'PromptForge',
+    title: 'PromptForge – Guided prompt builder',
+    description: 'Turn fuzzy goals into ready-to-use prompts with clarifying questions and preferences.',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'PromptForge – Guided prompt builder',
+    description: 'Turn fuzzy goals into ready-to-use prompts with clarifying questions and preferences.',
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      'max-snippet': -1,
+      'max-image-preview': 'large',
+      'max-video-preview': -1,
+    },
+  },
+  alternates: {
+    canonical: '/generate',
+  },
 }
 
 const THEME_COOKIE = 'pf_theme'

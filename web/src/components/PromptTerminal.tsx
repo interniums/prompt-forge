@@ -6,12 +6,11 @@ import { recordEvent } from '@/services/eventsService'
 import { TerminalHeader } from './terminal/TerminalHeader'
 import { useToast } from '@/hooks/useToast'
 import { clearDraft } from '@/hooks/useDraftPersistence'
-import { ROLE, COMMAND, MESSAGE, SHORTCUT, EMPTY_SUBMIT_COOLDOWN_MS, type TerminalRole } from '@/lib/constants'
+import { ROLE, COMMAND, MESSAGE, type TerminalRole, SHORTCUT } from '@/lib/constants'
 import { TerminalShellView } from '@/features/terminal/TerminalShellView'
 import { TerminalPanels } from '@/features/terminal/TerminalPanels'
 import { TerminalMain } from '@/features/terminal/TerminalMain'
 import { appendHelpText, formatPreferencesSummary } from '@/features/terminal/terminalText'
-import { buildInputProps } from '@/features/terminal/terminalViewModel'
 import { useTerminalSnapshotsController } from '@/hooks/useTerminalSnapshotsController'
 import { usePreferencesController } from '@/hooks/usePreferencesController'
 import { useClarifyingFlow } from '@/hooks/useClarifyingFlow'
@@ -21,6 +20,8 @@ import { useTerminalHotkeys } from '@/hooks/useTerminalHotkeys'
 import { useTerminalFocus } from '@/hooks/useTerminalFocus'
 import { useGenerationController } from '@/hooks/useGenerationController'
 import { useCommandRouter } from '@/hooks/useCommandRouter'
+import { createTaskFlowHandlers } from '@/features/terminal/taskFlow'
+import { createModeController } from '@/features/terminal/modeController'
 import {
   TerminalStateProvider,
   useTerminalState,
@@ -35,6 +36,7 @@ import {
   setGenerating as setGeneratingAction,
   setPendingTask as setPendingTaskAction,
   setEditablePrompt as setEditablePromptAction,
+  setActivity as setActivityAction,
   setQuestionConsent,
   setClarifyingQuestions as setClarifyingQuestionsAction,
   setClarifyingAnswers as setClarifyingAnswersAction,
@@ -42,6 +44,7 @@ import {
   setAnsweringQuestions as setAnsweringQuestionsAction,
   setConsentSelectedIndex as setConsentSelectedIndexAction,
   setClarifyingSelectedOption as setClarifyingSelectedOptionAction,
+  setGenerationMode as setGenerationModeAction,
   setPromptEditable as setPromptEditableAction,
   setPromptFinalized as setPromptFinalizedAction,
   setLikeState as setLikeStateAction,
@@ -56,7 +59,6 @@ import {
   setUserManagementOpen as setUserManagementOpenAction,
   setLoginRequiredOpen as setLoginRequiredOpenAction,
   setDraftRestoredShown as setDraftRestoredShownAction,
-  setEmptySubmitWarned as setEmptySubmitWarnedAction,
   setLastHistory as setLastHistoryAction,
   setLastSnapshot as setLastSnapshotAction,
 } from '@/features/terminal/stateActions'
@@ -68,6 +70,9 @@ import type {
   ClarifyingAnswer,
   PreferenceSource,
   UserIdentity,
+  GenerationMode,
+  TerminalStatus,
+  TaskActivity,
 } from '@/lib/types'
 
 // Re-export types for external consumers
@@ -81,18 +86,16 @@ type PromptTerminalProps = {
   isFirstLogin?: boolean
 }
 
+function resolveGenerationMode(preferences: Preferences): GenerationMode {
+  const mode = preferences.uiDefaults?.generationMode
+  // Honor only explicit mode selection; default to guided to ensure questions run.
+  if (mode === 'quick' || mode === 'guided') return mode
+  return 'guided'
+}
+
 export function PromptTerminal(props: PromptTerminalProps) {
   const initialState = useMemo(() => {
-    const initialLines =
-      props.initialLines && props.initialLines.length
-        ? props.initialLines
-        : [
-            {
-              id: 0,
-              role: ROLE.SYSTEM,
-              text: MESSAGE.WELCOME,
-            },
-          ]
+    const initialLines = props.initialLines && props.initialLines.length ? props.initialLines : []
     return createInitialTerminalState(initialLines)
   }, [props.initialLines])
 
@@ -113,6 +116,7 @@ function PromptTerminalInner({
   const {
     inputValue: value,
     isGenerating,
+    activity,
     pendingTask,
     editablePrompt,
     awaitingQuestionConsent,
@@ -133,22 +137,23 @@ function PromptTerminalInner({
     currentPreferenceQuestionKey,
     preferenceSelectedOptionIndex,
     pendingPreferenceUpdates,
+    generationMode,
     isPreferencesOpen,
     isUserManagementOpen,
     isLoginRequiredOpen,
     draftRestoredShown,
-    emptySubmitWarned,
     lastHistory,
     lastSnapshot,
   } = state
+
   const isMac = typeof window !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(window.navigator.userAgent)
   const { message: toastMessage, showToast } = useToast()
   // Initialize clarifying answers from saved draft if available
   const clarifyingAnswersRef = useRef<ClarifyingAnswer[]>([])
   const scrollRef = useRef<HTMLDivElement | null>(null)
-  const editablePromptRef = useRef<HTMLTextAreaElement | null>(null)
+  const editablePromptRef = useRef<HTMLDivElement | null>(null)
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
-  const [hasConsent, setHasConsent] = useState(false)
+  const clarifyingRunIdRef = useRef(0)
   const {
     preferences,
     preferenceSource,
@@ -182,6 +187,7 @@ function PromptTerminalInner({
     (value: number | null) => dispatch(setPreferenceSelectedOptionIndexAction(value)),
     [dispatch]
   )
+  const setGenerationMode = useCallback((value: GenerationMode) => dispatch(setGenerationModeAction(value)), [dispatch])
   const setPreferencesOpen = useCallback((value: boolean) => dispatch(setPreferencesOpenAction(value)), [dispatch])
   const setUserManagementOpen = useCallback(
     (value: boolean) => dispatch(setUserManagementOpenAction(value)),
@@ -192,7 +198,6 @@ function PromptTerminalInner({
     (value: boolean) => dispatch(setDraftRestoredShownAction(value)),
     [dispatch]
   )
-  const setEmptySubmitWarned = useCallback((value: boolean) => dispatch(setEmptySubmitWarnedAction(value)), [dispatch])
   const setLastHistory = useCallback(
     (value: Array<{ id: string; task: string; label: string; body: string; created_at: string }> | null) =>
       dispatch(setLastHistoryAction(value)),
@@ -208,7 +213,20 @@ function PromptTerminalInner({
       setPreferencesOpen(true)
     }
   }, [isFirstLogin, setPreferencesOpen])
+
+  useEffect(() => {
+    const nextMode = resolveGenerationMode(preferences)
+    if (nextMode !== generationMode) {
+      setGenerationMode(nextMode)
+    }
+  }, [generationMode, preferences, setGenerationMode])
+
+  useEffect(() => {
+    clarifyingAnswersRef.current = clarifyingAnswers
+  }, [clarifyingAnswers])
+
   const setValue = useCallback((next: string) => dispatch(setInput(next)), [dispatch])
+
   const setLines = useCallback(
     (next: TerminalLine[] | ((prev: TerminalLine[]) => TerminalLine[])) => {
       const resolved = typeof next === 'function' ? (next as (prev: TerminalLine[]) => TerminalLine[])(lines) : next
@@ -216,32 +234,79 @@ function PromptTerminalInner({
     },
     [dispatch, lines]
   )
+
+  const setActivity = useCallback((next: TaskActivity | null) => dispatch(setActivityAction(next)), [dispatch])
+
   const appendLine = useCallback(
-    (role: TerminalRole, text: string) => {
-      const nextId = lines.length ? lines[lines.length - 1].id + 1 : 0
-      dispatch(appendLines([{ id: nextId, role, text }]))
+    (role: TerminalRole, content: string | TerminalStatus) => {
+      const currentLines = lines
+      const nextId = currentLines.length ? currentLines[currentLines.length - 1].id + 1 : 0
+      if (typeof content === 'string') {
+        dispatch(appendLines([{ id: nextId, role, text: content }]))
+        return
+      }
+
+      const fallbackText = `${content.title} — ${content.description}`
+      const last = currentLines[currentLines.length - 1]
+      if (last?.status && last.status.title === content.title) {
+        const updatedLines = [...currentLines.slice(0, -1), { ...last, text: fallbackText, status: content }]
+        dispatch(replaceLines(updatedLines))
+        return
+      }
+
+      // Replace the most recent matching status (same title) to avoid duplicates mid-stream
+      const lastMatchIndex = [...currentLines].reverse().findIndex((l) => l.status?.title === content.title)
+      if (lastMatchIndex >= 0) {
+        const idx = currentLines.length - 1 - lastMatchIndex
+        const updated = [...currentLines]
+        updated[idx] = { ...updated[idx], text: fallbackText, status: content }
+        dispatch(replaceLines(updated))
+        return
+      }
+
+      // If we are moving to success/error, replace the most recent loading status to avoid stale spinners.
+      if (content.state && content.state !== 'loading') {
+        const lastLoadingIndex = [...currentLines].reverse().findIndex((l) => l.status?.state === 'loading')
+        if (lastLoadingIndex >= 0) {
+          const idx = currentLines.length - 1 - lastLoadingIndex
+          const updated = [...currentLines]
+          updated[idx] = { ...updated[idx], text: fallbackText, status: content }
+          dispatch(replaceLines(updated))
+          return
+        }
+      }
+
+      dispatch(appendLines([{ id: nextId, role, text: fallbackText, status: content }]))
     },
     [dispatch, lines]
   )
+
   const setIsGenerating = useCallback((value: boolean) => dispatch(setGeneratingAction(value)), [dispatch])
+
   const setPendingTask = useCallback((value: string | null) => dispatch(setPendingTaskAction(value)), [dispatch])
+
   const setEditablePrompt = useCallback((value: string | null) => dispatch(setEditablePromptAction(value)), [dispatch])
+
   const setAwaitingQuestionConsent = useCallback(
     (awaiting: boolean) => dispatch(setQuestionConsent(awaiting, awaiting ? consentSelectedIndex : null)),
     [consentSelectedIndex, dispatch]
   )
+
   const setConsentSelectedIndex = useCallback(
     (value: number | null) => dispatch(setConsentSelectedIndexAction(value)),
     [dispatch]
   )
+
   const setClarifyingQuestions = useCallback(
     (questions: ClarifyingQuestion[] | null) => dispatch(setClarifyingQuestionsAction(questions)),
     [dispatch]
   )
+
   const setClarifyingAnswers = useCallback(
     (answers: ClarifyingAnswer[], currentIndex: number) => dispatch(setClarifyingAnswersAction(answers, currentIndex)),
     [dispatch]
   )
+
   const setCurrentQuestionIndex = useCallback(
     (value: number) => dispatch(setCurrentQuestionIndexAction(value)),
     [dispatch]
@@ -250,10 +315,12 @@ function PromptTerminalInner({
     (value: boolean) => dispatch(setAnsweringQuestionsAction(value)),
     [dispatch]
   )
+
   const setClarifyingSelectedOptionIndex = useCallback(
     (value: number | null) => dispatch(setClarifyingSelectedOptionAction(value)),
     [dispatch]
   )
+
   const setIsPromptEditable = useCallback((value: boolean) => dispatch(setPromptEditableAction(value)), [dispatch])
   const setIsPromptFinalized = useCallback((value: boolean) => dispatch(setPromptFinalizedAction(value)), [dispatch])
   const setHasRunInitialTask = useCallback((value: boolean) => dispatch(setHasRunInitialTaskAction(value)), [dispatch])
@@ -278,6 +345,7 @@ function PromptTerminalInner({
     lines,
     pendingTask,
     editablePrompt,
+    activity,
     clarifyingQuestions,
     clarifyingAnswers,
     currentQuestionIndex,
@@ -285,6 +353,7 @@ function PromptTerminalInner({
     awaitingQuestionConsent,
     consentSelectedIndex,
     clarifyingSelectedOptionIndex,
+    generationMode,
     isPromptEditable,
     isPromptFinalized,
     headerHelpShown,
@@ -316,6 +385,8 @@ function PromptTerminalInner({
       setPreferencesOpen,
       setUserManagementOpen,
       setLoginRequiredOpen,
+      setGenerationMode,
+      setActivity,
     },
   })
 
@@ -351,7 +422,6 @@ function PromptTerminalInner({
    */
   const resetClarifyingFlowState = useCallback(() => {
     setClarifyingQuestions(null)
-    clarifyingAnswersRef.current = []
     setClarifyingAnswers([], 0)
     setCurrentQuestionIndex(0)
     setClarifyingSelectedOptionIndex(null)
@@ -368,6 +438,18 @@ function PromptTerminalInner({
     setCurrentQuestionIndex,
   ])
 
+  const resetPreferenceFlowState = useCallback(() => {
+    setIsAskingPreferenceQuestions(false)
+    setCurrentPreferenceQuestionKey(null)
+    setPreferenceSelectedOptionIndex(null)
+    setPendingPreferenceUpdates({})
+  }, [
+    setCurrentPreferenceQuestionKey,
+    setIsAskingPreferenceQuestions,
+    setPendingPreferenceUpdates,
+    setPreferenceSelectedOptionIndex,
+  ])
+
   const {
     handleClear,
     handleDiscard,
@@ -378,6 +460,7 @@ function PromptTerminalInner({
   } = useTerminalSnapshotsController(
     {
       lines,
+      activity,
       editablePrompt,
       pendingTask,
       clarifyingQuestions,
@@ -387,6 +470,7 @@ function PromptTerminalInner({
       awaitingQuestionConsent,
       consentSelectedIndex,
       clarifyingSelectedOptionIndex,
+      generationMode,
       isPromptEditable,
       isPromptFinalized,
       lastApprovedPrompt,
@@ -401,6 +485,7 @@ function PromptTerminalInner({
     {
       appendLine,
       setLines: (next) => setLines(next),
+      setActivity,
       setEditablePrompt,
       setPendingTask,
       setClarifyingQuestions,
@@ -410,6 +495,7 @@ function PromptTerminalInner({
       setAwaitingQuestionConsent,
       setConsentSelectedIndex,
       setClarifyingSelectedOptionIndex,
+      setGenerationMode,
       setIsPromptEditable,
       setIsPromptFinalized,
       setLastApprovedPrompt,
@@ -438,20 +524,9 @@ function PromptTerminalInner({
   }
 
   useEffect(() => {
-    if (editablePrompt !== null) {
-      if (editablePromptRef.current) {
-        const el = editablePromptRef.current
-        // Autosize to content so the terminal scroll container, not the textarea, handles overflow.
-        el.style.height = 'auto'
-        el.style.height = `${el.scrollHeight}px`
-        el.focus()
-        const len = el.value.length
-        el.setSelectionRange(len, len)
-      }
-      if (scrollRef.current) {
-        const el = scrollRef.current
-        el.scrollTop = el.scrollHeight
-      }
+    if (editablePrompt !== null && scrollRef.current) {
+      const el = scrollRef.current
+      el.scrollTop = el.scrollHeight
     }
   }, [editablePrompt])
 
@@ -484,48 +559,12 @@ function PromptTerminalInner({
         }
         return
       }
-      if (key === 'e' && editablePrompt) {
-        e.preventDefault()
-        setIsPromptEditable(true)
-        setIsPromptFinalized(false)
-        if (editablePromptRef.current) {
-          const el = editablePromptRef.current
-          el.focus()
-          const len = el.value.length
-          el.setSelectionRange(len, len)
-        }
-        return
-      }
     }
     window.addEventListener('keydown', handleFocusShortcut)
     return () => window.removeEventListener('keydown', handleFocusShortcut)
   }, [editablePrompt, setIsPromptEditable, setIsPromptFinalized])
 
-  function autosizeEditablePrompt() {
-    if (!editablePromptRef.current) return
-    const el = editablePromptRef.current
-    el.style.height = 'auto'
-    el.style.height = `${el.scrollHeight}px`
-  }
-
-  useEffect(() => {
-    if (!isPromptEditable || !editablePromptRef.current) return
-    const el = editablePromptRef.current
-    el.focus()
-    const len = el.value.length
-    el.setSelectionRange(len, len)
-  }, [isPromptEditable])
-
   // Approve flow removed per new requirements
-
-  function handleEditableChange(text: string) {
-    setEditablePrompt(text)
-    autosizeEditablePrompt()
-    if (isPromptFinalized && text !== lastApprovedPrompt) {
-      setIsPromptFinalized(false)
-      setLastApprovedPrompt(null)
-    }
-  }
 
   useEffect(() => {
     if (!editablePrompt) return
@@ -604,7 +643,8 @@ function PromptTerminalInner({
     }
     void recordEvent('prompt_vote', { vote: 'like', prompt: editablePrompt })
     setLikeState('liked')
-  }, [appendLine, editablePrompt, setLikeState])
+    showToast('Thanks for the feedback!')
+  }, [appendLine, editablePrompt, setLikeState, showToast])
 
   const handleDislikePrompt = useCallback(() => {
     if (!editablePrompt) {
@@ -613,7 +653,8 @@ function PromptTerminalInner({
     }
     void recordEvent('prompt_vote', { vote: 'dislike', prompt: editablePrompt })
     setLikeState('disliked')
-  }, [appendLine, editablePrompt, setLikeState])
+    showToast('Thanks for the feedback!')
+  }, [appendLine, editablePrompt, setLikeState, showToast])
 
   const handleHistory = useCallback(async () => {
     try {
@@ -655,17 +696,7 @@ function PromptTerminalInner({
     [appendLine, applyHistoryItem, lastHistory, renderHistoryItems]
   )
 
-  // Get list of preference keys that should be asked about (where "Ask every time" is enabled)
-  const hasAnyPreference =
-    preferences.tone ||
-    preferences.audience ||
-    preferences.domain ||
-    preferences.defaultModel ||
-    preferences.outputFormat ||
-    preferences.language ||
-    preferences.depth
-
-  const { generateFinalPromptForTask, handleEditPrompt, handleStop, generationRunIdRef } = useGenerationController({
+  const { generateFinalPromptForTask, handleEditPrompt, handleStop } = useGenerationController({
     preferences,
     pendingTask,
     clarifyingAnswersRef,
@@ -677,24 +708,22 @@ function PromptTerminalInner({
     setLastApprovedPrompt,
     setPendingTask,
     setLoginRequiredOpen,
+    setActivity,
     appendLine,
     showToast,
     user,
-    preferenceSource,
-    hasAnyPreference: Boolean(hasAnyPreference),
     awaitingQuestionConsent,
-    consentRequired: preferences.uiDefaults?.showClarifying !== false,
-    hasConsent,
+    consentRequired: true,
   })
 
   const guardedGenerateFinalPromptForTask = useCallback(
     async (task: string, answers: ClarifyingAnswer[], options?: { skipConsentCheck?: boolean }) => {
-      if (!options?.skipConsentCheck && (awaitingQuestionConsent || !hasConsent)) {
+      if (!options?.skipConsentCheck && awaitingQuestionConsent) {
         return
       }
       await generateFinalPromptForTask(task, answers, options)
     },
-    [awaitingQuestionConsent, generateFinalPromptForTask, hasConsent]
+    [awaitingQuestionConsent, generateFinalPromptForTask]
   )
 
   const runEditPrompt = useCallback(
@@ -711,10 +740,16 @@ function PromptTerminalInner({
   useEffect(() => {
     if (user && isLoginRequiredOpen && pendingTask) {
       setLoginRequiredOpen(false)
-      const answers = clarifyingAnswersRef.current
-      void guardedGenerateFinalPromptForTask(pendingTask, answers)
+      void guardedGenerateFinalPromptForTask(pendingTask, clarifyingAnswers)
     }
-  }, [user, isLoginRequiredOpen, pendingTask, guardedGenerateFinalPromptForTask, setLoginRequiredOpen])
+  }, [
+    user,
+    isLoginRequiredOpen,
+    pendingTask,
+    guardedGenerateFinalPromptForTask,
+    setLoginRequiredOpen,
+    clarifyingAnswers,
+  ])
 
   const { handleCommand } = useCommandRouter({
     editablePrompt,
@@ -751,18 +786,19 @@ function PromptTerminalInner({
     isAskingPreferenceQuestions,
     preferenceSelectedOptionIndex,
     pendingPreferenceUpdates,
+    preferenceQuestionsEnabled: preferences.uiDefaults?.askPreferencesInGuided !== false,
     setIsAskingPreferenceQuestions,
     setCurrentPreferenceQuestionKey,
     setPreferenceSelectedOptionIndex,
     setPendingPreferenceUpdates,
-    updatePreferencesLocally,
-    appendLine,
+    setActivity,
     focusInputToEnd,
     clarifyingAnswersRef,
     generateFinalPromptForTask: guardedGenerateFinalPromptForTask,
   })
 
   const {
+    startClarifyingQuestions,
     handleQuestionConsent,
     handleClarifyingOptionClick,
     handleClarifyingAnswer,
@@ -774,7 +810,7 @@ function PromptTerminalInner({
     preferences,
     clarifyingQuestions,
     currentQuestionIndex,
-    generationRunIdRef,
+    generationRunIdRef: clarifyingRunIdRef,
     clarifyingAnswersRef,
     setIsGenerating,
     setClarifyingQuestions,
@@ -785,6 +821,7 @@ function PromptTerminalInner({
     setConsentSelectedIndex,
     setClarifyingSelectedOptionIndex,
     appendLine,
+    setActivity,
     focusInputToEnd,
     getPreferencesToAsk,
     startPreferenceQuestions: () => startPreferenceQuestions(),
@@ -797,7 +834,6 @@ function PromptTerminalInner({
     selected: consentSelectedIndex,
     setSelected: setConsentSelectedIndex,
     onAnswer: (answer: string) => {
-      setHasConsent(true)
       return handleQuestionConsent(answer)
     },
   }
@@ -817,6 +853,59 @@ function PromptTerminalInner({
     onKey: handlePreferenceKey,
   }
 
+  const { submitCurrent, handleFormSubmit, handleReviseFlow } = createTaskFlowHandlers({
+    state: {
+      isGenerating,
+      value,
+      lines,
+      preferencesStep,
+      awaitingQuestionConsent,
+      pendingTask,
+      consentSelectedIndex,
+      answeringQuestions,
+      clarifyingQuestions,
+      clarifyingAnswers,
+      currentQuestionIndex,
+      isAskingPreferenceQuestions,
+      currentPreferenceQuestionKey,
+      hasRunInitialTask,
+      isRevising,
+      generationMode,
+      editablePrompt,
+    },
+    actions: {
+      setValue,
+      appendLine,
+      handleCommand,
+      advancePreferences,
+      handleQuestionConsent,
+      handleClarifyingAnswer,
+      handlePreferenceAnswer,
+      runEditPrompt,
+      setHasRunInitialTask,
+      setPendingTask,
+      setActivity,
+      resetClarifyingFlowState,
+      resetPreferenceFlowState,
+      setEditablePrompt,
+      setIsPromptEditable,
+      setIsPromptFinalized,
+      setLikeState,
+      setAwaitingQuestionConsent,
+      setConsentSelectedIndex,
+      startClarifyingQuestions,
+      setAnsweringQuestions,
+      setCurrentQuestionIndex,
+      selectForQuestion,
+      appendClarifyingQuestion,
+      focusInputToEnd,
+      guardedGenerateFinalPromptForTask,
+      setIsRevising,
+      setClarifyingSelectedOptionIndex,
+      setLastApprovedPrompt,
+    },
+  })
+
   const promptControls = {
     value,
     submit: submitCurrent,
@@ -835,193 +924,18 @@ function PromptTerminalInner({
     prompt: promptControls,
   })
 
-  async function handleTask(line: string) {
-    const task = line.trim()
-    if (!task) return
+  const { handleModeChange } = createModeController({
+    generationMode,
+    preferences,
+    updatePreferencesLocally,
+    resetClarifyingFlowState,
+    resetPreferenceFlowState,
+    setAwaitingQuestionConsent,
+    setGenerationMode,
+    appendLine,
+  })
 
-    void recordEvent('task_submitted', { task })
-    setHasConsent(false)
-
-    // If revising and task is unchanged, reuse previous clarifying questions/answers.
-    if (isRevising && pendingTask && task === pendingTask && clarifyingQuestions && clarifyingQuestions.length > 0) {
-      setIsRevising(false)
-      setHasRunInitialTask(true)
-      setAwaitingQuestionConsent(false)
-      const answered = clarifyingAnswersRef.current.length
-      if (answered < clarifyingQuestions.length) {
-        setAnsweringQuestions(true)
-        setCurrentQuestionIndex(answered)
-        const nextQuestion = clarifyingQuestions[answered]
-        selectForQuestion(nextQuestion ?? null, answered > 0)
-        appendClarifyingQuestion(nextQuestion, answered, clarifyingQuestions.length)
-        focusInputToEnd()
-      } else {
-        await guardedGenerateFinalPromptForTask(task, clarifyingAnswersRef.current)
-      }
-      setValue('')
-      return
-    }
-
-    setIsRevising(false)
-
-    // After the first full task, treat further free-text inputs as edits to the existing prompt
-    // instead of restarting the clarifying-question flow, unless the user has started a new
-    // conversation via /discard.
-    if (hasRunInitialTask) {
-      if (editablePrompt) {
-        void runEditPrompt(task)
-        return
-      }
-
-      // If for some reason we don't have a prompt yet, just try to generate one directly
-      // without re-asking questions.
-      await guardedGenerateFinalPromptForTask(task, [])
-      return
-    }
-
-    setHasRunInitialTask(true)
-    setPendingTask(task)
-    resetClarifyingFlowState()
-    setEditablePrompt(null)
-    setIsPromptEditable(false)
-    setIsPromptFinalized(false)
-
-    const wantsClarifying = preferences.uiDefaults?.showClarifying !== false
-
-    if (!wantsClarifying) {
-      await guardedGenerateFinalPromptForTask(task, [])
-      return
-    }
-
-    appendLine(ROLE.APP, MESSAGE.QUESTION_CONSENT)
-    setAwaitingQuestionConsent(true)
-    setConsentSelectedIndex(0) // Highlight first option so arrow navigation is obvious
-    // Ensure input is focused for arrow navigation
-    setTimeout(() => focusInputToEnd(), 0)
-  }
-
-  function submitCurrent() {
-    if (isGenerating) {
-      return
-    }
-
-    const raw = value
-    const line = raw.trim()
-    if (!line) {
-      if (!emptySubmitWarned) {
-        appendLine(ROLE.APP, MESSAGE.EMPTY_SUBMIT_WARNING)
-        setEmptySubmitWarned(true)
-        window.setTimeout(() => setEmptySubmitWarned(false), EMPTY_SUBMIT_COOLDOWN_MS)
-      }
-      return
-    }
-
-    // Check if this is a clear command on an already empty terminal
-    if (line.startsWith('/')) {
-      const [command] = line.trim().split(/\s+/)
-      if (command === COMMAND.CLEAR) {
-        const isEmpty =
-          lines.length === 1 &&
-          lines[0]?.role === ROLE.SYSTEM &&
-          (lines[0]?.text === MESSAGE.WELCOME ||
-            lines[0]?.text === MESSAGE.WELCOME_FRESH ||
-            lines[0]?.text === MESSAGE.HISTORY_CLEARED)
-        if (isEmpty) {
-          // Terminal is already empty, don't append the command and do nothing
-          setValue('')
-          return
-        }
-      }
-    }
-
-    if (line.startsWith('/')) {
-      appendLine(ROLE.USER, raw)
-      handleCommand(line)
-      setValue('')
-      return
-    }
-
-    if (preferencesStep) {
-      appendLine(ROLE.USER, raw)
-      advancePreferences(line)
-      setValue('')
-      return
-    }
-
-    if (awaitingQuestionConsent && pendingTask) {
-      appendLine(ROLE.USER, raw)
-      setHasConsent(true)
-      void handleQuestionConsent(line)
-      setValue('')
-      return
-    }
-
-    if (
-      answeringQuestions &&
-      clarifyingQuestions &&
-      clarifyingQuestions.length > 0 &&
-      currentQuestionIndex < clarifyingQuestions.length &&
-      pendingTask
-    ) {
-      // Don't append here - handleClarifyingAnswer will append the answer
-      void handleClarifyingAnswer(line)
-      setValue('')
-      return
-    }
-
-    if (isAskingPreferenceQuestions && currentPreferenceQuestionKey) {
-      // Don't append here - handlePreferenceAnswer will append the answer
-      handlePreferenceAnswer(line)
-      setValue('')
-      return
-    }
-
-    // For regular tasks, append the user input
-    appendLine(ROLE.USER, raw)
-    void handleTask(line)
-    setValue('')
-  }
-
-  function handleFormSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    submitCurrent()
-  }
-
-  function handleReviseFlow() {
-    // Allow editing task and clarifying answers even after prompt generation.
-    setIsRevising(true)
-    setHasRunInitialTask(false)
-    setAwaitingQuestionConsent(false)
-    setAnsweringQuestions(false)
-    // Preserve clarifyingQuestions and answers; user can reuse them if task stays same.
-    setCurrentQuestionIndex(clarifyingAnswersRef.current.length)
-    setClarifyingSelectedOptionIndex(null)
-    setConsentSelectedIndex(null)
-    setEditablePrompt(null)
-    setIsPromptEditable(false)
-    setIsPromptFinalized(false)
-    setLastApprovedPrompt(null)
-    setValue(pendingTask ?? '')
-    appendLine(ROLE.APP, 'Revise the task or clarifying answers. Update the task and press Enter to continue.')
-    focusInputToEnd()
-  }
-
-  const starterExamples = [
-    'Write a landing page headline + 3 variants for a prompt generator app.',
-    'Refactor this React component for readability and performance. (Paste code)',
-  ]
-
-  const starterMessages: string[] = [MESSAGE.WELCOME, MESSAGE.WELCOME_FRESH, MESSAGE.HISTORY_CLEARED]
-
-  const isFreshSession =
-    lines.length === 1 &&
-    lines[0]?.role === ROLE.SYSTEM &&
-    starterMessages.includes(lines[0]?.text ?? '') &&
-    !editablePrompt &&
-    !pendingTask &&
-    !isGenerating &&
-    !answeringQuestions &&
-    !awaitingQuestionConsent
+  const isFreshSession = !hasRunInitialTask
 
   const inputPlaceholder = answeringQuestions
     ? 'Type your own answer here or use arrows to select'
@@ -1030,7 +944,13 @@ function PromptTerminalInner({
     : isAskingPreferenceQuestions
     ? 'Choose a preference or skip to generate now'
     : editablePrompt !== null
-    ? `Provide feedback about the generated prompt or press ${isMac ? SHORTCUT.COPY_MAC : SHORTCUT.COPY_WIN} to copy`
+    ? `Optional: refine this prompt (e.g., "make it shorter") or press ${
+        isMac ? SHORTCUT.COPY_MAC : SHORTCUT.COPY_WIN
+      } to copy`
+    : generationMode === 'quick'
+    ? 'Quick Start selected. Type your task to generate immediately.'
+    : generationMode === 'guided'
+    ? 'Guided Build selected. Type your task to start clarifying.'
     : 'What are you trying to achieve?'
 
   const headerNode = (
@@ -1038,21 +958,10 @@ function PromptTerminalInner({
       onProfileClick={() => {
         setUserManagementOpen(true)
       }}
+      onSettingsClick={() => {
+        setPreferencesOpen(true)
+      }}
     />
-  )
-
-  const handleExampleInsert = useCallback(
-    (text: string) => {
-      setValue(text)
-      requestAnimationFrame(() => {
-        if (inputRef.current) {
-          const len = text.length
-          inputRef.current.focus()
-          inputRef.current.setSelectionRange(len, len)
-        }
-      })
-    },
-    [setValue]
   )
 
   const panelsNode = (
@@ -1094,8 +1003,17 @@ function PromptTerminalInner({
     />
   )
 
+  const focusInput = useCallback(() => {
+    if (inputRef.current) {
+      inputRef.current.focus()
+      const len = inputRef.current.value.length
+      inputRef.current.setSelectionRange(len, len)
+    }
+  }, [])
+
   const outputPropsWithRefs = {
     lines,
+    activity,
     editablePrompt,
     promptForLinks: editablePrompt ?? lastApprovedPrompt,
     awaitingQuestionConsent,
@@ -1109,6 +1027,8 @@ function PromptTerminalInner({
       currentQuestionIndex < clarifyingQuestions.length
         ? clarifyingQuestions[currentQuestionIndex]
         : null,
+    currentClarifyingQuestionIndex: answeringQuestions ? currentQuestionIndex : null,
+    clarifyingTotalCount: clarifyingQuestions?.length ?? 0,
     clarifyingSelectedOptionIndex,
     editablePromptRef,
     scrollRef,
@@ -1118,14 +1038,14 @@ function PromptTerminalInner({
       focusInputToEnd()
     },
     onConsentOptionClick: (index: number) => {
-      const v = index === 0 ? 'yes' : 'no'
+      // Option order: 0 = Generate now (skip questions), 1 = Sharpen first (ask questions)
+      const v = index === 0 ? 'no' : 'yes'
       setConsentSelectedIndex(index)
       void handleQuestionConsent(v)
     },
     onClarifyingOptionClick: handleClarifyingOptionClick,
     onUndoAnswer: handleUndoAnswer,
     onRevise: handleReviseFlow,
-    onEditableChange: handleEditableChange,
     onCopyEditable: () => void copyEditablePrompt(),
     onStartNewConversation: handleStartNewConversation,
     onLike: handleLikePrompt,
@@ -1139,10 +1059,11 @@ function PromptTerminalInner({
     getPreferenceQuestionText,
     getPreferencesToAsk,
     showStarter: isFreshSession,
-    starterExamples,
-    starterTitle: 'No history yet. Generate your first prompt to get started.',
-    starterSubtitle: "You'll get 1–3 prompt options plus quick refinements.",
-    onExampleInsert: handleExampleInsert,
+    generationMode,
+    onModeChange: (mode: GenerationMode, opts?: { silent?: boolean }) => {
+      focusInput()
+      handleModeChange(mode, opts ?? { silent: isFreshSession })
+    },
   }
 
   const mainNode = (
@@ -1150,13 +1071,11 @@ function PromptTerminalInner({
       onFormSubmit={handleFormSubmit}
       outputProps={outputPropsWithRefs}
       inputProps={{
-        ...buildInputProps({
-          value,
-          onChange: setValue,
-          onKeyDown: handleKeyDown,
-          placeholder: inputPlaceholder,
-          disabled: inputDisabled,
-        }),
+        value,
+        onChange: setValue,
+        onKeyDown: handleKeyDown,
+        placeholder: inputPlaceholder,
+        disabled: inputDisabled,
         inputRef,
       }}
       onSubmit={() => {

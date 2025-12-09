@@ -1,7 +1,7 @@
 'use client'
 
 export const modalBackdropClass =
-  'fixed inset-0 z-100 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4'
+  'fixed inset-0 z-100 flex items-center justify-center bg-black/50 backdrop-blur-sm mx-4'
 
 export const modalCardClass =
   'w-full max-w-5xl max-h-[90vh] overflow-y-auto rounded-xl bg-slate-950 p-6 shadow-[0_0_80px_rgba(15,23,42,0.95)] terminal-scroll'

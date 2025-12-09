@@ -13,14 +13,16 @@ type TerminalShellViewProps = {
 export function TerminalShellView({ toastMessage, header, panels, main }: TerminalShellViewProps) {
   return (
     <div
-      className="relative mx-auto flex h-[70vh] w-[92vw] max-w-6xl flex-col gap-3 rounded-2xl bg-slate-950 p-4 shadow-[0_0_160px_rgba(15,23,42,0.95)]"
+      className="relative mx-auto flex h-[78vh] w-[1280px] max-w-[1600px] flex-col items-stretch rounded-2xl bg-slate-950 shadow-[0_0_160px_rgba(15,23,42,0.95)]"
       role="region"
       aria-label="Prompt Terminal"
     >
       <CenteredToast message={toastMessage} />
-      {header}
-      {panels}
-      {main}
+      <div className="flex flex-1 min-h-0 w-full flex-col">
+        {header}
+        {panels}
+        {main}
+      </div>
     </div>
   )
 }

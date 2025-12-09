@@ -10,7 +10,7 @@
  */
 
 import { useEffect, useRef, useCallback, useState } from 'react'
-import type { TerminalLine, ClarifyingQuestion } from '@/lib/types'
+import type { TerminalLine, ClarifyingQuestion, GenerationMode, TaskActivity } from '@/lib/types'
 import type { LikeState } from '@/features/terminal/terminalState'
 
 const STORAGE_KEY = 'pf_draft'
@@ -42,6 +42,8 @@ export interface DraftState {
   isPromptEditable: boolean
   /** Whether the prompt was marked as finalized */
   isPromptFinalized: boolean
+  /** Generation mode toggle state */
+  generationMode: GenerationMode
   /** Whether header help was already shown */
   headerHelpShown: boolean
   /** Last approved prompt text, if any */
@@ -54,6 +56,8 @@ export interface DraftState {
   isUserManagementOpen: boolean
   /** Whether the login-required modal was open */
   isLoginRequiredOpen: boolean
+  /** Current activity card for the task (persisted to restore status bars) */
+  activity: TaskActivity | null
 }
 
 interface StoredDraft extends DraftState {
@@ -63,7 +67,41 @@ interface StoredDraft extends DraftState {
   version: number
 }
 
-const CURRENT_VERSION = 4
+const CURRENT_VERSION = 8
+
+const VALID_ACTIVITY_STAGES = new Set<TaskActivity['stage']>([
+  'collecting',
+  'clarifying',
+  'preferences',
+  'generating',
+  'ready',
+  'error',
+  'stopped',
+])
+const VALID_ACTIVITY_STATUSES = new Set<TaskActivity['status']>(['loading', 'success', 'error'])
+
+function sanitizeActivity(activity: unknown): TaskActivity | null {
+  if (!activity || typeof activity !== 'object') return null
+  const maybe = activity as Partial<TaskActivity>
+  const { task, stage, status, message, detail } = maybe
+  if (typeof task !== 'string' || typeof message !== 'string') return null
+  if (!VALID_ACTIVITY_STAGES.has(stage as TaskActivity['stage'])) return null
+  if (!VALID_ACTIVITY_STATUSES.has(status as TaskActivity['status'])) return null
+
+  const trimmedTask = task.trim()
+  const trimmedMessage = message.trim()
+  const trimmedDetail = typeof detail === 'string' ? detail.trim() : undefined
+
+  if (!trimmedTask && !trimmedMessage) return null
+
+  return {
+    task: trimmedTask || task,
+    stage: stage as TaskActivity['stage'],
+    status: status as TaskActivity['status'],
+    message: trimmedMessage || message,
+    detail: trimmedDetail || undefined,
+  }
+}
 
 /**
  * Check if localStorage is available (can be disabled or full).
@@ -124,12 +162,15 @@ export function loadDraft(): DraftState | null {
           : null,
       isPromptEditable: stored.isPromptEditable ?? false,
       isPromptFinalized: stored.isPromptFinalized ?? false,
+      generationMode:
+        stored.generationMode === 'quick' || stored.generationMode === 'guided' ? stored.generationMode : 'guided',
       headerHelpShown: stored.headerHelpShown ?? false,
       lastApprovedPrompt: stored.lastApprovedPrompt ?? null,
       likeState: stored.likeState ?? 'none',
       isPreferencesOpen: stored.isPreferencesOpen ?? false,
       isUserManagementOpen: stored.isUserManagementOpen ?? false,
       isLoginRequiredOpen: stored.isLoginRequiredOpen ?? false,
+      activity: sanitizeActivity(stored.activity),
     }
   } catch (err) {
     console.warn('Failed to load draft', err)
@@ -146,7 +187,16 @@ function saveDraft(draft: DraftState): void {
   // Don't save empty drafts
   const hasLines = draft.lines && draft.lines.length > 0
   const hasUiState = draft.isPreferencesOpen || draft.isUserManagementOpen || draft.isLoginRequiredOpen
-  if (!draft.task && !draft.editablePrompt && !draft.clarifyingAnswers?.length && !hasLines && !hasUiState) {
+  const sanitizedActivity = sanitizeActivity(draft.activity)
+  const hasActivity = Boolean(sanitizedActivity)
+  if (
+    !draft.task &&
+    !draft.editablePrompt &&
+    !draft.clarifyingAnswers?.length &&
+    !hasLines &&
+    !hasUiState &&
+    !hasActivity
+  ) {
     localStorage.removeItem(STORAGE_KEY)
     return
   }
@@ -154,6 +204,7 @@ function saveDraft(draft: DraftState): void {
   try {
     const stored: StoredDraft = {
       ...draft,
+      activity: sanitizedActivity,
       savedAt: Date.now(),
       version: CURRENT_VERSION,
     }

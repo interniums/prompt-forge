@@ -2,8 +2,7 @@
 
 import { useEffect, useMemo } from 'react'
 import { useDraftPersistence, loadDraft, type DraftState } from '@/hooks/useDraftPersistence'
-import type { ClarifyingAnswer, ClarifyingQuestion, TerminalLine } from '@/lib/types'
-import type { SessionSnapshot } from '@/features/terminal/terminalState'
+import type { ClarifyingAnswer, ClarifyingQuestion, GenerationMode, TerminalLine, TaskActivity } from '@/lib/types'
 import type { TerminalRole } from '@/lib/constants'
 
 type RestoreDeps = {
@@ -19,6 +18,7 @@ type RestoreDeps = {
   setAwaitingQuestionConsent: (value: boolean) => void
   setConsentSelectedIndex: (value: number | null) => void
   setClarifyingSelectedOptionIndex: (value: number | null) => void
+  setGenerationMode: (value: GenerationMode) => void
   setPromptEditable: (value: boolean) => void
   setPromptFinalized: (value: boolean) => void
   setHeaderHelpShown: (value: boolean) => void
@@ -28,12 +28,14 @@ type RestoreDeps = {
   setPreferencesOpen: (value: boolean) => void
   setUserManagementOpen: (value: boolean) => void
   setLoginRequiredOpen: (value: boolean) => void
+  setActivity: (value: TaskActivity | null) => void
 }
 
 type PersistenceDeps = {
   lines: TerminalLine[]
   pendingTask: string | null
   editablePrompt: string | null
+  activity: TaskActivity | null
   clarifyingQuestions: ClarifyingQuestion[] | null
   clarifyingAnswers: ClarifyingAnswer[]
   currentQuestionIndex: number
@@ -41,6 +43,7 @@ type PersistenceDeps = {
   awaitingQuestionConsent: boolean
   consentSelectedIndex: number | null
   clarifyingSelectedOptionIndex: number | null
+  generationMode: GenerationMode
   isPromptEditable: boolean
   isPromptFinalized: boolean
   headerHelpShown: boolean
@@ -57,6 +60,7 @@ export function useTerminalPersistence({
   lines,
   pendingTask,
   editablePrompt,
+  activity,
   clarifyingQuestions,
   clarifyingAnswers,
   currentQuestionIndex,
@@ -64,6 +68,7 @@ export function useTerminalPersistence({
   awaitingQuestionConsent,
   consentSelectedIndex,
   clarifyingSelectedOptionIndex,
+  generationMode,
   isPromptEditable,
   isPromptFinalized,
   headerHelpShown,
@@ -87,6 +92,7 @@ export function useTerminalPersistence({
       awaitingQuestionConsent,
       consentSelectedIndex,
       clarifyingSelectedOptionIndex,
+      generationMode,
       isPromptEditable,
       isPromptFinalized,
       headerHelpShown,
@@ -95,8 +101,10 @@ export function useTerminalPersistence({
       isPreferencesOpen,
       isUserManagementOpen,
       isLoginRequiredOpen,
+      activity,
     }),
     [
+      activity,
       answeringQuestions,
       awaitingQuestionConsent,
       clarifyingAnswers,
@@ -106,6 +114,7 @@ export function useTerminalPersistence({
       currentQuestionIndex,
       editablePrompt,
       headerHelpShown,
+      generationMode,
       isPromptEditable,
       isPromptFinalized,
       lastApprovedPrompt,
@@ -134,6 +143,7 @@ export function useTerminalPersistence({
       setAwaitingQuestionConsent,
       setConsentSelectedIndex,
       setClarifyingSelectedOptionIndex,
+      setGenerationMode,
       setPromptEditable,
       setPromptFinalized,
       setHeaderHelpShown,
@@ -143,6 +153,7 @@ export function useTerminalPersistence({
       setPreferencesOpen,
       setUserManagementOpen,
       setLoginRequiredOpen,
+      setActivity,
     } = restoreDeps
 
     if (draftRestoredShown) return
@@ -162,6 +173,9 @@ export function useTerminalPersistence({
     setAwaitingQuestionConsent(draft.awaitingQuestionConsent ?? false)
     setConsentSelectedIndex(draft.consentSelectedIndex ?? null)
     setClarifyingSelectedOptionIndex(draft.clarifyingSelectedOptionIndex ?? null)
+    if (draft.generationMode === 'quick' || draft.generationMode === 'guided') {
+      setGenerationMode(draft.generationMode)
+    }
     setPromptEditable(draft.isPromptEditable ?? false)
     setPromptFinalized(draft.isPromptFinalized ?? false)
     setHeaderHelpShown(draft.headerHelpShown ?? false)
@@ -176,11 +190,12 @@ export function useTerminalPersistence({
     if (draft.isLoginRequiredOpen) {
       setLoginRequiredOpen(true)
     }
+    setActivity(draft.activity ?? null)
 
     if (draft.lines && draft.lines.length) {
       replaceLines(
-        draft.lines.map((line) => ({
-          id: line.id,
+        draft.lines.map((line, idx) => ({
+          id: idx,
           role: line.role as TerminalRole,
           text: line.text,
         }))

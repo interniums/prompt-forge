@@ -1,7 +1,15 @@
 'use client'
 
 import React, { createContext, JSX, useContext, useReducer, type Dispatch, type ReactNode } from 'react'
-import type { TerminalLine, ClarifyingQuestion, ClarifyingAnswer, Preferences, HistoryItem } from '@/lib/types'
+import type {
+  TerminalLine,
+  ClarifyingQuestion,
+  ClarifyingAnswer,
+  Preferences,
+  HistoryItem,
+  GenerationMode,
+  TaskActivity,
+} from '@/lib/types'
 
 export type LikeState = 'none' | 'liked' | 'disliked'
 export type PreferenceKey = Extract<keyof Preferences, string>
@@ -16,6 +24,7 @@ export type SessionSnapshot = {
   awaitingQuestionConsent: boolean
   consentSelectedIndex: number | null
   clarifyingSelectedOptionIndex: number | null
+  generationMode: GenerationMode
   isPromptEditable: boolean
   isPromptFinalized: boolean
   lastApprovedPrompt: string | null
@@ -30,6 +39,7 @@ export type SessionSnapshot = {
 export type TerminalState = {
   inputValue: string
   lines: TerminalLine[]
+  activity: TaskActivity | null
   isGenerating: boolean
   pendingTask: string | null
   editablePrompt: string | null
@@ -40,6 +50,7 @@ export type TerminalState = {
   currentQuestionIndex: number
   answeringQuestions: boolean
   clarifyingSelectedOptionIndex: number | null
+  generationMode: GenerationMode
   isPromptEditable: boolean
   isPromptFinalized: boolean
   likeState: LikeState
@@ -62,6 +73,7 @@ export type TerminalState = {
 export const createInitialTerminalState = (initialLines: TerminalLine[]): TerminalState => ({
   inputValue: '',
   lines: initialLines,
+  activity: null,
   isGenerating: false,
   pendingTask: null,
   editablePrompt: null,
@@ -72,6 +84,7 @@ export const createInitialTerminalState = (initialLines: TerminalLine[]): Termin
   currentQuestionIndex: 0,
   answeringQuestions: false,
   clarifyingSelectedOptionIndex: null,
+  generationMode: 'guided',
   isPromptEditable: true,
   isPromptFinalized: false,
   likeState: 'none',
@@ -95,6 +108,7 @@ export type TerminalAction =
   | { type: 'set_input'; value: string }
   | { type: 'append_lines'; lines: TerminalLine[] }
   | { type: 'replace_lines'; lines: TerminalLine[] }
+  | { type: 'set_activity'; activity: TaskActivity | null }
   | { type: 'set_generating'; value: boolean }
   | { type: 'set_pending_task'; value: string | null }
   | { type: 'set_editable_prompt'; value: string | null }
@@ -105,6 +119,7 @@ export type TerminalAction =
   | { type: 'set_answering_questions'; value: boolean }
   | { type: 'set_consent_selected_index'; value: number | null }
   | { type: 'set_clarifying_selected_option'; value: number | null }
+  | { type: 'set_generation_mode'; value: GenerationMode }
   | { type: 'set_prompt_editable'; value: boolean }
   | { type: 'set_prompt_finalized'; value: boolean }
   | { type: 'set_like_state'; value: LikeState }
@@ -131,6 +146,8 @@ function terminalReducer(state: TerminalState, action: TerminalAction): Terminal
       return { ...state, lines: [...state.lines, ...action.lines] }
     case 'replace_lines':
       return { ...state, lines: action.lines }
+    case 'set_activity':
+      return { ...state, activity: action.activity }
     case 'set_generating':
       return { ...state, isGenerating: action.value }
     case 'set_pending_task':
@@ -155,6 +172,8 @@ function terminalReducer(state: TerminalState, action: TerminalAction): Terminal
       return { ...state, answeringQuestions: action.value }
     case 'set_clarifying_selected_option':
       return { ...state, clarifyingSelectedOptionIndex: action.value }
+    case 'set_generation_mode':
+      return { ...state, generationMode: action.value }
     case 'set_prompt_editable':
       return { ...state, isPromptEditable: action.value }
     case 'set_prompt_finalized':

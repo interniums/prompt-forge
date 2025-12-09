@@ -3,6 +3,7 @@
 import { useCallback } from 'react'
 import { COMMAND, ROLE, type TerminalRole } from '@/lib/constants'
 import { recordEvent } from '@/services/eventsService'
+import type { TerminalStatus } from '@/lib/types'
 
 type CommandDeps = {
   editablePrompt: string | null
@@ -14,7 +15,7 @@ type CommandDeps = {
   handleUseFromHistory: (index: number) => void
   handleEditPrompt: (instructions: string) => void
   startPreferencesFlow: () => void
-  appendLine: (role: TerminalRole, text: string) => void
+  appendLine: (role: TerminalRole, text: string | TerminalStatus) => void
 }
 
 export function useCommandRouter({

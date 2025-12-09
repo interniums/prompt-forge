@@ -29,28 +29,11 @@ create table if not exists public.pf_generations (
   created_at timestamptz not null default now()
 );
 create index if not exists idx_pf_generations_session_id on public.pf_generations(session_id);
+create index if not exists idx_pf_generations_session_created_at on public.pf_generations(session_id, created_at desc, id desc);
 
--- Events (analytics/audit)
-create table if not exists public.pf_events (
-  id uuid primary key default gen_random_uuid(),
-  session_id uuid not null references public.pf_sessions(id) on delete cascade,
-  event_type text not null,
-  payload jsonb not null,
-  created_at timestamptz not null default now()
-);
-create index if not exists idx_pf_events_session_id on public.pf_events(session_id);
-
--- Prompt versions (restore snapshots)
-create table if not exists public.pf_prompt_versions (
-  id uuid primary key default gen_random_uuid(),
-  session_id uuid not null references public.pf_sessions(id) on delete cascade,
-  source_event_id uuid null references public.pf_events(id) on delete set null,
-  task text not null,
-  label text not null,
-  body text not null,
-  revision integer null,
-  created_at timestamptz not null default now()
-);
+-- Drop legacy/unused tables to reclaim space
+drop table if exists public.pf_events cascade;
+drop table if exists public.pf_prompt_versions cascade;
 
 -- Authenticated user preferences (preferred source when signed in)
 create table if not exists public.user_preferences (
@@ -103,8 +86,6 @@ create policy "delete own preferences" on public.user_preferences
 alter table public.pf_sessions enable row level security;
 alter table public.pf_preferences enable row level security;
 alter table public.pf_generations enable row level security;
-alter table public.pf_events enable row level security;
-alter table public.pf_prompt_versions enable row level security;
 
 -- pf_sessions
 drop policy if exists "service role all (pf_sessions)" on public.pf_sessions;
@@ -121,12 +102,23 @@ drop policy if exists "service role all (pf_generations)" on public.pf_generatio
 create policy "service role all (pf_generations)" on public.pf_generations
   for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
 
--- pf_events
-drop policy if exists "service role all (pf_events)" on public.pf_events;
-create policy "service role all (pf_events)" on public.pf_events
-  for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
+-- Retention: keep the latest 50 generations per session (older rows deleted on insert)
+create or replace function public.prune_pf_generations() returns trigger as $$
+begin
+  delete from public.pf_generations
+  where id in (
+    select id
+    from public.pf_generations
+    where session_id = NEW.session_id
+    order by created_at desc, id desc
+    offset 50
+  );
+  return null;
+end;
+$$ language plpgsql security definer;
 
--- pf_prompt_versions
-drop policy if exists "service role all (pf_prompt_versions)" on public.pf_prompt_versions;
-create policy "service role all (pf_prompt_versions)" on public.pf_prompt_versions
-  for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
+drop trigger if exists trg_prune_pf_generations on public.pf_generations;
+create trigger trg_prune_pf_generations
+after insert on public.pf_generations
+for each row
+execute function public.prune_pf_generations();

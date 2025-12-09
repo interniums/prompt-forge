@@ -2,11 +2,20 @@
 
 import { useMemo } from 'react'
 import { useTerminalSnapshots } from '@/hooks/useTerminalSnapshots'
-import type { ClarifyingAnswer, ClarifyingQuestion, TerminalLine, Preferences } from '@/lib/types'
-import type { PreferenceKey } from '@/features/terminal/terminalState'
+import type {
+  ClarifyingAnswer,
+  ClarifyingQuestion,
+  GenerationMode,
+  TerminalLine,
+  Preferences,
+  TerminalStatus,
+  TaskActivity,
+} from '@/lib/types'
+import type { PreferenceKey, SessionSnapshot } from '@/features/terminal/terminalState'
 
 export type TerminalSnapshotState = {
   lines: TerminalLine[]
+  activity: TaskActivity | null
   editablePrompt: string | null
   pendingTask: string | null
   clarifyingQuestions: ClarifyingQuestion[] | null
@@ -16,6 +25,7 @@ export type TerminalSnapshotState = {
   awaitingQuestionConsent: boolean
   consentSelectedIndex: number | null
   clarifyingSelectedOptionIndex: number | null
+  generationMode: GenerationMode
   isPromptEditable: boolean
   isPromptFinalized: boolean
   lastApprovedPrompt: string | null
@@ -25,12 +35,13 @@ export type TerminalSnapshotState = {
   currentPreferenceQuestionKey: PreferenceKey | null
   preferenceSelectedOptionIndex: number | null
   pendingPreferenceUpdates: Partial<Preferences>
-  lastSnapshot: unknown
+  lastSnapshot: SessionSnapshot | null
 }
 
 export type TerminalSnapshotActions = {
-  appendLine: (role: 'system' | 'user' | 'app', text: string) => void
+  appendLine: (role: 'system' | 'user' | 'app', text: string | TerminalStatus) => void
   setLines: (next: TerminalLine[] | ((prev: TerminalLine[]) => TerminalLine[])) => void
+  setActivity: (value: TaskActivity | null) => void
   setEditablePrompt: (value: string | null) => void
   setPendingTask: (value: string | null) => void
   setClarifyingQuestions: (value: ClarifyingQuestion[] | null) => void
@@ -40,6 +51,7 @@ export type TerminalSnapshotActions = {
   setAwaitingQuestionConsent: (value: boolean) => void
   setConsentSelectedIndex: (value: number | null) => void
   setClarifyingSelectedOptionIndex: (value: number | null) => void
+  setGenerationMode: (value: GenerationMode) => void
   setIsPromptEditable: (value: boolean) => void
   setIsPromptFinalized: (value: boolean) => void
   setLastApprovedPrompt: (value: string | null) => void
@@ -52,7 +64,7 @@ export type TerminalSnapshotActions = {
   setLastHistory: (
     value: Array<{ id: string; task: string; label: string; body: string; created_at: string }> | null
   ) => void
-  setLastSnapshot: (value: TerminalSnapshotState['lastSnapshot']) => void
+  setLastSnapshot: (value: SessionSnapshot | null) => void
   setLikeState: (value: 'none' | 'liked' | 'disliked') => void
   setValue: (next: string) => void
   clearDraft: () => void
