@@ -13,9 +13,15 @@ import type {
 
 export type LikeState = 'none' | 'liked' | 'disliked'
 export type PreferenceKey = Extract<keyof Preferences, string>
+export type PromptEditDiff = {
+  previous: string
+  current: string
+}
+
 export type SessionSnapshot = {
   lines: TerminalLine[]
   editablePrompt: string | null
+  promptEditDiff: PromptEditDiff | null
   pendingTask: string | null
   clarifyingQuestions: ClarifyingQuestion[] | null
   clarifyingAnswers: ClarifyingAnswer[]
@@ -43,6 +49,7 @@ export type TerminalState = {
   isGenerating: boolean
   pendingTask: string | null
   editablePrompt: string | null
+  promptEditDiff: PromptEditDiff | null
   awaitingQuestionConsent: boolean
   consentSelectedIndex: number | null
   clarifyingQuestions: ClarifyingQuestion[] | null
@@ -77,6 +84,7 @@ export const createInitialTerminalState = (initialLines: TerminalLine[]): Termin
   isGenerating: false,
   pendingTask: null,
   editablePrompt: null,
+  promptEditDiff: null,
   awaitingQuestionConsent: false,
   consentSelectedIndex: null,
   clarifyingQuestions: null,
@@ -112,6 +120,7 @@ export type TerminalAction =
   | { type: 'set_generating'; value: boolean }
   | { type: 'set_pending_task'; value: string | null }
   | { type: 'set_editable_prompt'; value: string | null }
+  | { type: 'set_prompt_edit_diff'; value: PromptEditDiff | null }
   | { type: 'set_question_consent'; awaiting: boolean; selectedIndex: number | null }
   | { type: 'set_clarifying_questions'; questions: ClarifyingQuestion[] | null }
   | { type: 'set_clarifying_answers'; answers: ClarifyingAnswer[]; currentIndex: number }
@@ -154,6 +163,8 @@ function terminalReducer(state: TerminalState, action: TerminalAction): Terminal
       return { ...state, pendingTask: action.value }
     case 'set_editable_prompt':
       return { ...state, editablePrompt: action.value }
+    case 'set_prompt_edit_diff':
+      return { ...state, promptEditDiff: action.value }
     case 'set_question_consent':
       return { ...state, awaitingQuestionConsent: action.awaiting, consentSelectedIndex: action.selectedIndex }
     case 'set_consent_selected_index':

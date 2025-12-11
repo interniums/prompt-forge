@@ -5,7 +5,7 @@ import { useEffect, useCallback } from 'react'
 type UseTerminalFocusDeps = {
   editablePrompt: string | null
   inputRef: React.RefObject<HTMLTextAreaElement | null>
-  copyEditablePrompt: () => Promise<void> | void
+  copyEditablePrompt: (textOverride?: string) => Promise<void> | void
 }
 
 export function useTerminalFocus({ editablePrompt, inputRef, copyEditablePrompt }: UseTerminalFocusDeps) {

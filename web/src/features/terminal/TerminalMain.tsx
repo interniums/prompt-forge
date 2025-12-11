@@ -23,6 +23,8 @@ type TerminalMainProps = {
     placeholder: string
     inputRef: React.RefObject<HTMLTextAreaElement | null>
     disabled: boolean
+    onBack?: () => void
+    showBack?: boolean
   }
   onSubmit: () => void
   onStop: () => void
@@ -44,21 +46,28 @@ export function TerminalMain({
   return (
     <form onSubmit={onFormSubmit} className="relative flex-1 text-sm">
       <div className={terminalMainSurfaceClass}>
-        <TerminalOutputAreaLazy {...outputProps} />
-        <div className="border-t border-slate-600 bg-slate-950 pt-3 px-4 rounded-b-2xl">
-          <TerminalInputBar
-            value={inputProps.value}
-            onChange={inputProps.onChange}
-            onKeyDown={inputProps.onKeyDown}
-            placeholder={inputProps.placeholder}
-            inputRef={inputProps.inputRef}
-            disabled={inputProps.disabled}
-            isGenerating={isGenerating}
-            onSubmit={onSubmit}
-            onStop={onStop}
-            onVoiceClick={onVoiceClick}
-            voiceAvailable={voiceAvailable}
-          />
+        <div className="mx-2">
+          <div className="border-t border-slate-600" aria-hidden="true" />
+        </div>
+        <div className="flex min-h-0 flex-1 flex-col rounded-2xl">
+          <TerminalOutputAreaLazy {...outputProps} />
+          <div className="border-t border-slate-600 bg-slate-950 pt-3 px-2 rounded-b-2xl mx-2">
+            <TerminalInputBar
+              value={inputProps.value}
+              onChange={inputProps.onChange}
+              onKeyDown={inputProps.onKeyDown}
+              placeholder={inputProps.placeholder}
+              inputRef={inputProps.inputRef}
+              disabled={inputProps.disabled}
+              isGenerating={isGenerating}
+              onSubmit={onSubmit}
+              onStop={onStop}
+              onVoiceClick={onVoiceClick}
+              voiceAvailable={voiceAvailable}
+              onBack={inputProps.onBack}
+              showBack={inputProps.showBack}
+            />
+          </div>
         </div>
       </div>
     </form>

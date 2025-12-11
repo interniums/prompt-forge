@@ -27,6 +27,7 @@ export default async function GeneratePage() {
           initialUser={state.user}
           initialPreferenceSource={state.preferencesSource}
           isFirstLogin={state.isFirstLogin}
+          sessionId={state.sessionId}
         />
       </ErrorBoundary>
     </main>

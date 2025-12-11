@@ -19,6 +19,7 @@ type SnapshotDeps = {
   lines: TerminalLine[]
   activity: TaskActivity | null
   editablePrompt: string | null
+  promptEditDiff: { previous: string; current: string } | null
   pendingTask: string | null
   clarifyingQuestions: ClarifyingQuestion[] | null
   clarifyingAnswersRef: React.MutableRefObject<ClarifyingAnswer[]>
@@ -42,6 +43,7 @@ type SnapshotDeps = {
   setLines: (next: TerminalLine[]) => void
   setActivity: (value: TaskActivity | null) => void
   setEditablePrompt: (value: string | null) => void
+  setPromptEditDiff: (value: { previous: string; current: string } | null) => void
   setPendingTask: (value: string | null) => void
   setClarifyingQuestions: (questions: ClarifyingQuestion[] | null) => void
   setClarifyingAnswers: (answers: ClarifyingAnswer[], currentIndex: number) => void
@@ -72,6 +74,7 @@ export function useTerminalSnapshots(deps: SnapshotDeps) {
   const {
     lines,
     editablePrompt,
+    promptEditDiff,
     pendingTask,
     clarifyingQuestions,
     clarifyingAnswersRef,
@@ -95,6 +98,7 @@ export function useTerminalSnapshots(deps: SnapshotDeps) {
     setLines,
     setActivity,
     setEditablePrompt,
+    setPromptEditDiff,
     setPendingTask,
     setClarifyingQuestions,
     setClarifyingAnswers,
@@ -125,6 +129,7 @@ export function useTerminalSnapshots(deps: SnapshotDeps) {
     setLastSnapshot({
       lines,
       editablePrompt,
+      promptEditDiff,
       pendingTask,
       clarifyingQuestions,
       clarifyingAnswers: [...clarifyingAnswersRef.current],
@@ -143,6 +148,7 @@ export function useTerminalSnapshots(deps: SnapshotDeps) {
       currentPreferenceQuestionKey,
       preferenceSelectedOptionIndex,
       pendingPreferenceUpdates,
+      promptEditDiff,
     })
   }, [
     answeringQuestions,
@@ -162,6 +168,7 @@ export function useTerminalSnapshots(deps: SnapshotDeps) {
     isPromptFinalized,
     lastApprovedPrompt,
     lines,
+    promptEditDiff,
     pendingPreferenceUpdates,
     pendingTask,
     preferenceSelectedOptionIndex,
@@ -185,8 +192,18 @@ export function useTerminalSnapshots(deps: SnapshotDeps) {
     setActivity(null)
     setLines([])
     setPendingTask(null)
+    setPromptEditDiff(null)
     resetClarifyingFlowState()
-  }, [lines, resetClarifyingFlowState, saveSnapshot, setActivity, setHeaderHelpShown, setLines, setPendingTask])
+  }, [
+    lines,
+    resetClarifyingFlowState,
+    saveSnapshot,
+    setActivity,
+    setHeaderHelpShown,
+    setLines,
+    setPendingTask,
+    setPromptEditDiff,
+  ])
 
   const handleDiscard = useCallback(() => {
     setHeaderHelpShown(false)
@@ -194,6 +211,7 @@ export function useTerminalSnapshots(deps: SnapshotDeps) {
     setActivity(null)
     setLines([])
     setEditablePrompt(null)
+    setPromptEditDiff(null)
     setIsPromptEditable(true)
     setIsPromptFinalized(false)
     setPendingTask(null)
@@ -208,6 +226,7 @@ export function useTerminalSnapshots(deps: SnapshotDeps) {
     clearDraft()
   }, [
     clearDraft,
+    setPromptEditDiff,
     setActivity,
     resetClarifyingFlowState,
     setCurrentPreferenceQuestionKey,
@@ -231,6 +250,7 @@ export function useTerminalSnapshots(deps: SnapshotDeps) {
     setActivity(null)
     setLines([])
     setEditablePrompt(null)
+    setPromptEditDiff(null)
     setIsPromptEditable(true)
     setIsPromptFinalized(false)
     setPendingTask(null)
@@ -244,6 +264,7 @@ export function useTerminalSnapshots(deps: SnapshotDeps) {
     saveSnapshot,
     setActivity,
     setEditablePrompt,
+    setPromptEditDiff,
     setHasRunInitialTask,
     setIsPromptEditable,
     setIsPromptFinalized,
@@ -262,6 +283,7 @@ export function useTerminalSnapshots(deps: SnapshotDeps) {
 
     setLines(lastSnapshot.lines)
     setEditablePrompt(lastSnapshot.editablePrompt)
+    setPromptEditDiff(lastSnapshot.promptEditDiff ?? null)
     setPendingTask(lastSnapshot.pendingTask)
     setClarifyingQuestions(lastSnapshot.clarifyingQuestions)
     clarifyingAnswersRef.current = [...lastSnapshot.clarifyingAnswers]
@@ -295,6 +317,7 @@ export function useTerminalSnapshots(deps: SnapshotDeps) {
     setConsentSelectedIndex,
     setCurrentPreferenceQuestionKey,
     setEditablePrompt,
+    setPromptEditDiff,
     setGenerationMode,
     setHasRunInitialTask,
     setHeaderHelpShown,
@@ -336,6 +359,7 @@ export function useTerminalSnapshots(deps: SnapshotDeps) {
       }
       setPendingTask(item.task)
       setEditablePrompt(item.body)
+      setPromptEditDiff(null)
       setIsPromptEditable(false)
       setIsPromptFinalized(false)
       setLastApprovedPrompt(null)
@@ -367,6 +391,7 @@ export function useTerminalSnapshots(deps: SnapshotDeps) {
       setHasRunInitialTask,
       setIsPromptEditable,
       setIsPromptFinalized,
+      setPromptEditDiff,
       setLastApprovedPrompt,
       setPendingTask,
       setValue,

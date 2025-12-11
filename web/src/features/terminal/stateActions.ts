@@ -1,5 +1,5 @@
 import type { TerminalLine, ClarifyingQuestion, ClarifyingAnswer, Preferences, TaskActivity } from '@/lib/types'
-import type { TerminalAction, LikeState, PreferenceKey, SessionSnapshot } from './terminalState'
+import type { TerminalAction, LikeState, PreferenceKey, SessionSnapshot, PromptEditDiff } from './terminalState'
 import type { GenerationMode } from '@/lib/types'
 import type { HistoryItem } from '@/lib/types'
 
@@ -10,6 +10,10 @@ export const setActivity = (activity: TaskActivity | null): TerminalAction => ({
 export const setGenerating = (value: boolean): TerminalAction => ({ type: 'set_generating', value })
 export const setPendingTask = (value: string | null): TerminalAction => ({ type: 'set_pending_task', value })
 export const setEditablePrompt = (value: string | null): TerminalAction => ({ type: 'set_editable_prompt', value })
+export const setPromptEditDiff = (value: PromptEditDiff | null): TerminalAction => ({
+  type: 'set_prompt_edit_diff',
+  value,
+})
 export const setQuestionConsent = (awaiting: boolean, selectedIndex: number | null): TerminalAction => ({
   type: 'set_question_consent',
   awaiting,

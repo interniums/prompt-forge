@@ -4,9 +4,22 @@ import { createServiceSupabaseClient } from '@/lib/supabase/server'
 import { ensureSessionExists, getOrCreateActionSessionId } from '@/services/sessionService'
 import type { GeneratedPrompt, HistoryItem } from '@/lib/types'
 
+const REDACTION_PATTERNS: Array<{ pattern: RegExp; replacement: string }> = [
+  { pattern: /\bsk-[A-Za-z0-9]{16,}\b/gi, replacement: '[redacted-key]' },
+  { pattern: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, replacement: '[email]' },
+  { pattern: /(https?:\/\/[^\s]+)/gi, replacement: '[url]' },
+  { pattern: /\bpk_live_[A-Za-z0-9]{16,}\b/gi, replacement: '[redacted-key]' },
+]
+
+function redactForStorage(value: string): string {
+  const trimmed = value.trim()
+  const limited = trimmed.slice(0, 4000)
+  return REDACTION_PATTERNS.reduce((acc, { pattern, replacement }) => acc.replace(pattern, replacement), limited)
+}
+
 /**
  * Record a generation event for the current session.
- * Stores in both pf_generations (for history) and pf_prompt_versions (for detailed tracking).
+ * Stored in pf_generations (session-scoped history, pruned server-side).
  *
  * Returns the generation ID if successful, null otherwise.
  */
@@ -22,9 +35,9 @@ export async function recordGeneration(input: { task: string; prompt: GeneratedP
       .from('pf_generations')
       .insert({
         session_id: sessionId,
-        task: input.task,
-        label: input.prompt.label,
-        body: input.prompt.body,
+        task: redactForStorage(input.task),
+        label: redactForStorage(input.prompt.label),
+        body: redactForStorage(input.prompt.body),
       })
       .select('id')
       .single()

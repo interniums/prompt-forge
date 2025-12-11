@@ -13,6 +13,10 @@ vi.mock('@/services/eventsService', () => ({
   recordEvent: vi.fn(),
 }))
 
+vi.mock('@/services/subscriptionService', () => ({
+  assertAndConsumeQuota: vi.fn(),
+}))
+
 // OpenAI is mocked to prevent any network calls during tests.
 vi.mock('openai', () => {
   return {

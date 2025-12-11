@@ -36,8 +36,8 @@ export const SESSION_COOKIE = 'pf_session_id'
 /** Preference defaults and option sets */
 export const DEFAULT_MODEL = 'gpt-4.1-mini'
 export const DEFAULT_TEMPERATURE = 0.4
-export const DEFAULT_THEME: ThemeName = 'dark'
-export const MIN_TASK_LENGTH = 6
+export const DEFAULT_THEME: ThemeName = 'dim'
+export const MIN_TASK_LENGTH = 4
 export const MAX_TASK_LENGTH = 4000
 
 export const THEME_OPTIONS: ReadonlyArray<{ value: ThemeName; label: string }> = [
@@ -128,6 +128,3 @@ export const SHORTCUT = {
   FOCUS: 'Cmd/Ctrl+J',
   EDIT: 'Cmd/Ctrl+E',
 } as const
-
-/** Empty submit warning cooldown in milliseconds */
-export const EMPTY_SUBMIT_COOLDOWN_MS = 20000

@@ -2,13 +2,23 @@
 
 import { useEffect, useMemo } from 'react'
 import { useDraftPersistence, loadDraft, type DraftState } from '@/hooks/useDraftPersistence'
-import type { ClarifyingAnswer, ClarifyingQuestion, GenerationMode, TerminalLine, TaskActivity } from '@/lib/types'
+import type {
+  ClarifyingAnswer,
+  ClarifyingQuestion,
+  GenerationMode,
+  TerminalLine,
+  TaskActivity,
+  Preferences,
+} from '@/lib/types'
 import type { TerminalRole } from '@/lib/constants'
 
 type RestoreDeps = {
+  sessionId: string | null
+  userId: string | null
   draftRestoredShown: boolean
   setDraftRestoredShown: (value: boolean) => void
   setEditablePrompt: (value: string | null) => void
+  setPromptEditDiff: (value: { previous: string; current: string } | null) => void
   setPendingTask: (value: string | null) => void
   setClarifyingQuestions: (value: ClarifyingQuestion[] | null) => void
   clarifyingAnswersRef: React.MutableRefObject<ClarifyingAnswer[]>
@@ -24,6 +34,10 @@ type RestoreDeps = {
   setHeaderHelpShown: (value: boolean) => void
   setLastApprovedPrompt: (value: string | null) => void
   setLikeState: (value: 'none' | 'liked' | 'disliked') => void
+  setIsAskingPreferenceQuestions: (value: boolean) => void
+  setCurrentPreferenceQuestionKey: (value: string | null) => void
+  setPreferenceSelectedOptionIndex: (value: number | null) => void
+  setPendingPreferenceUpdates: (value: Partial<Preferences>) => void
   replaceLines: (lines: TerminalLine[]) => void
   setPreferencesOpen: (value: boolean) => void
   setUserManagementOpen: (value: boolean) => void
@@ -32,9 +46,12 @@ type RestoreDeps = {
 }
 
 type PersistenceDeps = {
+  sessionId: string | null
+  userId: string | null
   lines: TerminalLine[]
   pendingTask: string | null
   editablePrompt: string | null
+  promptEditDiff: { previous: string; current: string } | null
   activity: TaskActivity | null
   clarifyingQuestions: ClarifyingQuestion[] | null
   clarifyingAnswers: ClarifyingAnswer[]
@@ -50,6 +67,10 @@ type PersistenceDeps = {
   lastApprovedPrompt: string | null
   likeState: 'none' | 'liked' | 'disliked'
   isGenerating: boolean
+  isAskingPreferenceQuestions: boolean
+  currentPreferenceQuestionKey: string | null
+  preferenceSelectedOptionIndex: number | null
+  pendingPreferenceUpdates: Partial<Preferences>
   isPreferencesOpen: boolean
   isUserManagementOpen: boolean
   isLoginRequiredOpen: boolean
@@ -57,9 +78,12 @@ type PersistenceDeps = {
 }
 
 export function useTerminalPersistence({
+  sessionId,
+  userId,
   lines,
   pendingTask,
   editablePrompt,
+  promptEditDiff,
   activity,
   clarifyingQuestions,
   clarifyingAnswers,
@@ -75,6 +99,10 @@ export function useTerminalPersistence({
   lastApprovedPrompt,
   likeState,
   isGenerating,
+  isAskingPreferenceQuestions,
+  currentPreferenceQuestionKey,
+  preferenceSelectedOptionIndex,
+  pendingPreferenceUpdates,
   isPreferencesOpen,
   isUserManagementOpen,
   isLoginRequiredOpen,
@@ -82,8 +110,11 @@ export function useTerminalPersistence({
 }: PersistenceDeps) {
   const currentDraft: DraftState = useMemo(
     () => ({
+      sessionId,
+      userId,
       task: pendingTask,
       editablePrompt: editablePrompt,
+      promptEditDiff,
       clarifyingQuestions: clarifyingQuestions,
       clarifyingAnswers: clarifyingAnswers.length > 0 ? [...clarifyingAnswers] : null,
       currentQuestionIndex,
@@ -98,17 +129,24 @@ export function useTerminalPersistence({
       headerHelpShown,
       lastApprovedPrompt,
       likeState,
+      isAskingPreferenceQuestions,
+      currentPreferenceQuestionKey,
+      preferenceSelectedOptionIndex,
+      pendingPreferenceUpdates,
       isPreferencesOpen,
       isUserManagementOpen,
       isLoginRequiredOpen,
       activity,
     }),
     [
+      sessionId,
+      userId,
       activity,
       answeringQuestions,
       awaitingQuestionConsent,
       clarifyingAnswers,
       clarifyingQuestions,
+      promptEditDiff,
       clarifyingSelectedOptionIndex,
       consentSelectedIndex,
       currentQuestionIndex,
@@ -121,19 +159,27 @@ export function useTerminalPersistence({
       likeState,
       lines,
       pendingTask,
+      isAskingPreferenceQuestions,
+      currentPreferenceQuestionKey,
+      preferenceSelectedOptionIndex,
+      pendingPreferenceUpdates,
       isPreferencesOpen,
       isUserManagementOpen,
       isLoginRequiredOpen,
     ]
   )
 
-  useDraftPersistence(currentDraft, !isGenerating)
+  // Persist even while generating to avoid losing activity/status on reload.
+  useDraftPersistence(currentDraft, true)
 
   useEffect(() => {
     const {
+      sessionId: scopeSessionId,
+      userId: scopeUserId,
       draftRestoredShown,
       setDraftRestoredShown,
       setEditablePrompt,
+      setPromptEditDiff,
       setPendingTask,
       setClarifyingQuestions,
       clarifyingAnswersRef,
@@ -149,6 +195,10 @@ export function useTerminalPersistence({
       setHeaderHelpShown,
       setLastApprovedPrompt,
       setLikeState,
+      setIsAskingPreferenceQuestions,
+      setCurrentPreferenceQuestionKey,
+      setPreferenceSelectedOptionIndex,
+      setPendingPreferenceUpdates,
       replaceLines,
       setPreferencesOpen,
       setUserManagementOpen,
@@ -159,12 +209,18 @@ export function useTerminalPersistence({
     if (draftRestoredShown) return
     if (typeof window === 'undefined') return
 
-    const draft = loadDraft()
+    const draft = loadDraft(scopeSessionId, scopeUserId)
     setDraftRestoredShown(true)
     if (!draft) return
 
-    setEditablePrompt(draft.editablePrompt ?? null)
+    // Ensure the draft matches the active scope
+    if (draft.sessionId && scopeSessionId && draft.sessionId !== scopeSessionId) return
+    if (draft.userId && scopeUserId && draft.userId !== scopeUserId) return
+
+    // Sync scope into state for future saves
     setPendingTask(draft.task ?? null)
+    setEditablePrompt(draft.editablePrompt ?? null)
+    setPromptEditDiff(draft.promptEditDiff ?? null)
     setClarifyingQuestions(draft.clarifyingQuestions ?? null)
     clarifyingAnswersRef.current = draft.clarifyingAnswers ?? []
     setClarifyingAnswers(clarifyingAnswersRef.current, draft.currentQuestionIndex ?? 0)
@@ -190,6 +246,10 @@ export function useTerminalPersistence({
     if (draft.isLoginRequiredOpen) {
       setLoginRequiredOpen(true)
     }
+    setIsAskingPreferenceQuestions(Boolean(draft.isAskingPreferenceQuestions))
+    setCurrentPreferenceQuestionKey(draft.currentPreferenceQuestionKey ?? null)
+    setPreferenceSelectedOptionIndex(draft.preferenceSelectedOptionIndex ?? null)
+    setPendingPreferenceUpdates(draft.pendingPreferenceUpdates ?? {})
     setActivity(draft.activity ?? null)
 
     if (draft.lines && draft.lines.length) {

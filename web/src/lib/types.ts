@@ -91,6 +91,23 @@ export type UserIdentity = {
   email?: string | null
 }
 
+export type SubscriptionTier = 'free_trial' | 'basic' | 'advanced' | 'expired'
+
+export type SubscriptionRecord = {
+  userId: string
+  subscriptionTier: SubscriptionTier
+  trialExpiresAt: string | null
+  periodStart: string
+  quotaGenerations: number
+  quotaEdits: number
+  quotaClarifying: number
+  usageGenerations: number
+  usageEdits: number
+  usageClarifying: number
+  // For tiers that allow premium finals (e.g., gpt-4.1)
+  premiumFinalsRemaining?: number
+}
+
 export type PreferenceSource = 'user' | 'session' | 'local' | 'none'
 
 /** A generated prompt with metadata */

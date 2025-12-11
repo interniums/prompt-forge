@@ -86,6 +86,9 @@ export function createTaskFlowHandlers({ state, actions }: TaskFlowDeps) {
     const task = line.trim()
     if (!task) return
 
+    const isEditingExisting = state.hasRunInitialTask && Boolean(state.editablePrompt)
+    const minLength = isEditingExisting ? 2 : MIN_TASK_LENGTH
+
     logFlow('handleTask:start', { generationMode: state.generationMode, taskLength: task.length })
     void recordEvent('task_submitted', { task })
     actions.setActivity({
@@ -95,9 +98,9 @@ export function createTaskFlowHandlers({ state, actions }: TaskFlowDeps) {
       message: 'Received your task',
       detail: 'Preparing the best path to generate your prompt.',
     })
-    if (task.length < MIN_TASK_LENGTH) {
+    if (task.length < minLength) {
       logFlow('handleTask:reject_short', { taskLength: task.length })
-      actions.appendLine(ROLE.APP, 'Add a bit more detail (at least a few words) before generating.')
+      actions.appendLine(ROLE.APP, `Please enter at least ${minLength} characters.`)
       return
     }
     if (task.length > MAX_TASK_LENGTH) {
@@ -170,7 +173,7 @@ export function createTaskFlowHandlers({ state, actions }: TaskFlowDeps) {
       stage: 'clarifying',
       status: 'loading',
       message: 'Guided Build is on',
-      detail: 'Asking a few quick questions to sharpen this.',
+      detail: 'Answering these questions improves the quality of your prompt.',
     })
     await actions.startClarifyingQuestions(task)
   }
@@ -270,23 +273,5 @@ export function createTaskFlowHandlers({ state, actions }: TaskFlowDeps) {
     submitCurrent()
   }
 
-  function handleReviseFlow() {
-    actions.setIsRevising(true)
-    actions.setHasRunInitialTask(false)
-    actions.setAwaitingQuestionConsent(false)
-    actions.setAnsweringQuestions(false)
-    actions.setCurrentQuestionIndex(state.clarifyingAnswers.length)
-    actions.setClarifyingSelectedOptionIndex(null)
-    actions.setConsentSelectedIndex(null)
-    actions.resetPreferenceFlowState()
-    actions.setEditablePrompt(null)
-    actions.setIsPromptEditable(false)
-    actions.setIsPromptFinalized(false)
-    actions.setLastApprovedPrompt(null)
-    actions.setValue(state.pendingTask ?? '')
-    actions.appendLine(ROLE.APP, 'Revise the task or clarifying answers. Update the task and press Enter to continue.')
-    actions.focusInputToEnd()
-  }
-
-  return { handleTask, submitCurrent, handleFormSubmit, handleReviseFlow }
+  return { handleTask, submitCurrent, handleFormSubmit }
 }

@@ -14,6 +14,7 @@ type GenDeps = {
   setIsGenerating: (value: boolean) => void
   setAnsweringQuestions: (value: boolean) => void
   setEditablePrompt: (value: string | null) => void
+  setPromptEditDiff: (value: { previous: string; current: string } | null) => void
   setIsPromptEditable: (value: boolean) => void
   setIsPromptFinalized: (value: boolean) => void
   setLastApprovedPrompt: (value: string | null) => void
@@ -34,6 +35,7 @@ export function useGenerationController({
   setIsGenerating,
   setAnsweringQuestions,
   setEditablePrompt,
+  setPromptEditDiff,
   setIsPromptEditable,
   setIsPromptFinalized,
   setLastApprovedPrompt,
@@ -95,6 +97,7 @@ export function useGenerationController({
 
         const finalPrompt = prompt.trim() || task
         setEditablePrompt(finalPrompt)
+        setPromptEditDiff(null)
         setIsPromptEditable(true)
         setIsPromptFinalized(false)
         setLastApprovedPrompt(null)
@@ -119,11 +122,7 @@ export function useGenerationController({
           },
         })
 
-        const readyDescription = hasAnswers
-          ? 'Based on your answers and preferences. Copy or refine below.'
-          : hasAnyEffectivePreference
-          ? 'Based on your preferences. Copy or refine below.'
-          : 'Copy or refine the prompt below.'
+        const readyDescription = 'Copy or refine below.'
 
         setActivity({
           task,
@@ -173,6 +172,33 @@ export function useGenerationController({
           return
         }
 
+        if (code === 'QUOTA_EXCEEDED') {
+          setIsGenerating(false)
+          showToast('Plan limit reached. Quota resets next cycle.')
+          setActivity({
+            task,
+            stage: 'error',
+            status: 'error',
+            message: 'Plan limit reached',
+            detail: 'You have reached your plan quota. Upgrade or wait for the next cycle.',
+          })
+          return
+        }
+
+        if (code === 'RATE_LIMITED') {
+          setIsGenerating(false)
+          showToast('Too many requests. Please wait and try again.')
+          setActivity({
+            task,
+            stage: 'error',
+            status: 'error',
+            message: 'Too many requests',
+            detail: 'You are sending requests too quickly. Please wait and try again.',
+          })
+          return
+        }
+
+        showToast('System error. Please try again soon.')
         console.error('Failed to generate final prompt', err)
         setActivity({
           task,
@@ -189,6 +215,7 @@ export function useGenerationController({
       clarifyingAnswersRef,
       consentRequired,
       preferences,
+      setPromptEditDiff,
       setAnsweringQuestions,
       setEditablePrompt,
       setIsGenerating,
@@ -240,6 +267,7 @@ export function useGenerationController({
 
         const finalPrompt = updated.trim() || editablePrompt
         setEditablePrompt(finalPrompt)
+        setPromptEditDiff({ previous: previousPrompt, current: finalPrompt })
         setIsPromptEditable(true)
         setIsPromptFinalized(false)
         setLastApprovedPrompt(null)
@@ -271,6 +299,33 @@ export function useGenerationController({
         setIsGenerating(false)
       } catch (err) {
         if (runId === generationRunIdRef.current) {
+          if ((err as { code?: string }).code === 'QUOTA_EXCEEDED') {
+            showToast('Plan limit reached. Quota resets next cycle.')
+            setActivity({
+              task: pendingTask ?? '',
+              stage: 'error',
+              status: 'error',
+              message: 'Plan limit reached',
+              detail: 'You have reached your plan quota. Upgrade or wait for the next cycle.',
+            })
+            setIsGenerating(false)
+            return
+          }
+
+          if ((err as { code?: string }).code === 'RATE_LIMITED') {
+            showToast('Too many requests. Please wait and try again.')
+            setActivity({
+              task: pendingTask ?? '',
+              stage: 'error',
+              status: 'error',
+              message: 'Too many requests',
+              detail: 'You are sending requests too quickly. Please wait and try again.',
+            })
+            setIsGenerating(false)
+            return
+          }
+
+          showToast('System error. Please try again soon.')
           console.error('Failed to edit prompt', err)
           setActivity({
             task: pendingTask ?? '',
@@ -288,6 +343,7 @@ export function useGenerationController({
       preferences,
       setActivity,
       setEditablePrompt,
+      setPromptEditDiff,
       setIsGenerating,
       setIsPromptEditable,
       setIsPromptFinalized,

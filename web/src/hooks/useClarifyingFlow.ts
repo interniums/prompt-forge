@@ -29,8 +29,11 @@ export type ClarifyingFlowDeps = {
   setAwaitingQuestionConsent: (value: boolean) => void
   setConsentSelectedIndex: (value: number | null) => void
   setClarifyingSelectedOptionIndex: (value: number | null) => void
+  setHasRunInitialTask: (value: boolean) => void
+  setValue: (value: string) => void
   appendLine: (role: TerminalRole, text: string | TerminalStatus) => void
   setActivity: (activity: TaskActivity | null) => void
+  showToast: (msg: string) => void
   focusInputToEnd: () => void
   getPreferencesToAsk: () => PreferenceKey[]
   startPreferenceQuestions: () => Promise<void>
@@ -84,8 +87,11 @@ export function useClarifyingFlow({
   setAwaitingQuestionConsent,
   setConsentSelectedIndex,
   setClarifyingSelectedOptionIndex,
+  setHasRunInitialTask,
+  setValue,
   appendLine,
   setActivity,
+  showToast,
   focusInputToEnd,
   getPreferencesToAsk,
   startPreferenceQuestions,
@@ -98,7 +104,7 @@ export function useClarifyingFlow({
         return
       }
       if (question.options.length > 0) {
-        setClarifyingSelectedOptionIndex(0)
+        setClarifyingSelectedOptionIndex(null)
         return
       }
       if (hasBack) {
@@ -124,16 +130,17 @@ export function useClarifyingFlow({
       setClarifyingQuestions(questions)
       clarifyingAnswersRef.current = []
       setClarifyingAnswers([], 0)
-      selectForQuestion(questions[0], false)
+      selectForQuestion(questions[0], true)
       setAwaitingQuestionConsent(false)
       setConsentSelectedIndex(null)
       setAnsweringQuestions(true)
+      const remaining = Math.max(0, questions.length - 1)
       setActivity({
         task: pendingTask ?? '',
         stage: 'clarifying',
         status: 'loading',
-        message: `Clarifying ${1}/${questions.length}`,
-        detail: questions[0]?.question ?? undefined,
+        message: `Clarifying ${1}/${questions.length}${remaining ? ` · ${remaining} left` : ''}`,
+        detail: 'Answering these questions improves the quality of your prompt.',
       })
       appendClarifyingQuestion(questions[0], 0, questions.length)
       focusInputToEnd()
@@ -189,6 +196,34 @@ export function useClarifyingFlow({
         logFlow('clarifying:error', { runId, error: err instanceof Error ? err.message : String(err) })
         if (runId === generationRunIdRef.current) {
           console.error('Failed to generate clarifying questions', err)
+          const code = (err as { code?: string }).code
+          if (code === 'QUOTA_EXCEEDED') {
+            showToast('Plan limit reached. Quota resets next cycle.')
+            setActivity({
+              task,
+              stage: 'clarifying',
+              status: 'error',
+              message: 'Plan limit reached',
+              detail: 'You have reached your plan quota. Upgrade or wait for the next cycle.',
+            })
+            setIsGenerating(false)
+            return
+          }
+          if (code === 'RATE_LIMITED') {
+            showToast('Too many requests. Please wait and try again.')
+            setActivity({
+              task,
+              stage: 'clarifying',
+              status: 'error',
+              message: 'Too many requests',
+              detail: 'You are sending requests too quickly. Please wait and try again.',
+            })
+            setIsGenerating(false)
+            return
+          }
+
+          showToast('System error. Please try again soon.')
+
           setActivity({
             task,
             stage: 'clarifying',
@@ -313,12 +348,15 @@ export function useClarifyingFlow({
         setCurrentQuestionIndex(nextIndex)
         const nextQuestion = clarifyingQuestions[nextIndex]
         selectForQuestion(nextQuestion, true)
+        const remaining = Math.max(0, clarifyingQuestions.length - (nextIndex + 1))
         setActivity({
           task: pendingTask,
           stage: 'clarifying',
           status: 'loading',
-          message: `Clarifying ${nextIndex + 1}/${clarifyingQuestions.length}`,
-          detail: nextQuestion?.question ?? undefined,
+          message: `Clarifying ${nextIndex + 1}/${clarifyingQuestions.length}${
+            remaining ? ` · ${remaining} left` : ''
+          }`,
+          detail: 'Answering these questions improves the quality of your prompt.',
         })
         appendClarifyingQuestion(nextQuestion, nextIndex, clarifyingQuestions.length)
         focusInputToEnd()
@@ -383,43 +421,81 @@ export function useClarifyingFlow({
     const answers = clarifyingAnswersRef.current
     if (!answers.length) {
       logFlow('clarifying:undo_empty')
-      const firstQuestion = clarifyingQuestions[0] ?? null
-      setAnsweringQuestions(Boolean(firstQuestion))
+      // Return to mode selection while keeping the typed task.
+      setAnsweringQuestions(false)
       setAwaitingQuestionConsent(false)
       setConsentSelectedIndex(null)
       setClarifyingSelectedOptionIndex(null)
+      setClarifyingQuestions(null)
+      clarifyingAnswersRef.current = []
+      setClarifyingAnswers([], 0)
       setCurrentQuestionIndex(0)
-      if (firstQuestion) {
-        selectForQuestion(firstQuestion, false)
-        appendClarifyingQuestion(firstQuestion, 0, clarifyingQuestions.length)
-      }
+      setHasRunInitialTask(false)
+      setValue(pendingTask ?? '')
+      setActivity(null)
       setTimeout(() => focusInputToEnd(), 0)
       return
     }
+    const lastAnswer = answers[answers.length - 1]
     const nextAnswers = answers.slice(0, -1)
     clarifyingAnswersRef.current = nextAnswers
-    const prevIndex = Math.max(0, nextAnswers.length)
-    setClarifyingAnswers(nextAnswers, prevIndex)
-    setCurrentQuestionIndex(prevIndex)
-    const prevQuestion = clarifyingQuestions[prevIndex]
-    selectForQuestion(prevQuestion ?? null, true)
+
+    // Return to the just-removed question for editing, showing the saved answer.
+    const targetIndex = Math.max(0, answers.length - 1)
+    const targetQuestion = clarifyingQuestions[targetIndex] ?? null
+
+    let resolvedSelection: number | null = null
+    if (targetQuestion && lastAnswer?.answer) {
+      const trimmed = lastAnswer.answer.trim()
+      if (trimmed) {
+        if (targetQuestion.options.length > 0) {
+          const optIndex = targetQuestion.options.findIndex((opt) => opt.label === trimmed)
+          resolvedSelection = optIndex >= 0 ? optIndex : -2 // typed custom answer
+        } else {
+          resolvedSelection = -2
+        }
+      }
+    }
+
+    setClarifyingSelectedOptionIndex(resolvedSelection)
+    setClarifyingAnswers(nextAnswers, targetIndex)
+    setCurrentQuestionIndex(targetIndex)
     setAnsweringQuestions(true)
     setAwaitingQuestionConsent(false)
-    logFlow('clarifying:undo', { prevIndex, questionId: prevQuestion?.id })
+    setValue(lastAnswer?.answer ?? '')
+
+    if (targetQuestion) {
+      const remaining = Math.max(0, clarifyingQuestions.length - (targetIndex + 1))
+      setActivity({
+        task: pendingTask ?? '',
+        stage: 'clarifying',
+        status: 'loading',
+        message: `Clarifying ${targetIndex + 1}/${clarifyingQuestions.length}${
+          remaining ? ` · ${remaining} left` : ''
+        }`,
+        detail: 'Answer a few quick questions to sharpen your prompt.',
+      })
+    } else {
+      setActivity(null)
+    }
+
+    logFlow('clarifying:undo', { targetIndex, questionId: targetQuestion?.id })
     focusInputToEnd()
   }, [
-    appendClarifyingQuestion,
     clarifyingAnswersRef,
     clarifyingQuestions,
     focusInputToEnd,
+    setValue,
     pendingTask,
-    selectForQuestion,
     setAnsweringQuestions,
     setAwaitingQuestionConsent,
     setClarifyingAnswers,
     setClarifyingSelectedOptionIndex,
     setConsentSelectedIndex,
     setCurrentQuestionIndex,
+    setClarifyingQuestions,
+    setHasRunInitialTask,
+    setActivity,
   ])
 
   return {

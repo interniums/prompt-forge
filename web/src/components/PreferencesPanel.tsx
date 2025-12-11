@@ -13,13 +13,29 @@ import {
 } from '@/lib/constants'
 import type { GenerationMode, Preferences, PreferenceSource, UserIdentity, ThemeName } from '@/lib/types'
 import { Checkbox } from '@/components/ui/checkbox'
-import { ClearButton } from '@/features/preferences/ClearButton'
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
+import { Slider } from '@/components/ui/slider'
 import { PreferenceSelectField } from '@/features/preferences/PreferenceSelectField'
 import { PreferenceTextField } from '@/features/preferences/PreferenceTextField'
 import { PreferenceTextareaField } from '@/features/preferences/PreferenceTextareaField'
-import { modalBackdropClass, modalCardClass, preferenceInputClass } from '@/features/preferences/styles'
+import { modalBackdropClass, modalCardClass } from '@/features/preferences/styles'
 
 type CheckedState = boolean | 'indeterminate'
+
+const DOMAIN_PRESETS = ['product', 'marketing', 'engineering', 'research'] as const
+const ASK_OVERRIDE_LABELS: Record<keyof NonNullable<Preferences['doNotAskAgain']>, string> = {
+  tone: 'Tone',
+  audience: 'Audience',
+  domain: 'Domain',
+  defaultModel: 'Model',
+  temperature: 'Temperature',
+  outputFormat: 'Output format',
+  language: 'Language',
+  depth: 'Depth',
+  citationPreference: 'Citations',
+  styleGuidelines: 'Style notes',
+  personaHints: 'Persona',
+}
 
 type PreferencesPanelProps = {
   open: boolean
@@ -47,18 +63,14 @@ export function PreferencesPanel({
 }: PreferencesPanelProps) {
   // Local state for immediate UI updates - sync with parent only on close
   const [localValues, setLocalValues] = useState<Preferences>(values)
-  const [temperatureInput, setTemperatureInput] = useState<string>(() =>
-    values.temperature !== null && values.temperature !== undefined ? String(values.temperature) : ''
-  )
+  const [status, setStatus] = useState<'saved' | 'saving' | 'editing'>('saved')
 
   // Sync from parent when modal opens or values change while open
   useEffect(() => {
     if (!open) return
     startTransition(() => {
       setLocalValues(values)
-      setTemperatureInput(
-        values.temperature !== null && values.temperature !== undefined ? String(values.temperature) : ''
-      )
+      setStatus('saved')
     })
   }, [open, values])
 
@@ -86,6 +98,10 @@ export function PreferencesPanel({
     [onChange]
   )
 
+  const markEditing = useCallback(() => {
+    setStatus((prev) => (prev === 'saving' ? 'saving' : 'editing'))
+  }, [])
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -95,36 +111,17 @@ export function PreferencesPanel({
     }
   }, [])
 
-  const handleTextChange =
-    (key: keyof Preferences) => (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-      const value = event.target.value
-      const updated = { ...localValues, [key]: value.trim() ? value : undefined }
-      setLocalValues(updated)
-      debouncedOnChange(updated)
-    }
-
-  const handleTemperatureChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const value = event.target.value
-    const parsed = value === '' ? null : Number(value)
-    const updated = { ...localValues, temperature: Number.isFinite(parsed) ? parsed : null }
-    setTemperatureInput(value)
-    setLocalValues(updated)
-    debouncedOnChange(updated)
-  }
-
   const clearPreference = useCallback(
     (key: keyof Preferences) => {
       setLocalValues((prev) => {
         const updated =
           key === 'temperature' ? { ...prev, temperature: null } : ({ ...prev, [key]: undefined } as Preferences)
-        if (key === 'temperature') {
-          setTemperatureInput('')
-        }
+        markEditing()
         debouncedOnChange(updated)
         return updated
       })
     },
-    [debouncedOnChange]
+    [debouncedOnChange, markEditing]
   )
 
   const handleDoNotAskAgainChange = useCallback(
@@ -132,29 +129,13 @@ export function PreferencesPanel({
       setLocalValues((prev) => {
         const updatedDoNotAskAgain = { ...(prev.doNotAskAgain ?? {}), [key]: checked }
         const updated = { ...prev, doNotAskAgain: updatedDoNotAskAgain }
-        // Checkboxes update parent immediately (no debounce)
-        onChange(updated)
+        // Defer parent update to avoid setState during render of PreferencesPanel
+        setTimeout(() => onChange(updated), 0)
+        markEditing()
         return updated
       })
     },
-    [onChange]
-  )
-
-  const renderAskEveryTimeSlot = useCallback(
-    (key: keyof NonNullable<Preferences['doNotAskAgain']>) => (
-      <div className="flex items-center gap-3 shrink-0 w-[140px] justify-end">
-        <label className="flex items-center gap-1.5 text-sm text-slate-500 whitespace-nowrap cursor-pointer">
-          <Checkbox
-            checked={doNotAskAgain[key] === false}
-            onCheckedChange={(checked: CheckedState) => {
-              handleDoNotAskAgainChange(key)(checked === false)
-            }}
-          />
-          <span className="font-mono">Ask every time</span>
-        </label>
-      </div>
-    ),
-    [doNotAskAgain, handleDoNotAskAgainChange]
+    [markEditing, onChange]
   )
 
   const handleBlurSave = async () => {
@@ -166,12 +147,15 @@ export function PreferencesPanel({
     }
 
     if (canSave && !saving) {
+      setStatus('saving')
       await onSave()
+      setStatus('saved')
     } else if (!user) {
       // Save to localStorage for non-authenticated users
       if (typeof window !== 'undefined') {
         localStorage.setItem('pf_local_preferences', JSON.stringify(localValues))
       }
+      setStatus('saved')
     }
   }
 
@@ -185,10 +169,36 @@ export function PreferencesPanel({
         },
       }
       setLocalValues(updated)
+      markEditing()
       onChange(updated)
     },
-    [localValues, onChange, uiDefaults]
+    [localValues, markEditing, onChange, uiDefaults]
   )
+
+  const toneOptions = useMemo(
+    () => Array.from(TONE_OPTIONS).map((value) => ({ value, label: value.charAt(0).toUpperCase() + value.slice(1) })),
+    []
+  )
+  const audienceOptions = useMemo(
+    () =>
+      Array.from(AUDIENCE_OPTIONS).map((value) => ({ value, label: value.charAt(0).toUpperCase() + value.slice(1) })),
+    []
+  )
+  const domainOptions = useMemo(
+    () =>
+      Array.from(DOMAIN_PRESETS).map((value) => ({
+        value,
+        label: value.charAt(0).toUpperCase() + value.slice(1),
+      })),
+    []
+  )
+
+  const temperatureValue = localValues.temperature ?? 0.55
+  const temperatureLabel = useMemo(() => {
+    if (temperatureValue < 0.35) return 'Focused'
+    if (temperatureValue < 0.7) return 'Balanced'
+    return 'Creative'
+  }, [temperatureValue])
 
   if (!open) return null
 
@@ -200,415 +210,440 @@ export function PreferencesPanel({
     }
   }
 
+  const statusLabel = status === 'saving' ? 'Saving…' : status === 'editing' ? 'Updating…' : 'Saved ✓'
+
   return (
     <div className={modalBackdropClass} onClick={handleBackdropClick}>
-      <div className={`${modalCardClass} space-y-6`} onClick={(e) => e.stopPropagation()}>
-        <div className="mb-6 flex items-start justify-between">
+      <div className={`${modalCardClass} space-y-8`} onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-start justify-between gap-4">
           <div className="space-y-2">
             <div className="font-mono text-lg font-semibold text-slate-50">Preferences</div>
             <div className="font-mono text-sm text-slate-400 max-w-2xl leading-relaxed">
-              Set default preferences for prompt generation. Changes are saved automatically.
+              Defaults for future prompts. You can change them anytime.
             </div>
             <div className="font-mono text-sm text-slate-500 max-w-2xl">
               {!user && 'Sign in to sync across devices'}
             </div>
           </div>
-          <button
-            type="button"
-            onClick={async () => {
-              await handleBlurSave()
-              onClose()
-            }}
-            className="cursor-pointer bg-transparent p-1 text-slate-400 hover:text-slate-100 hover:underline hover:underline-offset-4"
-          >
-            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
+          <div className="flex items-center gap-4">
+            <span
+              className={`rounded-full px-4 py-2 text-sm font-mono ${
+                status === 'saved'
+                  ? 'bg-emerald-900/40 text-emerald-200 border border-emerald-700/40'
+                  : status === 'saving'
+                  ? 'bg-indigo-900/40 text-indigo-200 border border-indigo-700/40'
+                  : 'bg-amber-900/40 text-amber-100 border border-amber-700/40'
+              }`}
+            >
+              {statusLabel}
+            </span>
+            <button
+              type="button"
+              onClick={async () => {
+                await handleBlurSave()
+                onClose()
+              }}
+              className="cursor-pointer bg-transparent p-1 text-slate-400 hover:text-slate-100 hover:underline hover:underline-offset-4"
+              aria-label="Close preferences"
+            >
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
         </div>
 
-        <div className="space-y-4">
-          {/* Basic Preferences */}
-          <div className="mb-10">
-            <h3 className="font-mono text-lg font-semibold text-slate-200 mb-2">Basic Preferences</h3>
-            <div className="grid grid-cols-1 gap-x-5 gap-y-3 xl:grid-cols-2">
-              <PreferenceTextField
+        <div className="space-y-8">
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-mono text-lg font-semibold text-slate-200">Essentials</h3>
+            </div>
+            <div className="grid grid-cols-1 gap-x-5 gap-y-4 xl:grid-cols-2">
+              <PreferenceSelectField
                 label="Tone"
-                description="Writing style and voice for prompts"
+                description="Overall voice (e.g., friendly, formal, neutral)"
                 value={localValues.tone ?? ''}
-                placeholder={`e.g., ${Array.from(TONE_OPTIONS).join(', ')}`}
-                onChange={(val) =>
-                  handleTextChange('tone')({ target: { value: val } } as React.ChangeEvent<HTMLInputElement>)
-                }
+                placeholder="Choose a tone"
+                options={toneOptions}
+                onChange={(value) => {
+                  const updated = { ...localValues, tone: value || undefined }
+                  setLocalValues(updated)
+                  markEditing()
+                  debouncedOnChange(updated)
+                }}
                 onClear={() => clearPreference('tone')}
-                rightSlot={
-                  <div className="flex items-center gap-3 shrink-0 w-[140px] justify-end">
-                    <label className="flex items-center gap-1.5 text-sm text-slate-500 whitespace-nowrap cursor-pointer">
-                      <Checkbox
-                        checked={doNotAskAgain.tone === false}
-                        onCheckedChange={(checked: CheckedState) => {
-                          handleDoNotAskAgainChange('tone')(checked === false)
-                        }}
-                      />
-                      <span className="font-mono">Ask every time</span>
-                    </label>
-                  </div>
-                }
               />
 
-              <PreferenceTextField
+              <PreferenceSelectField
                 label="Audience"
-                description="Target readers or users of the content"
+                description="Who you’re writing for (role or level)"
                 value={localValues.audience ?? ''}
-                placeholder={`e.g., ${Array.from(AUDIENCE_OPTIONS).join(', ')}`}
-                onChange={(val) =>
-                  handleTextChange('audience')({ target: { value: val } } as React.ChangeEvent<HTMLInputElement>)
-                }
+                placeholder="Choose an audience"
+                options={audienceOptions}
+                onChange={(value) => {
+                  const updated = { ...localValues, audience: value || undefined }
+                  setLocalValues(updated)
+                  markEditing()
+                  debouncedOnChange(updated)
+                }}
                 onClear={() => clearPreference('audience')}
-                rightSlot={
-                  <div className="flex items-center gap-3 shrink-0 w-[140px] justify-end">
-                    <label className="flex items-center gap-1.5 text-sm text-slate-500 whitespace-nowrap cursor-pointer">
-                      <Checkbox
-                        checked={doNotAskAgain.audience === false}
-                        onCheckedChange={(checked: CheckedState) => {
-                          handleDoNotAskAgainChange('audience')(checked === false)
-                        }}
-                      />
-                      <span className="font-mono">Ask every time</span>
-                    </label>
-                  </div>
-                }
               />
 
-              <div className="md:col-span-2">
+              <div className="xl:col-span-2">
                 <PreferenceTextField
-                  label="Domain"
-                  description="Industry or field of work context"
-                  value={localValues.domain ?? ''}
-                  placeholder="e.g., marketing, product, engineering"
-                  onChange={(val) =>
-                    handleTextChange('domain')({ target: { value: val } } as React.ChangeEvent<HTMLInputElement>)
-                  }
-                  onClear={() => clearPreference('domain')}
-                  rightSlot={
-                    <div className="flex items-center gap-3 shrink-0 w-[140px] justify-end">
-                      <label className="flex items-center gap-1.5 text-sm text-slate-500 whitespace-nowrap cursor-pointer">
-                        <Checkbox
-                          checked={doNotAskAgain.domain === false}
-                          onCheckedChange={(checked: CheckedState) => {
-                            handleDoNotAskAgainChange('domain')(checked === false)
-                          }}
-                        />
-                        <span className="font-mono">Ask every time</span>
-                      </label>
-                    </div>
-                  }
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Model Configuration */}
-          <div className="mb-10">
-            <h3 className="font-mono text-lg font-semibold text-slate-200 mb-2">Model Configuration</h3>
-            <div className="grid grid-cols-1 gap-x-5 gap-y-3 xl:grid-cols-2">
-              <PreferenceSelectField
-                label="Target Model"
-                description="AI model to optimize prompts for"
-                value={localValues.defaultModel ?? ''}
-                placeholder="Select a model"
-                options={MODEL_OPTIONS}
-                onChange={(value) => {
-                  const updated = { ...localValues, defaultModel: value || undefined }
-                  setLocalValues(updated)
-                  debouncedOnChange(updated)
-                }}
-                onClear={() => clearPreference('defaultModel')}
-                rightSlot={
-                  <div className="flex items-center gap-3 shrink-0 w-[140px] justify-end">
-                    <label className="flex items-center gap-1.5 text-sm text-slate-500 whitespace-nowrap cursor-pointer">
-                      <Checkbox
-                        checked={doNotAskAgain.defaultModel === false}
-                        onCheckedChange={(checked: CheckedState) => {
-                          handleDoNotAskAgainChange('defaultModel')(checked === false)
-                        }}
-                      />
-                      <span className="font-mono">Ask every time</span>
-                    </label>
-                  </div>
-                }
-              />
-
-              <div className="space-y-2">
-                <div className="flex items-end gap-3 h-14">
-                  <div className="flex-1 min-w-0 overflow-hidden">
-                    <span className="block font-mono text-base font-medium text-slate-300">Temperature</span>
-                    <div className="font-mono text-sm text-slate-500 mt-0.5 leading-[1.2]">
-                      <div className="leading-none">Creativity level</div>
-                      <div className="leading-none text-xs">0=focused, 1=creative</div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3 shrink-0 w-[140px] justify-end">
-                    <label className="flex items-center gap-1.5 text-sm text-slate-500 whitespace-nowrap cursor-pointer">
-                      <Checkbox
-                        checked={doNotAskAgain.temperature === false}
-                        onCheckedChange={(checked: CheckedState) => {
-                          handleDoNotAskAgainChange('temperature')(checked === false)
-                        }}
-                      />
-                      <span className="font-mono">Ask every time</span>
-                    </label>
-                  </div>
-                </div>
-                <div className="relative">
-                  <input
-                    type="number"
-                    min="0"
-                    max="1"
-                    step="0.1"
-                    value={temperatureInput}
-                    onChange={handleTemperatureChange}
-                    placeholder="0.0 - 1.0"
-                    className={`${preferenceInputClass} [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`}
-                  />
-                  <ClearButton onClick={() => clearPreference('temperature')} show={!!temperatureInput} />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Output Settings */}
-          <div className="mb-10">
-            <h3 className="font-mono text-lg font-semibold text-slate-200 mb-2">Output Settings</h3>
-            <div className="grid grid-cols-1 gap-x-5 gap-y-3 xl:grid-cols-2">
-              <PreferenceSelectField
-                label="Output Format"
-                description="Preferred structure for responses"
-                value={localValues.outputFormat ?? ''}
-                placeholder="No preference"
-                options={OUTPUT_FORMAT_OPTIONS}
-                onChange={(value) => {
-                  const updated = { ...localValues, outputFormat: value || undefined }
-                  setLocalValues(updated)
-                  debouncedOnChange(updated)
-                }}
-                onClear={() => clearPreference('outputFormat')}
-                rightSlot={renderAskEveryTimeSlot('outputFormat')}
-              />
-
-              <PreferenceTextField
-                label="Language"
-                description="Primary language for output"
-                value={localValues.language ?? ''}
-                placeholder="e.g., English, Spanish, Hindi"
-                onChange={(val) => {
-                  const updated = { ...localValues, language: val.trim() ? val : undefined }
-                  setLocalValues(updated)
-                  debouncedOnChange(updated)
-                }}
-                onClear={() => clearPreference('language')}
-                rightSlot={renderAskEveryTimeSlot('language')}
-              />
-
-              <PreferenceSelectField
-                label="Depth"
-                description="Level of detail in responses"
-                value={localValues.depth ?? ''}
-                placeholder="No preference"
-                options={DEPTH_OPTIONS}
-                onChange={(value) => {
-                  const updated = { ...localValues, depth: value || undefined }
-                  setLocalValues(updated)
-                  debouncedOnChange(updated)
-                }}
-                onClear={() => clearPreference('depth')}
-                rightSlot={renderAskEveryTimeSlot('depth')}
-              />
-
-              <PreferenceSelectField
-                label="Citations"
-                description="How to handle references and sources"
-                value={localValues.citationPreference ?? ''}
-                placeholder="No preference"
-                options={CITATION_OPTIONS}
-                onChange={(value) => {
-                  const updated = { ...localValues, citationPreference: value || undefined }
-                  setLocalValues(updated)
-                  debouncedOnChange(updated)
-                }}
-                onClear={() => clearPreference('citationPreference')}
-                rightSlot={renderAskEveryTimeSlot('citationPreference')}
-              />
-            </div>
-          </div>
-
-          {/* Advanced Settings */}
-          <div className="mb-6">
-            <h3 className="font-mono text-lg font-semibold text-slate-200 mb-2">Advanced Settings</h3>
-            <div className="grid grid-cols-1">
-              <PreferenceTextareaField
-                label="Style Guidelines"
-                description="Custom instructions for formatting and structure"
-                value={localValues.styleGuidelines ?? ''}
-                placeholder="e.g., Always use bullet points, keep paragraphs under 3 sentences, use active voice"
-                onChange={(val) => {
-                  const updated = { ...localValues, styleGuidelines: val.trim() ? val : undefined }
-                  setLocalValues(updated)
-                  debouncedOnChange(updated)
-                }}
-                onClear={() => clearPreference('styleGuidelines')}
-                rightSlot={renderAskEveryTimeSlot('styleGuidelines')}
-              />
-
-              <PreferenceTextareaField
-                label="Persona Hints"
-                description="Voice, role, or character to emulate"
-                value={localValues.personaHints ?? ''}
-                placeholder="e.g., Write as a senior engineer, be helpful but concise, use technical terminology"
-                onChange={(val) => {
-                  const updated = { ...localValues, personaHints: val.trim() ? val : undefined }
-                  setLocalValues(updated)
-                  debouncedOnChange(updated)
-                }}
-                onClear={() => clearPreference('personaHints')}
-                rightSlot={renderAskEveryTimeSlot('personaHints')}
-              />
-            </div>
-          </div>
-
-          {/* UI & Behavior Settings */}
-          <div className="mb-10 space-y-3">
-            <h3 className="font-mono text-lg font-semibold text-slate-200">UI & Behavior</h3>
-            <div className="grid grid-cols-1 gap-x-5 gap-y-3 xl:grid-cols-2 items-start">
-              <div className="xl:col-span-1 pb-2">
-                <PreferenceSelectField
-                  label="Theme"
-                  description="Choose between black, dim, or white interface styles"
-                  value={selectedTheme}
-                  placeholder="Select a theme"
-                  options={THEME_OPTIONS}
-                  hideClear
-                  onChange={(value) => {
-                    const updatedUiDefaults = { ...uiDefaults, theme: value as ThemeName }
-                    const updated = { ...localValues, uiDefaults: updatedUiDefaults }
+                  label="Language"
+                  description="Pick the output language"
+                  value={localValues.language ?? ''}
+                  placeholder="English, Spanish, Hindi"
+                  onChange={(val) => {
+                    const updated = { ...localValues, language: val.trim() ? val : undefined }
                     setLocalValues(updated)
-                    onChange(updated)
+                    markEditing()
+                    debouncedOnChange(updated)
                   }}
-                  onClear={() => {}}
+                  onClear={() => clearPreference('language')}
                 />
               </div>
 
-              <div className="space-y-4">
-                <div className="space-y-2 rounded-xl bg-transparent p-3">
-                  <div className="font-mono text-base text-slate-200">Default prompt mode</div>
-                  <div className="font-mono text-sm text-slate-500">
-                    Quick Start skips clarifying + preference questions. Guided Build asks short questions for higher
-                    quality prompts.
-                  </div>
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    {(
-                      [
-                        { id: 'quick' as GenerationMode, title: 'Quick Start', hint: 'Fastest, no questions' },
-                        { id: 'guided' as GenerationMode, title: 'Guided Build', hint: 'Clarifying + preferences' },
-                      ] as const
-                    ).map((option) => {
-                      const isActive = generationMode === option.id
-                      return (
-                        <button
-                          key={option.id}
-                          type="button"
-                          onClick={() => handleModeChange(option.id)}
-                          className={`flex w-full cursor-pointer flex-col items-start rounded-lg border px-3 py-2 text-left shadow-[0_8px_24px_rgba(0,0,0,0.25)] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-1 focus-visible:ring-offset-slate-950 ${
-                            isActive
-                              ? 'border-slate-500 bg-slate-900 text-slate-50'
-                              : 'border-slate-800 bg-slate-950 text-slate-200 hover:border-slate-600 hover:text-slate-50'
-                          }`}
-                          aria-pressed={isActive}
-                        >
-                          <span className="font-mono text-[15px] font-semibold">{option.title}</span>
-                          <span className="font-mono text-[13px] text-slate-400">{option.hint}</span>
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
-
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <Checkbox
-                    checked={Boolean(uiDefaults.askPreferencesInGuided ?? true)}
-                    onCheckedChange={(checked: CheckedState) => {
-                      const updated = {
-                        ...localValues,
-                        uiDefaults: { ...uiDefaults, askPreferencesInGuided: checked !== false },
-                      }
-                      setLocalValues(updated)
-                      onChange(updated)
-                    }}
-                  />
-                  <div className="flex-1">
-                    <div className="font-mono text-base text-slate-300">Ask preference follow-ups in Guided mode</div>
-                    <div className="font-mono text-sm text-slate-500 mt-0.5">
-                      After clarifying, collect missing preferences before generating.
-                    </div>
-                  </div>
-                </label>
-
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <Checkbox
-                    checked={Boolean(uiDefaults.autoCopyApproved)}
-                    onCheckedChange={(checked: CheckedState) => {
-                      const updated = {
-                        ...localValues,
-                        uiDefaults: { ...uiDefaults, autoCopyApproved: checked === true },
-                      }
-                      setLocalValues(updated)
-                      onChange(updated)
-                    }}
-                  />
-                  <div className="flex-1">
-                    <div className="font-mono text-base text-slate-300">Auto-copy approved prompts</div>
-                    <div className="font-mono text-sm text-slate-500 mt-0.5">Copy to clipboard when you approve</div>
-                  </div>
-                </label>
-
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <Checkbox
-                    checked={Boolean(sharingLinks.allowPrefillLinks)}
-                    onCheckedChange={(checked: CheckedState) => {
-                      const updated = {
-                        ...localValues,
-                        sharingLinks: { ...sharingLinks, allowPrefillLinks: checked === true },
-                      }
-                      setLocalValues(updated)
-                      onChange(updated)
-                    }}
-                  />
-                  <div className="flex-1">
-                    <div className="font-mono text-base text-slate-300">Allow prefill links</div>
-                    <div className="font-mono text-sm text-slate-500 mt-0.5">
-                      Enable URL parameters to prefill forms
-                    </div>
-                  </div>
-                </label>
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <Checkbox
-                    checked={Boolean(sharingLinks.warnSensitive)}
-                    onCheckedChange={(checked: CheckedState) => {
-                      const updated = {
-                        ...localValues,
-                        sharingLinks: { ...sharingLinks, warnSensitive: checked === true },
-                      }
-                      setLocalValues(updated)
-                      onChange(updated)
-                    }}
-                  />
-                  <div className="flex-1">
-                    <div className="font-mono text-base text-slate-300">Warn about sensitive data</div>
-                    <div className="font-mono text-sm text-slate-500 mt-0.5">Show alerts when sharing private info</div>
-                  </div>
-                </label>
+              <div className="xl:col-span-2">
+                <PreferenceSelectField
+                  label="Domain"
+                  description="Subject area to stay grounded in"
+                  value={localValues.domain ?? ''}
+                  placeholder="Select a domain"
+                  options={domainOptions}
+                  onChange={(value) => {
+                    const updated = { ...localValues, domain: value || undefined }
+                    setLocalValues(updated)
+                    markEditing()
+                    debouncedOnChange(updated)
+                  }}
+                  onClear={() => clearPreference('domain')}
+                />
               </div>
             </div>
+          </div>
+
+          <Accordion type="multiple" className="space-y-3">
+            <AccordionItem
+              value="model"
+              className="rounded-xl border border-slate-800 bg-slate-950/70 px-4 py-4 shadow-[0_8px_24px_rgba(0,0,0,0.25)]"
+            >
+              <AccordionTrigger className="cursor-pointer px-2 py-4 hover:no-underline">
+                <span className="flex flex-col flex-1 text-center">
+                  <span className="font-mono text-lg font-semibold text-slate-200">Model & Style</span>
+                  <span className="font-mono text-sm text-slate-500">Target model + creativity level</span>
+                </span>
+              </AccordionTrigger>
+              <AccordionContent className="px-2 pb-5 pt-2">
+                <div className="h-px w-full bg-slate-800 mb-4" />
+                <div className="grid grid-cols-1 gap-x-5 gap-y-4 xl:grid-cols-2">
+                  <PreferenceSelectField
+                    label="Where will you run the prompt?"
+                    description="Choose the model/provider you’ll use"
+                    value={localValues.defaultModel ?? ''}
+                    placeholder="Select a model"
+                    options={MODEL_OPTIONS}
+                    onChange={(value) => {
+                      const updated = { ...localValues, defaultModel: value || undefined }
+                      setLocalValues(updated)
+                      markEditing()
+                      debouncedOnChange(updated)
+                    }}
+                    onClear={() => clearPreference('defaultModel')}
+                  />
+
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="font-mono text-base text-slate-300">Style</div>
+                        <div className="font-mono text-sm text-slate-500">Adjust determinism vs. creativity</div>
+                      </div>
+                      <span className="font-mono text-xs text-slate-400">
+                        {temperatureLabel} ({temperatureValue.toFixed(2)})
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Slider
+                        min={0}
+                        max={1}
+                        step={0.01}
+                        value={[temperatureValue]}
+                        onValueChange={(vals) => {
+                          const nextVal = vals[0] ?? 0.55
+                          const updated = { ...localValues, temperature: nextVal }
+                          setLocalValues(updated)
+                          markEditing()
+                          debouncedOnChange(updated)
+                        }}
+                        className="w-full cursor-pointer"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </AccordionContent>
+            </AccordionItem>
+
+            <AccordionItem
+              value="output"
+              className="rounded-xl border border-slate-800 bg-slate-950/70 px-4 py-4 shadow-[0_8px_24px_rgba(0,0,0,0.25)]"
+            >
+              <AccordionTrigger className="cursor-pointer px-2 py-4 hover:no-underline">
+                <span className="flex flex-col flex-1 text-center">
+                  <span className="font-mono text-lg font-semibold text-slate-200">Output</span>
+                  <span className="font-mono text-sm text-slate-500">Structure, depth, and sourcing</span>
+                </span>
+              </AccordionTrigger>
+              <AccordionContent className="px-2 pb-5 pt-2">
+                <div className="h-px w-full bg-slate-800 mb-4" />
+                <div className="grid grid-cols-1 gap-x-5 gap-y-4 xl:grid-cols-2">
+                  <PreferenceSelectField
+                    label="Output format"
+                    description="Layout you want back (bullets, steps, table, etc.)"
+                    value={localValues.outputFormat ?? ''}
+                    placeholder="No preference"
+                    options={OUTPUT_FORMAT_OPTIONS}
+                    onChange={(value) => {
+                      const updated = { ...localValues, outputFormat: value || undefined }
+                      setLocalValues(updated)
+                      markEditing()
+                      debouncedOnChange(updated)
+                    }}
+                    onClear={() => clearPreference('outputFormat')}
+                  />
+
+                  <PreferenceSelectField
+                    label="Depth"
+                    description="How detailed the response should be"
+                    value={localValues.depth ?? ''}
+                    placeholder="No preference"
+                    options={DEPTH_OPTIONS}
+                    onChange={(value) => {
+                      const updated = { ...localValues, depth: value || undefined }
+                      setLocalValues(updated)
+                      markEditing()
+                      debouncedOnChange(updated)
+                    }}
+                    onClear={() => clearPreference('depth')}
+                  />
+
+                  <PreferenceSelectField
+                    label="Citations"
+                    description="How to treat references and sources"
+                    value={localValues.citationPreference ?? ''}
+                    placeholder="No preference"
+                    options={CITATION_OPTIONS}
+                    onChange={(value) => {
+                      const updated = { ...localValues, citationPreference: value || undefined }
+                      setLocalValues(updated)
+                      markEditing()
+                      debouncedOnChange(updated)
+                    }}
+                    onClear={() => clearPreference('citationPreference')}
+                  />
+                </div>
+              </AccordionContent>
+            </AccordionItem>
+
+            <AccordionItem
+              value="behavior"
+              className="rounded-xl border border-slate-800 bg-slate-950/70 px-4 py-4 shadow-[0_8px_24px_rgba(0,0,0,0.25)]"
+            >
+              <AccordionTrigger className="cursor-pointer px-2 py-4 hover:no-underline">
+                <span className="flex flex-col flex-1 text-center">
+                  <span className="font-mono text-lg font-semibold text-slate-200">UI & Behavior</span>
+                  <span className="font-mono text-sm text-slate-500">Theme, modes, and sharing defaults</span>
+                </span>
+              </AccordionTrigger>
+              <AccordionContent className="px-2 pb-5 pt-2">
+                <div className="h-px w-full bg-slate-800 mb-4" />
+                <div className="grid grid-cols-1 gap-x-5 gap-y-4 xl:grid-cols-2 items-start">
+                  <div className="xl:col-span-1">
+                    <PreferenceSelectField
+                      label="Theme"
+                      description="Interface style for the app"
+                      value={selectedTheme}
+                      placeholder="Select a theme"
+                      options={THEME_OPTIONS}
+                      hideClear
+                      onChange={(value) => {
+                        const updatedUiDefaults = { ...uiDefaults, theme: value as ThemeName }
+                        const updated = { ...localValues, uiDefaults: updatedUiDefaults }
+                        setLocalValues(updated)
+                        markEditing()
+                        onChange(updated)
+                      }}
+                      onClear={() => {}}
+                    />
+                  </div>
+
+                  <div className="space-y-4">
+                    <div className="space-y-2 rounded-xl bg-transparent p-3">
+                      <div className="font-mono text-base text-slate-200">Default prompt mode</div>
+                      <div className="font-mono text-sm text-slate-500">
+                        Quick Start skips questions. Guided Build asks a few to improve quality.
+                      </div>
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                        {(
+                          [
+                            { id: 'quick' as GenerationMode, title: 'Quick Start', hint: 'Fastest, no questions' },
+                            { id: 'guided' as GenerationMode, title: 'Guided Build', hint: 'Clarifying + preferences' },
+                          ] as const
+                        ).map((option) => {
+                          const isActive = generationMode === option.id
+                          return (
+                            <button
+                              key={option.id}
+                              type="button"
+                              onClick={() => handleModeChange(option.id)}
+                              className={`flex w-full cursor-pointer flex-col items-start rounded-lg border px-3 py-2 text-left shadow-[0_8px_24px_rgba(0,0,0,0.25)] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-1 focus-visible:ring-offset-slate-950 ${
+                                isActive
+                                  ? 'border-slate-500 bg-slate-900 text-slate-50'
+                                  : 'border-slate-800 bg-slate-950 text-slate-200 hover:border-slate-600 hover:text-slate-50'
+                              }`}
+                              aria-pressed={isActive}
+                            >
+                              <span className="font-mono text-[15px] font-semibold">{option.title}</span>
+                              <span className="font-mono text-[13px] text-slate-400">{option.hint}</span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <Checkbox
+                        checked={Boolean(uiDefaults.autoCopyApproved)}
+                        onCheckedChange={(checked: CheckedState) => {
+                          const updated = {
+                            ...localValues,
+                            uiDefaults: { ...uiDefaults, autoCopyApproved: checked === true },
+                          }
+                          setLocalValues(updated)
+                          markEditing()
+                          onChange(updated)
+                        }}
+                      />
+                      <div className="flex-1">
+                        <div className="font-mono text-base text-slate-300">Auto-copy approved prompts</div>
+                        <div className="font-mono text-sm text-slate-500 mt-0.5">
+                          Copy to clipboard when you approve
+                        </div>
+                      </div>
+                    </label>
+
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <Checkbox
+                        checked={Boolean(sharingLinks.allowPrefillLinks)}
+                        onCheckedChange={(checked: CheckedState) => {
+                          const updated = {
+                            ...localValues,
+                            sharingLinks: { ...sharingLinks, allowPrefillLinks: checked === true },
+                          }
+                          setLocalValues(updated)
+                          markEditing()
+                          onChange(updated)
+                        }}
+                      />
+                      <div className="flex-1">
+                        <div className="font-mono text-base text-slate-300">Allow prefill links</div>
+                        <div className="font-mono text-sm text-slate-500 mt-0.5">
+                          Enable URL parameters to prefill forms
+                        </div>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+              </AccordionContent>
+            </AccordionItem>
+
+            <AccordionItem
+              value="advanced"
+              className="rounded-xl border border-slate-800 bg-slate-950/70 px-4 py-4 shadow-[0_8px_24px_rgba(0,0,0,0.25)]"
+            >
+              <AccordionTrigger className="cursor-pointer px-2 py-4 hover:no-underline">
+                <span className="flex flex-col flex-1 text-center">
+                  <span className="font-mono text-lg font-semibold text-slate-200">Advanced</span>
+                  <span className="font-mono text-sm text-slate-500">Optional style notes and ask-overrides</span>
+                </span>
+              </AccordionTrigger>
+              <AccordionContent className="px-2 pb-5 pt-2">
+                <div className="h-px w-full bg-slate-800 mb-4" />
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 gap-4">
+                    <PreferenceTextareaField
+                      label="Style Guidelines"
+                      description="Formatting rules to follow (bullets, length, voice)"
+                      value={localValues.styleGuidelines ?? ''}
+                      placeholder="e.g., Use bullets, keep paragraphs under 3 sentences"
+                      onChange={(val) => {
+                        const updated = { ...localValues, styleGuidelines: val.trim() ? val : undefined }
+                        setLocalValues(updated)
+                        markEditing()
+                        debouncedOnChange(updated)
+                      }}
+                      onClear={() => clearPreference('styleGuidelines')}
+                    />
+
+                    <PreferenceTextareaField
+                      label="Persona Hints"
+                      description="Role or voice to emulate (e.g., PM, staff engineer)"
+                      value={localValues.personaHints ?? ''}
+                      placeholder="e.g., Write as a senior engineer, be concise, use technical terminology"
+                      onChange={(val) => {
+                        const updated = { ...localValues, personaHints: val.trim() ? val : undefined }
+                        setLocalValues(updated)
+                        markEditing()
+                        debouncedOnChange(updated)
+                      }}
+                      onClear={() => clearPreference('personaHints')}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="font-mono text-base text-slate-200">Always ask for these (overrides)</div>
+                    <div className="font-mono text-sm text-slate-400">
+                      Toggle on if you want a quick confirmation every run, even when a value exists.
+                    </div>
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3 mt-2">
+                      {Object.entries(ASK_OVERRIDE_LABELS).map(([key, label]) => {
+                        const typedKey = key as keyof NonNullable<Preferences['doNotAskAgain']>
+                        return (
+                          <label
+                            key={key}
+                            className="flex cursor-pointer items-center gap-3 rounded-md px-2.5 py-2 text-sm text-slate-200 hover:bg-slate-900"
+                          >
+                            <Checkbox
+                              checked={doNotAskAgain?.[typedKey] === false}
+                              onCheckedChange={(checked: CheckedState) =>
+                                handleDoNotAskAgainChange(typedKey)(checked === true ? false : true)
+                              }
+                            />
+                            <span className="font-mono text-sm">{label}</span>
+                          </label>
+                        )
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </AccordionContent>
+            </AccordionItem>
+          </Accordion>
+        </div>
+
+        <div className="flex flex-col gap-3 border-t border-slate-800 pt-4 md:flex-row md:items-center md:justify-between">
+          <div className="font-mono text-xs text-slate-500">Auto-save is on. Hit Done or press Esc to close.</div>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={async () => {
+                await handleBlurSave()
+                onClose()
+              }}
+              className="cursor-pointer rounded-lg border border-slate-700 bg-slate-900 px-4 py-2 font-mono text-sm text-slate-100 transition hover:border-slate-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-1 focus-visible:ring-offset-slate-950"
+            >
+              Done
+            </button>
           </div>
         </div>
       </div>

@@ -1,11 +1,11 @@
 export const GENERIC_QUESTION_TEMPLATES = [
   {
     id: 'q1',
-    question: 'What is the main goal or outcome you want from this task?',
+    question: 'What do you want most from this?',
     options: [
       { id: 'a', label: 'Get a clear explanation' },
-      { id: 'b', label: 'Produce ready-to-use content' },
-      { id: 'c', label: 'Debug or improve existing work' },
+      { id: 'b', label: 'Generate something new (ready to use)' },
+      { id: 'c', label: 'Improve something I already have' },
     ],
   },
   {

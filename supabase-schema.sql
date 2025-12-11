@@ -76,6 +76,41 @@ create policy "update own preferences" on public.user_preferences
 create policy "delete own preferences" on public.user_preferences
   for delete using (auth.uid() = user_id);
 
+-- Subscriptions and quotas per user
+create table if not exists public.user_subscriptions (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  subscription_tier text not null default 'free_trial',
+  trial_expires_at timestamptz null,
+  period_start timestamptz not null default now(),
+  quota_generations integer not null default 800,
+  quota_edits integer not null default 200,
+  quota_clarifying integer not null default 800,
+  premium_finals_remaining integer not null default 0,
+  usage_generations integer not null default 0,
+  usage_edits integer not null default 0,
+  usage_clarifying integer not null default 0,
+  updated_at timestamptz not null default now()
+);
+
+alter table public.user_subscriptions enable row level security;
+
+drop policy if exists "select own subscription" on public.user_subscriptions;
+drop policy if exists "insert own subscription" on public.user_subscriptions;
+drop policy if exists "update own subscription" on public.user_subscriptions;
+drop policy if exists "delete own subscription" on public.user_subscriptions;
+
+create policy "select own subscription" on public.user_subscriptions
+  for select using (auth.uid() = user_id);
+
+create policy "insert own subscription" on public.user_subscriptions
+  for insert with check (auth.uid() = user_id);
+
+create policy "update own subscription" on public.user_subscriptions
+  for update using (auth.uid() = user_id);
+
+create policy "delete own subscription" on public.user_subscriptions
+  for delete using (auth.uid() = user_id);
+
 -- ---------------------------------------------------------------------------
 -- Core session-scoped tables (RLS + service role access only)
 -- These tables are accessed via server actions using the service role key.

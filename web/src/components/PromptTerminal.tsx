@@ -6,7 +6,8 @@ import { recordEvent } from '@/services/eventsService'
 import { TerminalHeader } from './terminal/TerminalHeader'
 import { useToast } from '@/hooks/useToast'
 import { clearDraft } from '@/hooks/useDraftPersistence'
-import { ROLE, COMMAND, MESSAGE, type TerminalRole, SHORTCUT } from '@/lib/constants'
+import { ROLE, COMMAND, MESSAGE, type TerminalRole } from '@/lib/constants'
+import { DEFAULT_THEME } from '@/lib/constants'
 import { TerminalShellView } from '@/features/terminal/TerminalShellView'
 import { TerminalPanels } from '@/features/terminal/TerminalPanels'
 import { TerminalMain } from '@/features/terminal/TerminalMain'
@@ -27,6 +28,7 @@ import {
   useTerminalState,
   createInitialTerminalState,
   type PreferenceKey,
+  type PromptEditDiff,
   type SessionSnapshot,
 } from '@/features/terminal/terminalState'
 import {
@@ -36,6 +38,7 @@ import {
   setGenerating as setGeneratingAction,
   setPendingTask as setPendingTaskAction,
   setEditablePrompt as setEditablePromptAction,
+  setPromptEditDiff as setPromptEditDiffAction,
   setActivity as setActivityAction,
   setQuestionConsent,
   setClarifyingQuestions as setClarifyingQuestionsAction,
@@ -73,6 +76,7 @@ import type {
   GenerationMode,
   TerminalStatus,
   TaskActivity,
+  ThemeName,
 } from '@/lib/types'
 
 // Re-export types for external consumers
@@ -84,6 +88,7 @@ type PromptTerminalProps = {
   initialUser?: UserIdentity | null
   initialPreferenceSource?: PreferenceSource
   isFirstLogin?: boolean
+  sessionId?: string | null
 }
 
 function resolveGenerationMode(preferences: Preferences): GenerationMode {
@@ -111,6 +116,7 @@ function PromptTerminalInner({
   initialUser = null,
   initialPreferenceSource = 'none',
   isFirstLogin = false,
+  sessionId: initialSessionId = null,
 }: PromptTerminalProps) {
   const { state, dispatch } = useTerminalState()
   const {
@@ -119,6 +125,7 @@ function PromptTerminalInner({
     activity,
     pendingTask,
     editablePrompt,
+    promptEditDiff,
     awaitingQuestionConsent,
     consentSelectedIndex,
     clarifyingQuestions,
@@ -146,7 +153,6 @@ function PromptTerminalInner({
     lastSnapshot,
   } = state
 
-  const isMac = typeof window !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(window.navigator.userAgent)
   const { message: toastMessage, showToast } = useToast()
   // Initialize clarifying answers from saved draft if available
   const clarifyingAnswersRef = useRef<ClarifyingAnswer[]>([])
@@ -171,6 +177,8 @@ function PromptTerminalInner({
   })
   const [preferencesStep, setPreferencesStep] = useState<PreferencesStep>(null)
   const [isRevising, setIsRevising] = useState(false)
+  const activeSessionId = initialSessionId ?? null
+  const activeUserId = user?.id ?? null
   const setIsAskingPreferenceQuestions = useCallback(
     (value: boolean) => dispatch(setIsAskingPreferencesAction(value)),
     [dispatch]
@@ -329,6 +337,10 @@ function PromptTerminalInner({
     (value: string | null) => dispatch(setLastApprovedPromptAction(value)),
     [dispatch]
   )
+  const setPromptEditDiff = useCallback(
+    (value: PromptEditDiff | null) => dispatch(setPromptEditDiffAction(value)),
+    [dispatch]
+  )
   const setLikeState = useCallback(
     (value: 'none' | 'liked' | 'disliked') => dispatch(setLikeStateAction(value)),
     [dispatch]
@@ -342,9 +354,12 @@ function PromptTerminalInner({
   }, [awaitingQuestionConsent, consentSelectedIndex, setConsentSelectedIndex])
 
   useTerminalPersistence({
+    sessionId: activeSessionId,
+    userId: activeUserId,
     lines,
     pendingTask,
     editablePrompt,
+    promptEditDiff,
     activity,
     clarifyingQuestions,
     clarifyingAnswers,
@@ -360,13 +375,20 @@ function PromptTerminalInner({
     lastApprovedPrompt,
     likeState,
     isGenerating,
+    isAskingPreferenceQuestions,
+    currentPreferenceQuestionKey,
+    preferenceSelectedOptionIndex,
+    pendingPreferenceUpdates,
     isPreferencesOpen,
     isUserManagementOpen,
     isLoginRequiredOpen,
     restoreDeps: {
+      sessionId: activeSessionId,
+      userId: activeUserId,
       draftRestoredShown,
       setDraftRestoredShown,
       setEditablePrompt,
+      setPromptEditDiff,
       setPendingTask,
       setClarifyingQuestions,
       clarifyingAnswersRef,
@@ -381,6 +403,10 @@ function PromptTerminalInner({
       setHeaderHelpShown,
       setLastApprovedPrompt,
       setLikeState,
+      setIsAskingPreferenceQuestions: (v) => dispatch(setIsAskingPreferencesAction(v)),
+      setCurrentPreferenceQuestionKey: (v) => dispatch(setCurrentPreferenceQuestionAction(v as PreferenceKey | null)),
+      setPreferenceSelectedOptionIndex: (v) => dispatch(setPreferenceSelectedOptionIndexAction(v)),
+      setPendingPreferenceUpdates: (v) => dispatch(setPendingPreferenceUpdatesAction(v)),
       replaceLines: (lines) => dispatch(replaceLines(lines)),
       setPreferencesOpen,
       setUserManagementOpen,
@@ -392,21 +418,39 @@ function PromptTerminalInner({
 
   const inputDisabled = isGenerating
 
-  const copyEditablePrompt = useCallback(async () => {
-    if (!editablePrompt) return
-    try {
-      if (navigator?.clipboard?.writeText) {
-        await navigator.clipboard.writeText(editablePrompt)
-        showToast(MESSAGE.PROMPT_COPIED)
-        void recordEvent('prompt_copied', { prompt: editablePrompt })
-      } else {
-        appendLine(ROLE.APP, 'Clipboard is not available in this environment.')
+  const copyEditablePrompt = useCallback(
+    async (textOverride?: string) => {
+      const promptToCopy = typeof textOverride === 'string' ? textOverride : editablePrompt
+      if (!promptToCopy) return
+      try {
+        if (navigator?.clipboard?.writeText) {
+          await navigator.clipboard.writeText(promptToCopy)
+          showToast(MESSAGE.PROMPT_COPIED)
+          void recordEvent('prompt_copied', { prompt: promptToCopy })
+        } else {
+          appendLine(ROLE.APP, 'Clipboard is not available in this environment.')
+        }
+      } catch (err) {
+        console.error('Failed to copy editable prompt', err)
+        appendLine(ROLE.APP, 'Could not copy to clipboard. You can still select and copy manually.')
       }
-    } catch (err) {
-      console.error('Failed to copy editable prompt', err)
-      appendLine(ROLE.APP, 'Could not copy to clipboard. You can still select and copy manually.')
-    }
-  }, [appendLine, editablePrompt, showToast])
+    },
+    [appendLine, editablePrompt, showToast]
+  )
+
+  const handleManualPromptUpdate = useCallback(
+    (nextPrompt: string, previousPrompt: string) => {
+      const trimmed = nextPrompt.trim()
+      const finalPrompt = trimmed.length > 0 ? nextPrompt : previousPrompt
+      setEditablePrompt(finalPrompt)
+      setPromptEditDiff(null)
+      setIsPromptEditable(true)
+      setIsPromptFinalized(false)
+      setLastApprovedPrompt(null)
+      showToast('Prompt updated')
+    },
+    [setEditablePrompt, setIsPromptEditable, setIsPromptFinalized, setLastApprovedPrompt, setPromptEditDiff, showToast]
+  )
 
   const { focusInputToEnd } = useTerminalFocus({
     editablePrompt,
@@ -462,6 +506,7 @@ function PromptTerminalInner({
       lines,
       activity,
       editablePrompt,
+      promptEditDiff,
       pendingTask,
       clarifyingQuestions,
       clarifyingAnswersRef,
@@ -487,6 +532,7 @@ function PromptTerminalInner({
       setLines: (next) => setLines(next),
       setActivity,
       setEditablePrompt,
+      setPromptEditDiff,
       setPendingTask,
       setClarifyingQuestions,
       setClarifyingAnswers,
@@ -545,6 +591,8 @@ function PromptTerminalInner({
       inputRef.current.blur()
     }
   }, [inputDisabled])
+
+  // Do not auto-clear selection on question change; selections are restored from saved answers.
 
   useEffect(() => {
     function handleFocusShortcut(e: KeyboardEvent) {
@@ -703,6 +751,7 @@ function PromptTerminalInner({
     setIsGenerating,
     setAnsweringQuestions,
     setEditablePrompt,
+    setPromptEditDiff,
     setIsPromptEditable,
     setIsPromptFinalized,
     setLastApprovedPrompt,
@@ -776,7 +825,6 @@ function PromptTerminalInner({
     startPreferenceQuestions,
     handlePreferenceAnswer,
     handlePreferenceOptionClick,
-    handlePreferenceKey,
     getPreferenceOptions,
     getPreferenceQuestionText,
   } = usePreferenceQuestions({
@@ -793,6 +841,7 @@ function PromptTerminalInner({
     setPendingPreferenceUpdates,
     setActivity,
     focusInputToEnd,
+    setValue,
     clarifyingAnswersRef,
     generateFinalPromptForTask: guardedGenerateFinalPromptForTask,
   })
@@ -820,13 +869,256 @@ function PromptTerminalInner({
     setAwaitingQuestionConsent,
     setConsentSelectedIndex,
     setClarifyingSelectedOptionIndex,
+    setHasRunInitialTask,
+    setValue,
     appendLine,
     setActivity,
+    showToast,
     focusInputToEnd,
     getPreferencesToAsk,
     startPreferenceQuestions: () => startPreferenceQuestions(),
     generateFinalPromptForTask: guardedGenerateFinalPromptForTask,
   })
+
+  const handleClarifyingSkip = useCallback(() => {
+    void handleClarifyingAnswer('')
+  }, [handleClarifyingAnswer])
+
+  const handleClarifyingNext = useCallback(
+    (forcedIndex?: number | null) => {
+      const trimmed = value.trim()
+      if (trimmed) {
+        void handleClarifyingAnswer(trimmed)
+        setValue('')
+        return
+      }
+
+      const selection = typeof forcedIndex === 'number' ? forcedIndex : clarifyingSelectedOptionIndex ?? null
+      if (selection === -1) {
+        handleUndoAnswer()
+        return
+      }
+      if (selection === -2) {
+        focusInputToEnd()
+        return
+      }
+      if (selection === -3) {
+        handleClarifyingSkip()
+        return
+      }
+
+      if (
+        selection !== null &&
+        selection >= 0 &&
+        clarifyingQuestions &&
+        clarifyingQuestions.length > 0 &&
+        currentQuestionIndex < clarifyingQuestions.length
+      ) {
+        void handleClarifyingOptionClick(selection)
+        return
+      }
+
+      appendLine(ROLE.APP, 'Pick an option or type an answer to continue.')
+      focusInputToEnd()
+    },
+    [
+      appendLine,
+      clarifyingQuestions,
+      clarifyingSelectedOptionIndex,
+      currentQuestionIndex,
+      focusInputToEnd,
+      handleClarifyingAnswer,
+      handleClarifyingOptionClick,
+      handleClarifyingSkip,
+      handleUndoAnswer,
+      setValue,
+      value,
+    ]
+  )
+
+  const clarifyingCanSubmit =
+    Boolean(value.trim()) || (clarifyingSelectedOptionIndex !== null && clarifyingSelectedOptionIndex >= 0)
+
+  const handlePreferenceNext = useCallback(
+    (forcedIndex?: number | null) => {
+      const trimmed = value.trim()
+      if (trimmed) {
+        handlePreferenceAnswer(trimmed)
+        setValue('')
+        return
+      }
+
+      const selection = typeof forcedIndex === 'number' ? forcedIndex : preferenceSelectedOptionIndex ?? null
+
+      if (selection === -1) {
+        handlePreferenceOptionClick(-1)
+        return
+      }
+
+      if (selection !== null && selection >= 0 && currentPreferenceQuestionKey) {
+        handlePreferenceOptionClick(selection)
+        return
+      }
+
+      appendLine(ROLE.APP, 'Pick an option or type an answer to continue.')
+      focusInputToEnd()
+    },
+    [
+      appendLine,
+      currentPreferenceQuestionKey,
+      handlePreferenceAnswer,
+      handlePreferenceOptionClick,
+      focusInputToEnd,
+      preferenceSelectedOptionIndex,
+      setValue,
+      value,
+    ]
+  )
+
+  const preferenceCanSubmit =
+    Boolean(value.trim()) || (preferenceSelectedOptionIndex !== null && preferenceSelectedOptionIndex >= 0)
+
+  const handleClarifyingOptionSelect = useCallback(
+    (index: number) => {
+      setClarifyingSelectedOptionIndex(index)
+      focusInputToEnd()
+      if (index >= 0) {
+        handleClarifyingNext(index)
+      }
+    },
+    [focusInputToEnd, handleClarifyingNext, setClarifyingSelectedOptionIndex]
+  )
+
+  const focusInputWithPulse = useCallback(() => {
+    focusInputToEnd()
+    const el = inputRef.current
+    if (!el) return
+    el.classList.add('ring-2', 'ring-slate-500', 'ring-offset-1', 'ring-offset-slate-950', 'animate-pulse')
+    setTimeout(() => {
+      el.classList.remove('ring-2', 'ring-slate-500', 'ring-offset-1', 'ring-offset-slate-950', 'animate-pulse')
+    }, 220)
+  }, [focusInputToEnd, inputRef])
+
+  const handleClarifyingFree = useCallback(() => {
+    setClarifyingSelectedOptionIndex(-2)
+    focusInputWithPulse()
+  }, [focusInputWithPulse, setClarifyingSelectedOptionIndex])
+
+  const handlePreferenceFree = useCallback(() => {
+    setPreferenceSelectedOptionIndex(-2)
+    focusInputWithPulse()
+  }, [focusInputWithPulse, setPreferenceSelectedOptionIndex])
+
+  const handlePreferenceOptionSelect = useCallback(
+    (index: number) => {
+      setPreferenceSelectedOptionIndex(index)
+      focusInputToEnd()
+      if (index >= 0) {
+        handlePreferenceNext(index)
+      }
+    },
+    [focusInputToEnd, handlePreferenceNext, setPreferenceSelectedOptionIndex]
+  )
+
+  const handlePreferenceBackNav = useCallback(() => {
+    if (!currentPreferenceQuestionKey || !getPreferencesToAsk) {
+      handlePreferenceAnswer('back')
+      return
+    }
+
+    const prefsToAsk = getPreferencesToAsk()
+    const currentIndex = prefsToAsk.indexOf(currentPreferenceQuestionKey as PreferenceKey)
+
+    if (currentIndex <= 0) {
+      // Exit preference flow and return to the last clarifying question
+      setIsAskingPreferenceQuestions(false)
+      setCurrentPreferenceQuestionKey(null)
+      setPreferenceSelectedOptionIndex(null)
+      setPendingPreferenceUpdates({})
+      handleUndoAnswer()
+      return
+    }
+
+    handlePreferenceAnswer('back')
+  }, [
+    currentPreferenceQuestionKey,
+    getPreferencesToAsk,
+    handlePreferenceAnswer,
+    handleUndoAnswer,
+    setCurrentPreferenceQuestionKey,
+    setIsAskingPreferenceQuestions,
+    setPendingPreferenceUpdates,
+    setPreferenceSelectedOptionIndex,
+  ])
+
+  const handleGlobalBack = useCallback(() => {
+    // If a final prompt is rendered, drop it and reopen the most recent step.
+    if (editablePrompt && clarifyingQuestions && clarifyingQuestions.length > 0 && clarifyingAnswers.length > 0) {
+      const prefKeys = Object.keys(pendingPreferenceUpdates ?? {})
+      if (prefKeys.length > 0 && getPreferenceOptions) {
+        const lastKey = prefKeys[prefKeys.length - 1] as PreferenceKey
+        const saved = pendingPreferenceUpdates[lastKey] ?? preferences[lastKey]
+        const opts = getPreferenceOptions(lastKey) ?? []
+        const trimmed = saved !== undefined && saved !== null ? String(saved).trim() : ''
+        let sel: number | null = null
+        if (trimmed) {
+          if (opts.length > 0) {
+            const idx = opts.findIndex((o) => o.label === trimmed)
+            sel = idx >= 0 ? idx : -2
+          } else {
+            sel = -2
+          }
+        }
+        setEditablePrompt(null)
+        setPromptEditDiff(null)
+        setActivity({
+          task: pendingTask ?? '',
+          stage: 'preferences',
+          status: 'loading',
+          message: 'Preferences',
+          detail: 'Answering these questions improves the quality of your prompt.',
+        })
+        setIsAskingPreferenceQuestions(true)
+        setCurrentPreferenceQuestionKey(lastKey)
+        setPreferenceSelectedOptionIndex(sel)
+        setValue(trimmed)
+        return
+      }
+      setEditablePrompt(null)
+      setPromptEditDiff(null)
+      setActivity(null)
+      handleUndoAnswer()
+      return
+    }
+
+    if (isAskingPreferenceQuestions) {
+      handlePreferenceBackNav()
+      return
+    }
+    if (answeringQuestions || (clarifyingQuestions && clarifyingQuestions.length > 0)) {
+      handleUndoAnswer()
+      return
+    }
+  }, [
+    answeringQuestions,
+    clarifyingAnswers.length,
+    clarifyingQuestions,
+    editablePrompt,
+    getPreferenceOptions,
+    handlePreferenceBackNav,
+    handleUndoAnswer,
+    isAskingPreferenceQuestions,
+    pendingPreferenceUpdates,
+    preferences,
+    pendingTask,
+    setActivity,
+    setCurrentPreferenceQuestionKey,
+    setEditablePrompt,
+    setIsAskingPreferenceQuestions,
+    setPreferenceSelectedOptionIndex,
+    setPromptEditDiff,
+    setValue,
+  ])
 
   const consentNav = {
     active: awaitingQuestionConsent,
@@ -844,16 +1136,25 @@ function PromptTerminalInner({
     currentIndex: currentQuestionIndex,
     selectedIndex: clarifyingSelectedOptionIndex,
     setSelectedIndex: setClarifyingSelectedOptionIndex,
-    onSelectOption: handleClarifyingOptionClick,
+    onSelectOption: (index: number) => handleClarifyingNext(index),
     onUndo: handleUndoAnswer,
+    onSkip: handleClarifyingSkip,
+    onFreeAnswer: focusInputToEnd,
   }
 
   const preferenceNav = {
     active: isAskingPreferenceQuestions,
-    onKey: handlePreferenceKey,
+    options:
+      currentPreferenceQuestionKey && getPreferenceOptions ? getPreferenceOptions(currentPreferenceQuestionKey) : [],
+    selectedIndex: preferenceSelectedOptionIndex,
+    setSelectedIndex: setPreferenceSelectedOptionIndex,
+    onSelectOption: (index: number) => handlePreferenceNext(index),
+    onBack: handlePreferenceBackNav,
+    onSkip: () => handlePreferenceOptionClick(-1),
+    onFreeAnswer: focusInputToEnd,
   }
 
-  const { submitCurrent, handleFormSubmit, handleReviseFlow } = createTaskFlowHandlers({
+  const { submitCurrent, handleFormSubmit } = createTaskFlowHandlers({
     state: {
       isGenerating,
       value,
@@ -938,15 +1239,13 @@ function PromptTerminalInner({
   const isFreshSession = !hasRunInitialTask
 
   const inputPlaceholder = answeringQuestions
-    ? 'Type your own answer here or use arrows to select'
+    ? 'Type an answer or pick an option • Enter/Next to continue'
     : awaitingQuestionConsent
-    ? 'Generate now or sharpen first (select an option)'
+    ? 'Generate now or sharpen first (click or use ↑↓)'
     : isAskingPreferenceQuestions
     ? 'Choose a preference or skip to generate now'
     : editablePrompt !== null
-    ? `Optional: refine this prompt (e.g., "make it shorter") or press ${
-        isMac ? SHORTCUT.COPY_MAC : SHORTCUT.COPY_WIN
-      } to copy`
+    ? 'Type how you want the prompt updated (e.g., "make it shorter")'
     : generationMode === 'quick'
     ? 'Quick Start selected. Type your task to generate immediately.'
     : generationMode === 'guided'
@@ -960,6 +1259,14 @@ function PromptTerminalInner({
       }}
       onSettingsClick={() => {
         setPreferencesOpen(true)
+      }}
+      theme={(preferences.uiDefaults?.theme as ThemeName | undefined) ?? DEFAULT_THEME}
+      onThemeChange={(nextTheme) => {
+        const updated = {
+          ...preferences,
+          uiDefaults: { ...(preferences.uiDefaults ?? {}), theme: nextTheme },
+        }
+        updatePreferencesLocally(updated)
       }}
     />
   )
@@ -1015,6 +1322,7 @@ function PromptTerminalInner({
     lines,
     activity,
     editablePrompt,
+    promptEditDiff,
     promptForLinks: editablePrompt ?? lastApprovedPrompt,
     awaitingQuestionConsent,
     consentSelectedIndex,
@@ -1043,18 +1351,29 @@ function PromptTerminalInner({
       setConsentSelectedIndex(index)
       void handleQuestionConsent(v)
     },
-    onClarifyingOptionClick: handleClarifyingOptionClick,
+    onClarifyingOptionClick: handleClarifyingOptionSelect,
+    onClarifyingNext: () => handleClarifyingNext(),
+    onFocusInputSelectFree: handleClarifyingFree,
     onUndoAnswer: handleUndoAnswer,
-    onRevise: handleReviseFlow,
-    onCopyEditable: () => void copyEditablePrompt(),
+    onClarifyingSkip: handleClarifyingSkip,
+    onCopyEditable: (text?: string) => void copyEditablePrompt(text),
+    onUpdateEditablePrompt: handleManualPromptUpdate,
     onStartNewConversation: handleStartNewConversation,
+    onFocusInput: focusInputToEnd,
     onLike: handleLikePrompt,
     onDislike: handleDislikePrompt,
     likeState,
+    clarifyingCanSubmit,
     isAskingPreferenceQuestions,
     currentPreferenceQuestionKey,
     preferenceSelectedOptionIndex,
-    onPreferenceOptionClick: handlePreferenceOptionClick,
+    onPreferenceFocusInputSelectFree: handlePreferenceFree,
+    preferenceCanSubmit,
+    onPreferenceOptionClick: handlePreferenceOptionSelect,
+    onPreferenceNext: () => handlePreferenceNext(),
+    onPreferenceBack: handlePreferenceBackNav,
+    onPreferenceYourAnswer: focusInputToEnd,
+    onPreferenceSkip: () => handlePreferenceOptionClick(-1),
     getPreferenceOptions,
     getPreferenceQuestionText,
     getPreferencesToAsk,
@@ -1064,6 +1383,7 @@ function PromptTerminalInner({
       focusInput()
       handleModeChange(mode, opts ?? { silent: isFreshSession })
     },
+    onFinalBack: editablePrompt ? handleGlobalBack : undefined,
   }
 
   const mainNode = (

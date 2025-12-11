@@ -3,6 +3,8 @@
 import React from 'react'
 import { terminalInputContainerClass } from '@/features/terminal/styles'
 
+const inputButtonShadow = 'shadow-[0_4px_12px_rgba(0,0,0,0.18)]'
+
 export type TerminalInputBarProps = {
   value: string
   onChange: (value: string) => void
@@ -15,6 +17,8 @@ export type TerminalInputBarProps = {
   onStop: () => void
   onVoiceClick?: () => void
   voiceAvailable?: boolean
+  onBack?: () => void
+  showBack?: boolean
 }
 
 export function TerminalInputBar({
@@ -29,6 +33,8 @@ export function TerminalInputBar({
   onStop,
   onVoiceClick,
   voiceAvailable = true,
+  onBack,
+  showBack = false,
 }: TerminalInputBarProps) {
   // Keep the action button enabled while generating so users can stop the run.
   const isActionDisabled = !isGenerating && (disabled || !value.trim())
@@ -47,18 +53,37 @@ export function TerminalInputBar({
         disabled={disabled}
         aria-label="Terminal input"
         aria-describedby="terminal-input-hint"
-        className="terminal-input h-[44px] flex-1 resize-none border-0 bg-transparent px-0 py-2 text-[16px] leading-[1.4] text-slate-100 placeholder:text-slate-500 outline-none font-mono"
+        className="terminal-input h-[44px] flex-1 resize-none border-0 bg-transparent px-0 py-2 text-[16px] leading-[1.4] text-slate-100 placeholder:text-slate-500 outline-none font-mono rounded-md"
       />
       <span id="terminal-input-hint" className="sr-only">
         Enter to generate, Shift+Enter for a new line
       </span>
       <div className="flex items-center gap-2">
+        {showBack && (
+          <button
+            type="button"
+            aria-label="Go back"
+            title="Go back"
+            className={`inline-flex h-[44px] w-[44px] cursor-pointer items-center justify-center rounded-lg border border-slate-700/80 bg-slate-950 text-slate-200 ${inputButtonShadow} transition hover:border-slate-500 hover:text-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-1 focus-visible:ring-offset-slate-950`}
+            onClick={onBack}
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-4 w-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+            >
+              <path d="M15 18l-6-6 6-6" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        )}
         {voiceAvailable && (
           <button
             type="button"
             aria-label="Voice input (coming soon)"
             title="Voice input (coming soon). Use typing for now."
-            className="inline-flex h-[44px] w-[44px] cursor-pointer items-center justify-center rounded-lg border border-slate-700/80 bg-slate-950 text-slate-200 transition hover:border-slate-500 hover:text-slate-50"
+            className={`inline-flex h-[44px] w-[44px] cursor-pointer items-center justify-center rounded-lg border border-slate-700/80 bg-slate-950 text-slate-200 ${inputButtonShadow} transition hover:border-slate-500 hover:text-slate-50`}
             onClick={onVoiceClick}
           >
             <svg
@@ -86,7 +111,7 @@ export function TerminalInputBar({
             }
           }}
           disabled={isActionDisabled}
-          className={`inline-flex h-[44px] w-[48px] items-center justify-center rounded-lg px-0 text-[15px] font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-1 focus-visible:ring-offset-slate-950 ${
+          className={`inline-flex h-[44px] w-[48px] items-center justify-center rounded-lg px-0 text-[15px] font-semibold ${inputButtonShadow} transition focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-1 focus-visible:ring-offset-slate-950 ${
             isGenerating
               ? 'cursor-pointer border border-slate-700/80 bg-slate-800 text-slate-50 hover:bg-slate-700'
               : isActionDisabled

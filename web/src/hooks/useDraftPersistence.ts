@@ -10,18 +10,24 @@
  */
 
 import { useEffect, useRef, useCallback, useState } from 'react'
-import type { TerminalLine, ClarifyingQuestion, GenerationMode, TaskActivity } from '@/lib/types'
-import type { LikeState } from '@/features/terminal/terminalState'
+import type { TerminalLine, ClarifyingQuestion, GenerationMode, TaskActivity, Preferences } from '@/lib/types'
+import type { LikeState, PreferenceKey } from '@/features/terminal/terminalState'
 
 const STORAGE_KEY = 'pf_draft'
 const DRAFT_EXPIRY_MS = 24 * 60 * 60 * 1000 // 24 hours
 const DEBOUNCE_MS = 1000 // Save at most once per second
 
 export interface DraftState {
+  /** Session identifier this draft belongs to (guest or pending) */
+  sessionId: string | null
+  /** Authenticated user id if available */
+  userId: string | null
   /** The task the user typed */
   task: string | null
   /** The editable prompt (before approval) */
   editablePrompt: string | null
+  /** Diff between last AI edit and previous prompt, if available */
+  promptEditDiff: { previous: string; current: string } | null
   /** Clarifying questions (if mid-flow) */
   clarifyingQuestions: ClarifyingQuestion[] | null
   /** Answers to clarifying questions (if mid-flow) */
@@ -56,6 +62,14 @@ export interface DraftState {
   isUserManagementOpen: boolean
   /** Whether the login-required modal was open */
   isLoginRequiredOpen: boolean
+  /** Whether we are in the preference Q&A flow */
+  isAskingPreferenceQuestions: boolean
+  /** Current preference question key */
+  currentPreferenceQuestionKey: PreferenceKey | null
+  /** Currently selected preference option index */
+  preferenceSelectedOptionIndex: number | null
+  /** In-progress preference updates collected in the flow */
+  pendingPreferenceUpdates: Partial<Preferences>
   /** Current activity card for the task (persisted to restore status bars) */
   activity: TaskActivity | null
 }
@@ -67,7 +81,12 @@ interface StoredDraft extends DraftState {
   version: number
 }
 
-const CURRENT_VERSION = 8
+const CURRENT_VERSION = 10
+const VALID_PROMPT_EDIT_DIFF_SHAPE = (value: unknown): value is { previous: string; current: string } => {
+  if (!value || typeof value !== 'object') return false
+  const maybe = value as { previous?: unknown; current?: unknown }
+  return typeof maybe.previous === 'string' && typeof maybe.current === 'string'
+}
 
 const VALID_ACTIVITY_STAGES = new Set<TaskActivity['stage']>([
   'collecting',
@@ -120,7 +139,7 @@ function isLocalStorageAvailable(): boolean {
 /**
  * Load draft from localStorage, returns null if none exists or expired.
  */
-export function loadDraft(): DraftState | null {
+export function loadDraft(currentSessionId?: string | null, currentUserId?: string | null): DraftState | null {
   if (!isLocalStorageAvailable()) return null
 
   try {
@@ -135,6 +154,40 @@ export function loadDraft(): DraftState | null {
       return null
     }
 
+    // Enforce scoping to the active user/session to avoid cross-leakage
+    const storedUserId = stored.userId ?? null
+    const storedSessionId = stored.sessionId ?? null
+    let effectiveSessionId = storedSessionId
+
+    if (currentUserId) {
+      if (storedUserId && storedUserId !== currentUserId) {
+        localStorage.removeItem(STORAGE_KEY)
+        return null
+      }
+    } else if (storedUserId) {
+      // Logged out but draft was tied to a user; drop it to avoid mixing accounts
+      localStorage.removeItem(STORAGE_KEY)
+      return null
+    }
+
+    if (currentSessionId) {
+      if (storedSessionId && storedSessionId !== currentSessionId) {
+        // Allow upgrading a pending draft to the real session id
+        if (storedSessionId === 'pending') {
+          effectiveSessionId = currentSessionId
+        } else {
+          localStorage.removeItem(STORAGE_KEY)
+          return null
+        }
+      } else if (!storedSessionId) {
+        effectiveSessionId = currentSessionId
+      }
+    } else if (storedSessionId && storedSessionId !== 'pending') {
+      // No active session but draft was session-scoped; treat as stale
+      localStorage.removeItem(STORAGE_KEY)
+      return null
+    }
+
     // Check expiry
     const age = Date.now() - stored.savedAt
     if (age > DRAFT_EXPIRY_MS) {
@@ -143,9 +196,14 @@ export function loadDraft(): DraftState | null {
       return null
     }
 
+    const promptEditDiff = VALID_PROMPT_EDIT_DIFF_SHAPE(stored.promptEditDiff) ? stored.promptEditDiff : null
+
     return {
+      sessionId: effectiveSessionId ?? null,
+      userId: stored.userId ?? null,
       task: stored.task,
       editablePrompt: stored.editablePrompt,
+      promptEditDiff,
       clarifyingQuestions: stored.clarifyingQuestions ?? null,
       clarifyingAnswers: stored.clarifyingAnswers,
       currentQuestionIndex: stored.currentQuestionIndex,
@@ -170,6 +228,10 @@ export function loadDraft(): DraftState | null {
       isPreferencesOpen: stored.isPreferencesOpen ?? false,
       isUserManagementOpen: stored.isUserManagementOpen ?? false,
       isLoginRequiredOpen: stored.isLoginRequiredOpen ?? false,
+      isAskingPreferenceQuestions: stored.isAskingPreferenceQuestions ?? false,
+      currentPreferenceQuestionKey: stored.currentPreferenceQuestionKey ?? null,
+      preferenceSelectedOptionIndex: stored.preferenceSelectedOptionIndex ?? null,
+      pendingPreferenceUpdates: stored.pendingPreferenceUpdates ?? {},
       activity: sanitizeActivity(stored.activity),
     }
   } catch (err) {
@@ -186,12 +248,21 @@ function saveDraft(draft: DraftState): void {
 
   // Don't save empty drafts
   const hasLines = draft.lines && draft.lines.length > 0
-  const hasUiState = draft.isPreferencesOpen || draft.isUserManagementOpen || draft.isLoginRequiredOpen
+  const hasUiState =
+    draft.isPreferencesOpen ||
+    draft.isUserManagementOpen ||
+    draft.isLoginRequiredOpen ||
+    draft.isAskingPreferenceQuestions ||
+    draft.currentPreferenceQuestionKey !== null ||
+    (draft.pendingPreferenceUpdates && Object.keys(draft.pendingPreferenceUpdates).length > 0)
   const sanitizedActivity = sanitizeActivity(draft.activity)
   const hasActivity = Boolean(sanitizedActivity)
   if (
+    !draft.sessionId &&
+    !draft.userId &&
     !draft.task &&
     !draft.editablePrompt &&
+    !draft.promptEditDiff &&
     !draft.clarifyingAnswers?.length &&
     !hasLines &&
     !hasUiState &&
@@ -283,12 +354,12 @@ export function useDraftPersistence(draft: DraftState, enabled: boolean = true):
  * Hook to load draft on mount and provide clear function.
  * Returns the initial draft state (loaded once on first render).
  */
-export function useDraftRestore(): {
+export function useDraftRestore(scope?: { sessionId?: string | null; userId?: string | null }): {
   initialDraft: DraftState | null
   clearSavedDraft: () => void
 } {
   // Use useState with lazy initializer to load draft only once
-  const [initialDraft] = useState<DraftState | null>(() => loadDraft())
+  const [initialDraft] = useState<DraftState | null>(() => loadDraft(scope?.sessionId, scope?.userId))
 
   const clearSavedDraft = useCallback(() => {
     clearDraft()

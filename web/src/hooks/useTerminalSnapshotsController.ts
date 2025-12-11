@@ -17,6 +17,7 @@ export type TerminalSnapshotState = {
   lines: TerminalLine[]
   activity: TaskActivity | null
   editablePrompt: string | null
+  promptEditDiff: { previous: string; current: string } | null
   pendingTask: string | null
   clarifyingQuestions: ClarifyingQuestion[] | null
   clarifyingAnswersRef: React.MutableRefObject<ClarifyingAnswer[]>
@@ -43,6 +44,7 @@ export type TerminalSnapshotActions = {
   setLines: (next: TerminalLine[] | ((prev: TerminalLine[]) => TerminalLine[])) => void
   setActivity: (value: TaskActivity | null) => void
   setEditablePrompt: (value: string | null) => void
+  setPromptEditDiff: (value: { previous: string; current: string } | null) => void
   setPendingTask: (value: string | null) => void
   setClarifyingQuestions: (value: ClarifyingQuestion[] | null) => void
   setClarifyingAnswers: (value: ClarifyingAnswer[], currentIndex: number) => void

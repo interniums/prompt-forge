@@ -26,11 +26,19 @@ type ClarifyingNav = {
   setSelectedIndex: (value: number | null) => void
   onSelectOption: (index: number) => void
   onUndo: () => void
+  onSkip?: () => void
+  onFreeAnswer?: () => void
 }
 
 type PreferenceNav = {
   active: boolean
-  onKey: (info: KeyEventInfo) => boolean
+  options: Array<{ id: string; label: string }>
+  selectedIndex: number | null
+  setSelectedIndex: (value: number | null) => void
+  onSelectOption: (index: number) => void
+  onBack?: () => void
+  onSkip?: () => void
+  onFreeAnswer?: () => void
 }
 
 type PromptControls = {
@@ -97,31 +105,48 @@ export function useTerminalHotkeys({ consent, clarifying, preference, prompt }: 
         const current = clarifying.questions[clarifying.currentIndex]
         const options = current.options ?? []
         const hasBack = true
-        const totalSlots = options.length + 1
+        const hasFree = Boolean(clarifying.onFreeAnswer)
+        const hasSkip = Boolean(clarifying.onSkip)
+        const slotOrder: number[] = []
+        if (hasBack) slotOrder.push(-1)
+        if (hasFree) slotOrder.push(-2)
+        if (hasSkip) slotOrder.push(-3)
+        for (let i = 0; i < options.length; i += 1) slotOrder.push(i)
+        const totalSlots = slotOrder.length
 
         if (totalSlots > 0) {
           if (key === 'ArrowDown' || key === 'ArrowUp' || key === 'ArrowLeft' || key === 'ArrowRight') {
             preventDefault()
             const isForward = key === 'ArrowDown' || key === 'ArrowRight'
-            const prev = clarifying.selectedIndex ?? (hasBack ? -1 : 0)
-            const toPos = (idx: number) => (idx === -1 ? 0 : hasBack ? idx + 1 : idx)
-            const fromPos = (pos: number) => (hasBack ? (pos === 0 ? -1 : pos - 1) : pos)
-            const prevPos = Math.max(0, Math.min(totalSlots - 1, toPos(prev)))
+            const prev = clarifying.selectedIndex
+            const fallbackPos = slotOrder.findIndex((val) => val >= 0)
+            const resolvedPrevIndex =
+              prev === null ? (fallbackPos >= 0 ? fallbackPos : 0) : slotOrder.findIndex((val) => val === prev)
+            const prevPos = Math.max(0, Math.min(totalSlots - 1, resolvedPrevIndex >= 0 ? resolvedPrevIndex : 0))
             const delta = isForward ? 1 : -1
             const nextPos = (prevPos + delta + totalSlots) % totalSlots
-            const nextIndex = fromPos(nextPos)
+            const nextIndex = slotOrder[nextPos] ?? null
             clarifying.setSelectedIndex(nextIndex)
             return
           }
 
           if (isPlainEnter && !prompt.value.trim()) {
             preventDefault()
-            const sel = clarifying.selectedIndex ?? (hasBack ? -1 : 0)
+            const sel = clarifying.selectedIndex
+            if (sel === null) return
             if (sel === -1 && hasBack) {
               clarifying.onUndo()
               return
             }
-            if (sel !== null && sel >= 0 && sel < options.length) {
+            if (sel === -2 && hasFree) {
+              clarifying.onFreeAnswer?.()
+              return
+            }
+            if (sel === -3 && hasSkip) {
+              clarifying.onSkip?.()
+              return
+            }
+            if (sel >= 0 && sel < options.length) {
               void clarifying.onSelectOption(sel)
               return
             }
@@ -130,17 +155,62 @@ export function useTerminalHotkeys({ consent, clarifying, preference, prompt }: 
       }
 
       // Preference navigation (delegate)
-      if (
-        preference.active &&
-        preference.onKey({
-          key,
-          metaKey,
-          ctrlKey,
-          value: prompt.value,
-        })
-      ) {
-        preventDefault()
-        return
+      if (preference.active) {
+        const options = preference.options ?? []
+        const hasBack = Boolean(preference.onBack)
+        const hasFree = Boolean(preference.onFreeAnswer)
+        const hasSkip = Boolean(preference.onSkip)
+        const slotOrder: number[] = []
+        if (hasBack) slotOrder.push(-1)
+        if (hasFree) slotOrder.push(-2)
+        if (hasSkip) slotOrder.push(-3)
+        for (let i = 0; i < options.length; i += 1) slotOrder.push(i)
+        const totalSlots = slotOrder.length
+
+        if (totalSlots > 0) {
+          if (key === 'ArrowDown' || key === 'ArrowUp' || key === 'ArrowLeft' || key === 'ArrowRight') {
+            preventDefault()
+            const isForward = key === 'ArrowDown' || key === 'ArrowRight'
+            const prev = preference.selectedIndex
+            const prevPos =
+              prev === null
+                ? 0
+                : Math.max(
+                    0,
+                    Math.min(
+                      totalSlots - 1,
+                      slotOrder.findIndex((val) => val === prev)
+                    )
+                  )
+            const delta = isForward ? 1 : -1
+            const nextPos = (prevPos + delta + totalSlots) % totalSlots
+            const nextIndex = slotOrder[nextPos] ?? null
+            preference.setSelectedIndex(nextIndex)
+            return
+          }
+
+          if (isPlainEnter && !prompt.value.trim()) {
+            preventDefault()
+            const sel = preference.selectedIndex
+            if (sel === null) return
+            if (sel === -1 && hasBack) {
+              preference.onBack?.()
+              return
+            }
+            if (sel === -2 && hasFree) {
+              preference.onFreeAnswer?.()
+              return
+            }
+            if (sel === -3 && hasSkip) {
+              preference.onSkip?.()
+              return
+            }
+            if (sel >= 0 && sel < options.length) {
+              preference.onSelectOption(sel)
+              return
+            }
+          }
+        }
       }
 
       // Plain Enter submits
