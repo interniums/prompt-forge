@@ -40,8 +40,59 @@ export type ClarifyingFlowDeps = {
   generateFinalPromptForTask: (
     task: string,
     answers: ClarifyingAnswer[],
-    options?: { skipConsentCheck?: boolean }
+    options?: { skipConsentCheck?: boolean; allowUnclear?: boolean }
   ) => Promise<void>
+  onUnclearTask?: (info: { reason: string; stage: 'clarifying'; task: string }) => void
+}
+
+function detectUnclearTaskClient(task: string): string | null {
+  const normalized = task.trim()
+  if (!normalized) return 'Task is empty. Please describe what you want to accomplish.'
+
+  const lower = normalized.toLowerCase()
+  const shortAllowlist = new Set(['api', 'sql', 'css', 'ui', 'ux'])
+  if (normalized.length < 4 && !shortAllowlist.has(lower)) {
+    return 'Task is very short. Please describe what you want to accomplish in more detail.'
+  }
+
+  const letters = normalized.replace(/[^\p{L}]/gu, '')
+  const digits = normalized.replace(/[^\p{N}]/gu, '')
+  const nonSpace = normalized.replace(/\s+/g, '')
+  const symbols = nonSpace.replace(/[\p{L}\p{N}]/gu, '')
+  const hasLetters = letters.length > 0
+  const hasDigits = digits.length > 0
+  const hasSymbols = symbols.length > 0
+
+  if (!hasLetters && !hasDigits && hasSymbols) {
+    return 'Task contains only symbols or emojis. Please describe what you want to accomplish in words.'
+  }
+  if (!hasLetters && hasDigits && !hasSymbols) {
+    return 'Task contains only numbers. Please describe what you want to accomplish in words.'
+  }
+  if (!hasLetters) {
+    return 'Task has no readable words. Please describe what you want to accomplish.'
+  }
+
+  const length = nonSpace.length
+  const vowelMatches = letters.match(/[aeiouy]/gi)
+  const vowelCount = vowelMatches?.length ?? 0
+  const digitRatio = hasDigits ? digits.length / Math.max(length, 1) : 0
+  const hasSpaces = /\s/.test(normalized)
+
+  if (!hasSpaces && letters.length >= 10 && vowelCount === 0) {
+    return 'This looks like random characters. Please describe the goal in plain language.'
+  }
+
+  if (!hasSpaces && length >= 10 && digitRatio > 0.4) {
+    return 'Task mixes letters and digits without clear context. Please describe the goal in plain language.'
+  }
+
+  const hasLongRepeat = /(.)\1{5,}/u.test(normalized)
+  if (hasLongRepeat) {
+    return 'Task contains long character repeats. Please describe the goal more clearly.'
+  }
+
+  return null
 }
 
 const FALLBACK_QUESTIONS: ClarifyingQuestion[] = [
@@ -96,6 +147,7 @@ export function useClarifyingFlow({
   getPreferencesToAsk,
   startPreferenceQuestions,
   generateFinalPromptForTask,
+  onUnclearTask,
 }: ClarifyingFlowDeps) {
   const selectForQuestion = useCallback(
     (question: ClarifyingQuestion | null, hasBack: boolean) => {
@@ -103,6 +155,7 @@ export function useClarifyingFlow({
         setClarifyingSelectedOptionIndex(null)
         return
       }
+      // Do not preselect an option; keep selection neutral for arrow navigation.
       if (question.options.length > 0) {
         setClarifyingSelectedOptionIndex(null)
         return
@@ -161,7 +214,19 @@ export function useClarifyingFlow({
   )
 
   const startClarifyingQuestions = useCallback(
-    async (task: string) => {
+    async (task: string, options?: { allowUnclear?: boolean }) => {
+      if (!options?.allowUnclear) {
+        const unclear = detectUnclearTaskClient(task)
+        if (unclear) {
+          if (typeof onUnclearTask === 'function') {
+            onUnclearTask({ reason: unclear, stage: 'clarifying', task })
+          }
+          setIsGenerating(false)
+          setAwaitingQuestionConsent(false)
+          setAnsweringQuestions(false)
+          return
+        }
+      }
       const runId = (generationRunIdRef.current += 1)
       logFlow('clarifying:start', { task, runId })
       setIsGenerating(true)
@@ -174,7 +239,7 @@ export function useClarifyingFlow({
       })
 
       try {
-        const questions = await generateClarifyingQuestions({ task, preferences })
+        const questions = await generateClarifyingQuestions({ task, preferences, allowUnclear: options?.allowUnclear })
         logFlow('clarifying:received', { runId, count: questions.length })
 
         if (runId !== generationRunIdRef.current) {
@@ -197,6 +262,18 @@ export function useClarifyingFlow({
         if (runId === generationRunIdRef.current) {
           console.error('Failed to generate clarifying questions', err)
           const code = (err as { code?: string }).code
+          if (code === 'UNCLEAR_TASK') {
+            const detail =
+              (err as { reason?: string }).reason ??
+              'We could not understand the task. Please describe what you need in plain language.'
+            if (typeof onUnclearTask === 'function') {
+              onUnclearTask({ reason: detail, stage: 'clarifying', task })
+            }
+            setIsGenerating(false)
+            setAwaitingQuestionConsent(false)
+            setAnsweringQuestions(false)
+            return
+          }
           if (code === 'QUOTA_EXCEEDED') {
             showToast('Plan limit reached. Quota resets next cycle.')
             setActivity({
@@ -236,7 +313,17 @@ export function useClarifyingFlow({
         }
       }
     },
-    [beginQuestionFlow, generationRunIdRef, preferences, setIsGenerating, setActivity]
+    [
+      generationRunIdRef,
+      setIsGenerating,
+      setActivity,
+      preferences,
+      beginQuestionFlow,
+      showToast,
+      onUnclearTask,
+      setAwaitingQuestionConsent,
+      setAnsweringQuestions,
+    ]
   )
 
   const handleQuestionConsent = useCallback(
@@ -308,6 +395,7 @@ export function useClarifyingFlow({
 
   const handleClarifyingAnswer = useCallback(
     async (answer: string) => {
+      // Clear any stored "last removed" state in the consumer.
       if (!clarifyingQuestions || !pendingTask) {
         appendLine(ROLE.APP, 'No active questions. Describe a task first.')
         setAnsweringQuestions(false)
@@ -414,6 +502,66 @@ export function useClarifyingFlow({
     ]
   )
 
+  const handleClarifyingSkip = useCallback(() => {
+    if (!clarifyingQuestions || !pendingTask) return
+    const index = currentQuestionIndex
+    if (index < 0 || index >= clarifyingQuestions.length) return
+
+    const question = clarifyingQuestions[index]
+    logFlow('clarifying:skip', { questionId: question.id, index })
+
+    const updated: ClarifyingAnswer[] = [
+      ...clarifyingAnswersRef.current,
+      { questionId: question.id, question: question.question, answer: '' },
+    ]
+    clarifyingAnswersRef.current = updated
+    setClarifyingAnswers(updated, updated.length)
+
+    const nextIndex = index + 1
+    if (nextIndex < clarifyingQuestions.length) {
+      setCurrentQuestionIndex(nextIndex)
+      const nextQuestion = clarifyingQuestions[nextIndex]
+      selectForQuestion(nextQuestion, true)
+      const remaining = Math.max(0, clarifyingQuestions.length - (nextIndex + 1))
+      setActivity({
+        task: pendingTask,
+        stage: 'clarifying',
+        status: 'loading',
+        message: `Clarifying ${nextIndex + 1}/${clarifyingQuestions.length}${remaining ? ` · ${remaining} left` : ''}`,
+        detail: 'Answering these questions improves the quality of your prompt.',
+      })
+      appendClarifyingQuestion(nextQuestion, nextIndex, clarifyingQuestions.length)
+      focusInputToEnd()
+      return
+    }
+
+    setClarifyingSelectedOptionIndex(null)
+    setAnsweringQuestions(false)
+    const prefsToAsk = getPreferencesToAsk()
+    if (prefsToAsk.length > 0) {
+      logFlow('preferences:start_after_skip', { prefsToAsk })
+      void startPreferenceQuestions()
+    } else {
+      void generateFinalPromptForTask(pendingTask, updated)
+    }
+  }, [
+    appendClarifyingQuestion,
+    clarifyingAnswersRef,
+    clarifyingQuestions,
+    currentQuestionIndex,
+    focusInputToEnd,
+    generateFinalPromptForTask,
+    getPreferencesToAsk,
+    pendingTask,
+    selectForQuestion,
+    setActivity,
+    setAnsweringQuestions,
+    setClarifyingAnswers,
+    setClarifyingSelectedOptionIndex,
+    setCurrentQuestionIndex,
+    startPreferenceQuestions,
+  ])
+
   const handleUndoAnswer = useCallback(() => {
     if (!clarifyingQuestions || !pendingTask) {
       return
@@ -444,25 +592,12 @@ export function useClarifyingFlow({
     const targetIndex = Math.max(0, answers.length - 1)
     const targetQuestion = clarifyingQuestions[targetIndex] ?? null
 
-    let resolvedSelection: number | null = null
-    if (targetQuestion && lastAnswer?.answer) {
-      const trimmed = lastAnswer.answer.trim()
-      if (trimmed) {
-        if (targetQuestion.options.length > 0) {
-          const optIndex = targetQuestion.options.findIndex((opt) => opt.label === trimmed)
-          resolvedSelection = optIndex >= 0 ? optIndex : -2 // typed custom answer
-        } else {
-          resolvedSelection = -2
-        }
-      }
-    }
-
-    setClarifyingSelectedOptionIndex(resolvedSelection)
+    setClarifyingSelectedOptionIndex(null)
     setClarifyingAnswers(nextAnswers, targetIndex)
     setCurrentQuestionIndex(targetIndex)
     setAnsweringQuestions(true)
     setAwaitingQuestionConsent(false)
-    setValue(lastAnswer?.answer ?? '')
+    setValue((lastAnswer?.answer ?? '').trim())
 
     if (targetQuestion) {
       const remaining = Math.max(0, clarifyingQuestions.length - (targetIndex + 1))
@@ -503,6 +638,7 @@ export function useClarifyingFlow({
     handleQuestionConsent,
     handleClarifyingOptionClick,
     handleClarifyingAnswer,
+    handleClarifyingSkip,
     handleUndoAnswer,
     selectForQuestion,
     appendClarifyingQuestion,

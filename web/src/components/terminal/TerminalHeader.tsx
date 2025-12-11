@@ -24,7 +24,7 @@ export function TerminalHeader({ onProfileClick, onSettingsClick, theme, onTheme
         <span className="h-2.5 w-2.5 rounded-full bg-green-500" />
       </div>
       <div className="flex items-center gap-2">
-        <div className="flex items-center gap-1 rounded-lg border border-slate-700/80 bg-slate-950 px-2 py-1 shadow-[0_4px_12px_rgba(0,0,0,0.18)]">
+        <div className="flex items-center gap-1 rounded-lg border border-slate-700/80 bg-transparent px-2 py-1 shadow-[0_4px_12px_rgba(0,0,0,0.18)]">
           {themeOrder.map((option) => {
             const isActive = option === theme
             const label = option === 'light' ? 'Light' : option === 'dim' ? 'Dim' : 'Dark'
@@ -34,7 +34,9 @@ export function TerminalHeader({ onProfileClick, onSettingsClick, theme, onTheme
                 type="button"
                 onClick={() => onThemeChange(option)}
                 className={`flex h-6 w-6 items-center justify-center rounded-md text-[11px] font-semibold transition cursor-pointer ${
-                  isActive ? 'bg-slate-200 text-slate-900' : 'bg-slate-900 text-slate-400 hover:bg-slate-800'
+                  isActive
+                    ? 'bg-transparent text-slate-100 ring-1 ring-slate-400/70'
+                    : 'bg-transparent text-slate-400 hover:text-slate-100'
                 }`}
                 aria-label={`Switch to ${label} theme`}
               >

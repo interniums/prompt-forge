@@ -92,15 +92,17 @@ function assertRateLimit(keys: string[], scope: RateScope) {
 }
 
 function sanitizePreferencesInput(preferences: PreferencesInput): PreferencesInput {
+  const targetModel = preferences.defaultModel ?? preferences.uiDefaults?.defaultTextModel
+  const languageValue = preferences.language ?? preferences.uiDefaults?.languageCustom
   return {
     ...preferences,
     tone: truncateValue(preferences.tone, MAX_PREF_VALUE_LENGTH),
     audience: truncateValue(preferences.audience, MAX_PREF_VALUE_LENGTH),
     domain: truncateValue(preferences.domain, MAX_PREF_VALUE_LENGTH),
-    defaultModel: truncateValue(preferences.defaultModel, MAX_PREF_VALUE_LENGTH),
+    defaultModel: truncateValue(targetModel, MAX_PREF_VALUE_LENGTH),
     styleGuidelines: truncateValue(preferences.styleGuidelines, MAX_PREF_VALUE_LENGTH),
     outputFormat: truncateValue(preferences.outputFormat, MAX_PREF_VALUE_LENGTH),
-    language: truncateValue(preferences.language, MAX_PREF_VALUE_LENGTH),
+    language: truncateValue(languageValue, MAX_PREF_VALUE_LENGTH),
     depth: truncateValue(preferences.depth, MAX_PREF_VALUE_LENGTH),
     citationPreference: truncateValue(preferences.citationPreference, MAX_PREF_VALUE_LENGTH),
     personaHints: truncateValue(preferences.personaHints, MAX_PREF_VALUE_LENGTH),
@@ -124,6 +126,133 @@ function cleanModelString(value: unknown, maxLength: number): string | null {
   return trimmed.slice(0, maxLength)
 }
 
+function createUnclearTaskError(reason?: string): never {
+  const err = new Error('UNCLEAR_TASK')
+  ;(err as { code?: string; reason?: string }).code = 'UNCLEAR_TASK'
+  ;(err as { reason?: string }).reason =
+    reason ?? 'Task is too unclear to produce useful output. Please describe the goal in plain language.'
+  throw err
+}
+
+type UnclearReason =
+  | 'empty'
+  | 'too_short'
+  | 'symbols_only'
+  | 'digits_only'
+  | 'no_letters'
+  | 'random_chars'
+  | 'alnum_noise'
+  | 'long_repeat'
+
+type UnclearResult = {
+  code: UnclearReason
+  message: string
+}
+
+/**
+ * Heuristic detector for "this task is probably not a clear, natural-language request".
+ * Returns null when the task looks fine.
+ */
+function detectUnclearTask(task: string): UnclearResult | null {
+  const normalized = task.trim()
+  if (!normalized) {
+    return {
+      code: 'empty',
+      message: 'Task is empty. Please describe what you want to accomplish.',
+    }
+  }
+
+  // Very short inputs are often too vague, unless they're in a small allowlist
+  const lower = normalized.toLowerCase()
+  const shortAllowlist = new Set(['api', 'sql', 'css', 'ui', 'ux'])
+  if (normalized.length < 4 && !shortAllowlist.has(lower)) {
+    return {
+      code: 'too_short',
+      message: 'Task is very short. Please describe what you want to accomplish in more detail.',
+    }
+  }
+
+  // Basic character classes (Unicode-aware for letters)
+  const letters = normalized.replace(/[^\p{L}]/gu, '')
+  const isAsciiOnly = /^[A-Za-z]+$/.test(letters)
+  const digits = normalized.replace(/[^\p{N}]/gu, '')
+  const nonSpace = normalized.replace(/\s+/g, '')
+  const symbols = nonSpace.replace(/[\p{L}\p{N}]/gu, '') // punctuation, emoji, etc.
+
+  const hasLetters = letters.length > 0
+  const hasDigits = digits.length > 0
+  const hasSymbols = symbols.length > 0
+
+  // 1) Only symbols / emoji / punctuation
+  if (!hasLetters && !hasDigits && hasSymbols) {
+    return {
+      code: 'symbols_only',
+      message: 'Task contains only symbols or emojis. Please describe what you want to accomplish in words.',
+    }
+  }
+
+  // 2) Only digits (likely an ID or number)
+  if (!hasLetters && hasDigits && !hasSymbols) {
+    return {
+      code: 'digits_only',
+      message: 'Task contains only numbers. Please describe what you want to accomplish in words.',
+    }
+  }
+
+  // 3) No letters at all (mixed digits + symbols), usually not a meaningful natural-language request
+  if (!hasLetters) {
+    return {
+      code: 'no_letters',
+      message: 'Task has no readable words. Please describe what you want to accomplish.',
+    }
+  }
+
+  // At this point we know there are letters.
+  const length = nonSpace.length
+
+  // Vowel-ish characters (mostly Latin + some common extras). This is a heuristic.
+  const vowelMatches = letters.match(/[aeiouyаеёиоуыэюяàáèéìíòóùúäëïöü]/gi)
+  const vowelCount = vowelMatches?.length ?? 0
+
+  const digitRatio = hasDigits ? digits.length / Math.max(length, 1) : 0
+  const hasSpaces = /\s/.test(normalized)
+  // 3b) Single ASCII token, fairly long and vowel-less (likely keyboard smash)
+  if (!hasSpaces && isAsciiOnly && letters.length >= 10 && vowelCount === 0) {
+    return {
+      code: 'random_chars',
+      message: 'Task looks like random characters. Please describe the goal in plain language.',
+    }
+  }
+
+  // 5) High alnum noise: mostly digits + letters, no spaces, fairly long
+  //    e.g. "a9f3j18xz90q4" or "ABC123X9Z88"
+  if (!hasSpaces && length >= 10 && digitRatio > 0.4) {
+    return {
+      code: 'alnum_noise',
+      message: 'Task mixes letters and digits without clear context. Please describe the goal in plain language.',
+    }
+  }
+
+  // 6) Long repeats, e.g. "aaaaaaa", "???????", "lolllllll"
+  const hasLongRepeat = /(.)\1{5,}/u.test(normalized)
+  if (hasLongRepeat) {
+    return {
+      code: 'long_repeat',
+      message: 'Task contains long character repeats. Please describe the goal more clearly.',
+    }
+  }
+
+  // Looks fine
+  return null
+}
+
+function assertUnderstandableTask(task: string) {
+  const unclearReason = detectUnclearTask(task)
+  if (unclearReason) {
+    createUnclearTaskError(unclearReason.message)
+  }
+}
+
 function assertValidTask(task: string) {
   const trimmed = task.trim()
   if (!trimmed || trimmed.length < MIN_TASK_LENGTH) {
@@ -142,14 +271,16 @@ function assertValidTask(task: string) {
 
 function buildStyleLine(preferences: PreferencesInput): string {
   const parts: string[] = []
+  const language = preferences.language ?? preferences.uiDefaults?.languageCustom
+  const targetModel = preferences.defaultModel ?? preferences.uiDefaults?.defaultTextModel
   if (preferences.tone) parts.push(`tone: ${preferences.tone}`)
   if (preferences.audience) parts.push(`audience: ${preferences.audience}`)
   if (preferences.domain) parts.push(`domain: ${preferences.domain}`)
   if (preferences.depth) parts.push(`depth: ${preferences.depth}`)
-  if (preferences.language) parts.push(`language: ${preferences.language}`)
+  if (language) parts.push(`language: ${language}`)
   if (preferences.outputFormat) parts.push(`format: ${preferences.outputFormat}`)
   if (preferences.citationPreference) parts.push(`citations: ${preferences.citationPreference}`)
-  if (preferences.defaultModel) parts.push(`target model: ${preferences.defaultModel}`)
+  if (targetModel) parts.push(`target model: ${targetModel}`)
   const temp = clampTemperature(preferences.temperature)
   if (temp !== null) parts.push(`temperature bias: ${temp}`)
   if (preferences.styleGuidelines) parts.push(`style: ${preferences.styleGuidelines}`)
@@ -170,10 +301,14 @@ function buildStyleLine(preferences: PreferencesInput): string {
 export async function generateClarifyingQuestions(input: {
   task: string
   preferences?: PreferencesInput
+  allowUnclear?: boolean
 }): Promise<ClarifyingQuestion[]> {
   const task = input.task.trim()
   if (!task) return []
   assertValidTask(task)
+  if (!input.allowUnclear) {
+    assertUnderstandableTask(task)
+  }
 
   const apiKey = aiApiEnabled ? process.env.OPENAI_API_KEY : undefined
   const safePreferences = sanitizePreferencesInput(input.preferences ?? {})
@@ -219,7 +354,8 @@ export async function generateClarifyingQuestions(input: {
     'Each question should be tailored to the domain (coding, education, marketing, etc.).',
     'You may include 0-5 multiple-choice options per question.',
     'If task details conflict with preferences, treat the task text as the source of truth; otherwise resolve conflicts using your best judgment to maximize prompt quality.',
-    'Return ONLY JSON with a `questions` array where each item has `id`, `question`, and `options`.',
+    'Return ONLY JSON with `questions` (array of items with `id`, `question`, and `options`), plus `needsClarification` (boolean) and optional `reason`.',
+    'If the task is nonsense or too unclear to generate useful questions, set `needsClarification` to true with a short `reason` and leave `questions` empty. For clear tasks, set `needsClarification` to false.',
   ].join(' ')
 
   const userMessage = [`Task: ${task}`, `Preferences: ${styleLine}`].join('\n\n')
@@ -250,6 +386,8 @@ export async function generateClarifyingQuestions(input: {
     }
 
     type QuestionsJson = {
+      needsClarification?: unknown
+      reason?: unknown
       questions?: Array<{
         id?: unknown
         question?: unknown
@@ -271,6 +409,14 @@ export async function generateClarifyingQuestions(input: {
         question: q.question,
         options: q.options.map((o) => ({ id: o.id, label: o.label })),
       }))
+    }
+
+    const needsClarification = parsed.needsClarification === true
+    const clarityReason =
+      typeof parsed.reason === 'string' ? parsed.reason : 'Task is unclear. Please restate what you want to accomplish.'
+
+    if (needsClarification) {
+      createUnclearTaskError(clarityReason)
     }
 
     const rawQuestions = Array.isArray(parsed.questions) ? parsed.questions : []
@@ -317,7 +463,7 @@ export async function generateClarifyingQuestions(input: {
     return questions
   } catch (err) {
     const code = (err as { code?: string }).code
-    if (code === 'QUOTA_EXCEEDED' || code === 'RATE_LIMITED') throw err
+    if (code === 'QUOTA_EXCEEDED' || code === 'RATE_LIMITED' || code === 'UNCLEAR_TASK') throw err
     console.error('OpenAI clarifying question generation failed', err)
     if (!isLocalDev) throw err
     return GENERIC_QUESTION_TEMPLATES.map((q) => ({
@@ -335,10 +481,14 @@ export async function generateFinalPrompt(input: {
   task: string
   preferences?: PreferencesInput
   answers?: ClarifyingAnswer[]
+  allowUnclear?: boolean
 }): Promise<string> {
   const task = input.task.trim()
   if (!task) return ''
   assertValidTask(task)
+  if (!input.allowUnclear) {
+    assertUnderstandableTask(task)
+  }
 
   // Enforce authentication at the server boundary to prevent anonymous OpenAI usage.
   const authUser = await requireAuthenticatedUser()
@@ -351,11 +501,13 @@ export async function generateFinalPrompt(input: {
   const styleLine = buildStyleLine(preferences)
   const preferenceLines: string[] = []
 
+  const preferredLanguage = preferences.language ?? preferences.uiDefaults?.languageCustom
+  const targetModel = preferences.defaultModel ?? preferences.uiDefaults?.defaultTextModel
   if (preferences.outputFormat) preferenceLines.push(`Desired output format: ${preferences.outputFormat}`)
-  if (preferences.language) preferenceLines.push(`Primary language: ${preferences.language}`)
+  if (preferredLanguage) preferenceLines.push(`Primary language: ${preferredLanguage}`)
   if (preferences.depth) preferenceLines.push(`Depth/level: ${preferences.depth}`)
   if (preferences.citationPreference) preferenceLines.push(`Citation preference: ${preferences.citationPreference}`)
-  if (preferences.defaultModel) preferenceLines.push(`Target model to optimize for: ${preferences.defaultModel}`)
+  if (targetModel) preferenceLines.push(`Target model to optimize for: ${targetModel}`)
   if (preferences.personaHints) preferenceLines.push(`Persona hints: ${preferences.personaHints}`)
   if (preferences.styleGuidelines) preferenceLines.push(`Style guidelines: ${preferences.styleGuidelines}`)
 
@@ -409,7 +561,18 @@ export async function generateFinalPrompt(input: {
     'If preferences conflict with clarifying answers, pick the option that yields the best prompt; when anything conflicts with the task text, follow the task text.',
     'If the user input conflicts with preferences (e.g., user says "short" but preferences say "detailed"), follow the user input.',
     'The result should be ready to paste into another AI chat or API directly.',
-    'Return ONLY JSON as { "prompt": "..." }.',
+    'Return ONLY JSON with this shape:',
+    '{',
+    '  "status": "ok" | "error",',
+    '  "prompt"?: string,',
+    '  "needsClarification"?: boolean,',
+    '  "error_type"?: "unclear_task" | "other",',
+    '  "message"?: string,',
+    '  "reason"?: string',
+    '}',
+    'Rules:',
+    '- If the task is nonsense or too unclear to produce a useful prompt, set status="error", error_type="unclear_task", and include a short message. Do NOT invent a task. Leave prompt empty.',
+    '- Otherwise set status="ok", needsClarification=false, and include the final prompt string.',
   ].join(' ')
 
   const parts: string[] = [`Task: ${task}`, `Preferences: ${styleLine}`, ...preferenceLines]
@@ -437,12 +600,36 @@ export async function generateFinalPrompt(input: {
     const raw = completion.choices[0]?.message?.content
     if (typeof raw !== 'string') return task
 
-    type PromptJson = { prompt?: unknown }
+    type PromptJson = {
+      status?: unknown
+      prompt?: unknown
+      needsClarification?: unknown
+      error_type?: unknown
+      message?: unknown
+      reason?: unknown
+    }
     let parsed: PromptJson
     try {
       parsed = JSON.parse(raw) as PromptJson
     } catch {
       return task
+    }
+
+    const status = typeof parsed.status === 'string' ? parsed.status : 'ok'
+    const needsClarification = parsed.needsClarification === true
+    const clarityReason =
+      typeof parsed.reason === 'string'
+        ? parsed.reason
+        : typeof parsed.message === 'string'
+        ? parsed.message
+        : 'Task is too unclear to turn into a final prompt. Please restate your goal.'
+
+    if (status === 'error' && parsed.error_type === 'unclear_task') {
+      createUnclearTaskError(clarityReason)
+    }
+
+    if (needsClarification) {
+      createUnclearTaskError(clarityReason)
     }
 
     const prompt = cleanModelString(parsed.prompt, MAX_MODEL_TEXT_LENGTH) ?? task
@@ -458,7 +645,7 @@ export async function generateFinalPrompt(input: {
     return prompt
   } catch (err) {
     const code = (err as { code?: string }).code
-    if (code === 'QUOTA_EXCEEDED' || code === 'RATE_LIMITED') throw err
+    if (code === 'QUOTA_EXCEEDED' || code === 'RATE_LIMITED' || code === 'UNCLEAR_TASK') throw err
     console.error('OpenAI final prompt generation failed', err)
     return task
   }

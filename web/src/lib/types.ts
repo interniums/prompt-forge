@@ -32,6 +32,9 @@ export type TerminalLine = {
 
 export type ThemeName = 'dark' | 'dim' | 'light'
 export type GenerationMode = 'quick' | 'guided'
+export type ExamplesPreference = 'none' | 'one' | 'few'
+export type CreativityPreset = 'deterministic' | 'balanced' | 'creative'
+export type LanguageOption = 'auto' | 'en' | 'es' | 'uk' | 'de' | 'fr' | 'pt' | 'zh' | 'ja' | 'custom'
 
 /** User preferences for prompt shaping */
 export type Preferences = {
@@ -43,6 +46,8 @@ export type Preferences = {
   styleGuidelines?: string
   outputFormat?: string
   language?: string
+  languageCustom?: string
+  allowMixedLanguage?: boolean
   depth?: string
   citationPreference?: string
   personaHints?: string
@@ -54,6 +59,16 @@ export type Preferences = {
      * 'guided' = always ask clarifying, then preference questions (when enabled).
      */
     generationMode?: GenerationMode
+    defaultProvider?: string
+    defaultTextModel?: string
+    defaultImageModel?: string
+    defaultVideoModel?: string
+    defaultAudioModel?: string
+    examplesPreference?: ExamplesPreference
+    creativityPreset?: CreativityPreset
+    languageSelection?: LanguageOption
+    languageCustom?: string
+    allowMixedLanguage?: boolean
     /**
      * Whether preference questions should run during guided mode.
      * Defaults to true when unset.

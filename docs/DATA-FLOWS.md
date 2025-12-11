@@ -70,6 +70,13 @@ This document describes how the PromptForge terminal stores, retrieves, and sync
 4. `historyService.recordGeneration` stores the result in `pf_generations` (oldest rows beyond the cap are pruned per session).
 5. Draft is cleared; the approved prompt is copied when requested.
 
+### Unclear task flow
+
+- We heuristically flag unclear tasks client-side before hitting OpenAI; on hit we show a two-button modal (Edit / Continue anyway).
+- Once the user picks an option for the same task, we remember it (`allowUnclear`) and skip re-showing the modal across clarifying, preferences, and final generation for that task.
+- Continuing anyway runs clarifying/final generation with `allowUnclear: true` so the flow can finish without re-prompting.
+- Keyboard users can navigate the modal with arrows and confirm with Enter/Space; initial focus starts on the first button.
+
 ## History flow
 
 - History is fetched on demand via the `/history` command (`historyService.listHistory`).

@@ -85,6 +85,7 @@ export type TerminalOutputAreaProps = {
   clarifyingTotalCount?: number
   clarifyingSelectedOptionIndex: number | null
   clarifyingCanSubmit?: boolean
+  clarifyingLastAnswer?: string | null
   onFocusInputSelectFree?: () => void
   editablePromptRef: React.RefObject<HTMLDivElement | null>
   scrollRef: React.RefObject<HTMLDivElement | null>
@@ -104,6 +105,7 @@ export type TerminalOutputAreaProps = {
   isAskingPreferenceQuestions?: boolean
   currentPreferenceQuestionKey?: keyof Preferences | null
   preferenceSelectedOptionIndex?: number | null
+  preferenceLastAnswer?: string | null
   onPreferenceFocusInputSelectFree?: () => void
   onPreferenceOptionClick?: (index: number) => void
   onPreferenceSkip?: () => void
@@ -111,6 +113,7 @@ export type TerminalOutputAreaProps = {
   onPreferenceBack?: () => void
   getPreferenceOptions?: (key: keyof Preferences) => Array<{ id: string; label: string }>
   getPreferenceQuestionText?: (key: keyof Preferences) => string
+  getPreferenceOrder?: () => Array<keyof Preferences>
   getPreferencesToAsk?: () => Array<keyof Preferences>
   showStarter?: boolean
   starterTitle?: string
@@ -241,6 +244,7 @@ const PreferenceOptions = memo(function PreferenceOptions({
   onFocusInput,
   onUndoAnswer,
   onSkip,
+  lastAnsweredValue = null,
 }: {
   questionText: string
   options: Array<{ id: string; label: string }>
@@ -252,11 +256,14 @@ const PreferenceOptions = memo(function PreferenceOptions({
   onFocusInput: () => void
   onUndoAnswer: () => void
   onSkip?: () => void
+  lastAnsweredValue?: string | null
 }) {
   const backSelected = selectedOptionIndex === -1
   const skipSelected = selectedOptionIndex === -3
   const handleMyOwn = onFocusInputSelectFree ?? onFocusInput
   const myOwnSelected = selectedOptionIndex === -2
+  const normalizedLast = (lastAnsweredValue ?? '').trim()
+  const hasLast = Boolean(normalizedLast)
 
   return (
     <div className="mt-6 border-t border-slate-700/80 pt-4 text-[15px] text-slate-200 space-y-3">
@@ -269,6 +276,7 @@ const PreferenceOptions = memo(function PreferenceOptions({
       <div className="flex flex-col gap-2">
         {options.map((opt, index) => {
           const isSelected = index === selectedOptionIndex
+          const isLast = hasLast && normalizedLast === opt.label.trim()
           return (
             <button
               key={opt.id}
@@ -278,6 +286,8 @@ const PreferenceOptions = memo(function PreferenceOptions({
               className={`group flex w-full cursor-pointer items-start gap-3 rounded-lg border px-3 py-2 text-left text-[14px] transition ${
                 isSelected
                   ? 'border-slate-500 bg-slate-900 text-slate-50'
+                  : isLast
+                  ? 'border-slate-600 bg-slate-950 text-slate-50/90 ring-1 ring-slate-600/70'
                   : 'border-slate-800 bg-slate-950 text-slate-100 hover:border-slate-600 hover:bg-slate-900'
               }`}
             >
@@ -304,33 +314,37 @@ const PreferenceOptions = memo(function PreferenceOptions({
           <span className="mt-0.5 text-[13px] text-slate-500">•</span>
           <span className="font-mono text-[14px]">My own answer</span>
         </button>
-      </div>
-      <div className="mt-4 flex flex-wrap gap-2">
-        <button
-          type="button"
-          className={`${primaryActionButtonClass} ${backSelected ? selectedActionButtonClass : ''} justify-center`}
-          onClick={onUndoAnswer}
-          aria-label="Back"
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            className="h-4 w-4"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-          >
-            <path d="M15 18l-6-6 6-6" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
-        {onSkip && (
+        <div className="mt-4 flex flex-wrap gap-2">
           <button
             type="button"
-            className={`${primaryActionButtonClass} ${skipSelected ? selectedActionButtonClass : ''}`}
-            onClick={onSkip}
+            className={`${primaryActionButtonClass} ${
+              backSelected ? selectedActionButtonClass : ''
+            } justify-center h-[44px]`}
+            onClick={onUndoAnswer}
+            aria-label="Back"
           >
-            Skip
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-4 w-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+            >
+              <path d="M15 18l-6-6 6-6" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
           </button>
-        )}
+          {onSkip && (
+            <button
+              type="button"
+              className={`${primaryActionButtonClass} ${
+                skipSelected ? selectedActionButtonClass : ''
+              } justify-center h-[44px]`}
+              onClick={onSkip}
+            >
+              Skip
+            </button>
+          )}
+        </div>
       </div>
     </div>
   )
@@ -348,6 +362,7 @@ const ClarifyingQuestionPrompt = memo(function ClarifyingQuestionPrompt({
   onFocusInput,
   onFocusInputSelectFree,
   onSkip,
+  lastAnsweredValue = null,
 }: {
   question: ClarifyingQuestion
   currentIndex: number
@@ -358,12 +373,14 @@ const ClarifyingQuestionPrompt = memo(function ClarifyingQuestionPrompt({
   onFocusInput: () => void
   onFocusInputSelectFree?: () => void
   onSkip?: () => void
+  lastAnsweredValue?: string | null
 }) {
   const safeTotal = Math.max(totalCount, currentIndex + 1)
   const remaining = Math.max(0, safeTotal - (currentIndex + 1))
   const backSelected = selectedOptionIndex === -1
   const freeSelected = selectedOptionIndex === -2
   const skipSelected = selectedOptionIndex === -3
+  const normalizedLast = (lastAnsweredValue ?? '').trim()
   return (
     <div className="mt-6 border-t border-slate-800 pt-4 text-[14px] text-slate-300 space-y-2">
       <div className="text-[15px] text-slate-50 font-mono leading-relaxed">
@@ -371,6 +388,7 @@ const ClarifyingQuestionPrompt = memo(function ClarifyingQuestionPrompt({
         {remaining > 0 ? ` · ${remaining} left` : ''}: {question.question}
       </div>
       <div className="text-[13px] text-slate-400">Type an answer and press Enter or Next.</div>
+      {normalizedLast && <div className="text-[12px] text-slate-400">Previous answer: {normalizedLast}</div>}
       <div className="flex flex-wrap gap-3 text-[13px] text-slate-400" />
       <div className="flex flex-wrap gap-2 pt-2">
         <button
@@ -426,6 +444,7 @@ const ClarifyingOptions = memo(function ClarifyingOptions({
   onFocusInput,
   onFocusInputSelectFree,
   onSkip,
+  lastAnsweredValue = null,
 }: {
   question: ClarifyingQuestion
   selectedOptionIndex: number | null
@@ -434,11 +453,14 @@ const ClarifyingOptions = memo(function ClarifyingOptions({
   onFocusInput: () => void
   onFocusInputSelectFree?: () => void
   onSkip?: () => void
+  lastAnsweredValue?: string | null
 }) {
   const backSelected = selectedOptionIndex === -1
   const skipSelected = selectedOptionIndex === -3
   const myOwnSelected = selectedOptionIndex === -2
   const handleMyOwn = onFocusInputSelectFree ?? onFocusInput
+  const normalizedLast = (lastAnsweredValue ?? '').trim()
+  const hasLast = Boolean(normalizedLast)
   return (
     <div className="mt-6 border-t border-slate-800 pt-4 text-[14px] text-slate-300 space-y-2">
       <div className="text-[15px] text-slate-50 font-mono leading-relaxed">{question.question}</div>
@@ -449,6 +471,7 @@ const ClarifyingOptions = memo(function ClarifyingOptions({
       <div className="flex flex-col gap-2">
         {question.options.map((opt, index) => {
           const isSelected = index === selectedOptionIndex
+          const isLast = hasLast && normalizedLast === opt.label.trim()
           return (
             <button
               key={opt.id}
@@ -458,7 +481,9 @@ const ClarifyingOptions = memo(function ClarifyingOptions({
               className={`group flex w-full cursor-pointer items-start gap-3 rounded-lg border px-3 py-2 text-left text-[14px] transition ${
                 isSelected
                   ? 'border-slate-500 bg-slate-900 text-slate-50'
-                  : 'border-slate-800 bg-slate-950 text-slate-100 hover:border-slate-600 hover:bg-slate-900'
+                  : isLast
+                  ? 'border-slate-600 bg-slate-950 text-slate-50/90 ring-1 ring-slate-600/70'
+                  : 'border-slate-800 bg-slate-950 text-slate-100 hover-border-slate-600 hover:bg-slate-900'
               }`}
             >
               <span className="mt-0.5 text-[13px] text-slate-500">{opt.id})</span>
@@ -513,9 +538,11 @@ const ClarifyingOptions = memo(function ClarifyingOptions({
           </button>
         )}
       </div>
-      {myOwnSelected && (
-        <div className="text-[12px] text-slate-400">Type your answer in bottom input. Enter to confirm.</div>
-      )}
+      <div className="min-h-[18px]">
+        {myOwnSelected && (
+          <div className="text-[12px] text-slate-400">Type your answer in bottom input. Enter to confirm.</div>
+        )}
+      </div>
     </div>
   )
 })
@@ -1039,6 +1066,7 @@ export const TerminalOutputArea = memo(function TerminalOutputArea({
   clarifyingTotalCount = 0,
   clarifyingSelectedOptionIndex,
   clarifyingCanSubmit = false,
+  clarifyingLastAnswer = null,
   editablePromptRef,
   scrollRef,
   inputRef: _inputRef,
@@ -1058,6 +1086,7 @@ export const TerminalOutputArea = memo(function TerminalOutputArea({
   isAskingPreferenceQuestions = false,
   currentPreferenceQuestionKey = null,
   preferenceSelectedOptionIndex = null,
+  preferenceLastAnswer = null,
   onPreferenceFocusInputSelectFree,
   onPreferenceOptionClick,
   onPreferenceSkip,
@@ -1065,6 +1094,7 @@ export const TerminalOutputArea = memo(function TerminalOutputArea({
   onPreferenceBack,
   getPreferenceOptions,
   getPreferenceQuestionText,
+  getPreferenceOrder,
   getPreferencesToAsk,
   showStarter = false,
   generationMode = 'guided',
@@ -1122,6 +1152,20 @@ export const TerminalOutputArea = memo(function TerminalOutputArea({
             <ActivityBlock activity={activity} />
           </div>
         )}
+        {onStartNewConversation && activity?.status === 'error' && activity?.message === 'Task unclear' && (
+          <div className="mt-2">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                onStartNewConversation()
+              }}
+              className={`${primaryActionButtonClass} w-full justify-center h-[44px]`}
+            >
+              Start new conversation
+            </button>
+          </div>
+        )}
 
         {lines.length > 0 && (
           <div className="space-y-2" aria-label="Conversation history">
@@ -1158,7 +1202,7 @@ export const TerminalOutputArea = memo(function TerminalOutputArea({
                     : 'border-slate-800 bg-slate-950/50 text-slate-100 hover:border-slate-600 hover:bg-slate-900'
                 }`}
               >
-                <div className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-md bg-slate-900 text-slate-100">
+                <div className="mt-0.5 flex h-9 w-9 items-center justify-center text-slate-100">
                   <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
                     <path d="M10 3l-4 10h5l-2 8 9-12h-6l2-6z" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
@@ -1182,7 +1226,7 @@ export const TerminalOutputArea = memo(function TerminalOutputArea({
                     : 'border-slate-800 bg-slate-950/50 text-slate-100 hover:border-slate-600 hover:bg-slate-900'
                 }`}
               >
-                <div className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-md bg-slate-900 text-slate-100">
+                <div className="mt-0.5 flex h-9 w-9 items-center justify-center text-slate-100">
                   <svg
                     className="h-5 w-5"
                     viewBox="0 0 24 24"
@@ -1223,6 +1267,7 @@ export const TerminalOutputArea = memo(function TerminalOutputArea({
             totalCount={clarifyingTotalCount}
             selectedOptionIndex={clarifyingSelectedOptionIndex}
             canSubmit={clarifyingCanSubmit}
+            lastAnsweredValue={clarifyingLastAnswer}
             onUndoAnswer={onUndoAnswer}
             onFocusInput={onFocusInput}
             onFocusInputSelectFree={onFocusInputSelectFree}
@@ -1239,6 +1284,7 @@ export const TerminalOutputArea = memo(function TerminalOutputArea({
             onFocusInput={onFocusInput}
             onFocusInputSelectFree={onFocusInputSelectFree}
             onSkip={onClarifyingSkip}
+            lastAnsweredValue={clarifyingLastAnswer}
           />
         )}
 
@@ -1250,20 +1296,24 @@ export const TerminalOutputArea = memo(function TerminalOutputArea({
           onPreferenceOptionClick &&
           (() => {
             const options = getPreferenceOptions(currentPreferenceQuestionKey)
-            const prefsToAsk = getPreferencesToAsk()
-            const currentIndex = prefsToAsk.indexOf(currentPreferenceQuestionKey)
+            const prefsOrder =
+              typeof getPreferenceOrder === 'function' && getPreferenceOrder()
+                ? getPreferenceOrder()
+                : getPreferencesToAsk()
+            const currentIndex = prefsOrder.indexOf(currentPreferenceQuestionKey)
             return (
               <PreferenceOptions
                 questionText={getPreferenceQuestionText(currentPreferenceQuestionKey)}
                 options={options}
                 selectedOptionIndex={preferenceSelectedOptionIndex ?? null}
                 currentIndex={currentIndex}
-                totalCount={prefsToAsk.length}
+                totalCount={prefsOrder.length}
                 onOptionClick={onPreferenceOptionClick}
                 onFocusInput={onPreferenceYourAnswer ?? onFocusInput}
                 onFocusInputSelectFree={onPreferenceFocusInputSelectFree ?? onPreferenceYourAnswer ?? onFocusInput}
                 onUndoAnswer={onPreferenceBack ?? (() => {})}
                 onSkip={onPreferenceSkip}
+                lastAnsweredValue={preferenceLastAnswer}
               />
             )
           })()}

@@ -60,7 +60,7 @@ type TaskFlowActions = {
   setLikeState: (value: 'none' | 'liked' | 'disliked') => void
   setAwaitingQuestionConsent: (value: boolean) => void
   setConsentSelectedIndex: (value: number | null) => void
-  startClarifyingQuestions: (task: string) => Promise<void>
+  startClarifyingQuestions: (task: string, options?: { allowUnclear?: boolean }) => Promise<void>
   setAnsweringQuestions: (value: boolean) => void
   setCurrentQuestionIndex: (value: number) => void
   selectForQuestion: (question: ClarifyingQuestion | null, hasBack: boolean) => void
@@ -69,11 +69,14 @@ type TaskFlowActions = {
   guardedGenerateFinalPromptForTask: (
     task: string,
     answers: ClarifyingAnswer[],
-    options?: { skipConsentCheck?: boolean }
+    options?: { skipConsentCheck?: boolean; allowUnclear?: boolean }
   ) => Promise<void>
   setIsRevising: (value: boolean) => void
   setClarifyingSelectedOptionIndex: (value: number | null) => void
   setLastApprovedPrompt: (value: string | null) => void
+  ensureAllowUnclearForTask?: (task: string) => void
+  shouldAllowUnclearForTask?: (task: string) => boolean
+  resetAllowUnclear?: () => void
 }
 
 export type TaskFlowDeps = {
@@ -82,9 +85,10 @@ export type TaskFlowDeps = {
 }
 
 export function createTaskFlowHandlers({ state, actions }: TaskFlowDeps) {
-  async function handleTask(line: string) {
+  async function handleTask(line: string, options?: { allowUnclear?: boolean }) {
     const task = line.trim()
     if (!task) return
+    actions.ensureAllowUnclearForTask?.(task)
 
     const isEditingExisting = state.hasRunInitialTask && Boolean(state.editablePrompt)
     const minLength = isEditingExisting ? 2 : MIN_TASK_LENGTH
@@ -150,6 +154,7 @@ export function createTaskFlowHandlers({ state, actions }: TaskFlowDeps) {
       return
     }
 
+    actions.resetAllowUnclear?.()
     actions.setHasRunInitialTask(true)
     actions.setPendingTask(task)
     actions.resetClarifyingFlowState()
@@ -161,9 +166,11 @@ export function createTaskFlowHandlers({ state, actions }: TaskFlowDeps) {
     actions.setAwaitingQuestionConsent(false)
     actions.setConsentSelectedIndex(null)
 
+    const allowUnclear = options?.allowUnclear ?? actions.shouldAllowUnclearForTask?.(task)
+
     if (!isGuided) {
       logFlow('handleTask:quick_mode', { pendingTask: task })
-      await actions.guardedGenerateFinalPromptForTask(task, [], { skipConsentCheck: true })
+      await actions.guardedGenerateFinalPromptForTask(task, [], { skipConsentCheck: true, allowUnclear })
       return
     }
 
@@ -175,7 +182,9 @@ export function createTaskFlowHandlers({ state, actions }: TaskFlowDeps) {
       message: 'Guided Build is on',
       detail: 'Answering these questions improves the quality of your prompt.',
     })
-    await actions.startClarifyingQuestions(task)
+    await actions.startClarifyingQuestions(task, {
+      allowUnclear,
+    })
   }
 
   function submitCurrent() {

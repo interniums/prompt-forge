@@ -156,6 +156,10 @@ function PromptTerminalInner({
   const { message: toastMessage, showToast } = useToast()
   // Initialize clarifying answers from saved draft if available
   const clarifyingAnswersRef = useRef<ClarifyingAnswer[]>([])
+  const lastRemovedClarifyingAnswerRef = useRef<{ questionId: string | null; answer: string | null }>({
+    questionId: null,
+    answer: null,
+  })
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const editablePromptRef = useRef<HTMLDivElement | null>(null)
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
@@ -177,6 +181,28 @@ function PromptTerminalInner({
   })
   const [preferencesStep, setPreferencesStep] = useState<PreferencesStep>(null)
   const [isRevising, setIsRevising] = useState(false)
+  const [unclearTaskModal, setUnclearTaskModal] = useState<{
+    reason: string
+    stage: 'clarifying' | 'generating'
+    task: string
+    pendingAnswers?: ClarifyingAnswer[]
+  } | null>(null)
+  const unclearOverrideRef = useRef(false)
+  const [allowUnclearFlag, setAllowUnclearFlag] = useState(false)
+  const unclearButtonRefs = useRef<Array<HTMLButtonElement | null>>([])
+  const startClarifyingQuestionsRef = useRef<
+    ((task: string, options?: { allowUnclear?: boolean }) => Promise<void>) | null
+  >(null)
+  const guardedGenerateFinalPromptForTaskRef = useRef<
+    | ((
+        task: string,
+        answers: ClarifyingAnswer[],
+        options?: { skipConsentCheck?: boolean; allowUnclear?: boolean }
+      ) => Promise<void>)
+    | null
+  >(null)
+  const clarifyingAnswerHistoryRef = useRef<Record<string, string>>({})
+  const [clarifyingAnswerHistory, setClarifyingAnswerHistory] = useState<Record<string, string>>({})
   const activeSessionId = initialSessionId ?? null
   const activeUserId = user?.id ?? null
   const setIsAskingPreferenceQuestions = useCallback(
@@ -233,6 +259,17 @@ function PromptTerminalInner({
     clarifyingAnswersRef.current = clarifyingAnswers
   }, [clarifyingAnswers])
 
+  useEffect(() => {
+    if (unclearTaskModal) {
+      const firstButton = unclearButtonRefs.current[0]
+      if (firstButton) {
+        firstButton.focus()
+      }
+    } else {
+      unclearButtonRefs.current = []
+    }
+  }, [unclearTaskModal])
+
   const setValue = useCallback((next: string) => dispatch(setInput(next)), [dispatch])
 
   const setLines = useCallback(
@@ -244,6 +281,68 @@ function PromptTerminalInner({
   )
 
   const setActivity = useCallback((next: TaskActivity | null) => dispatch(setActivityAction(next)), [dispatch])
+
+  const handleUnclearTask = useCallback(
+    (info: {
+      reason: string
+      stage: 'clarifying' | 'generating'
+      task: string
+      pendingAnswers?: ClarifyingAnswer[]
+    }) => {
+      const pendingAnswers = info.pendingAnswers ?? clarifyingAnswersRef.current
+      if (unclearOverrideRef.current) {
+        if (info.stage === 'clarifying') {
+          void startClarifyingQuestionsRef.current?.(info.task, { allowUnclear: true })
+        } else {
+          void guardedGenerateFinalPromptForTaskRef.current?.(info.task, pendingAnswers ?? [], {
+            allowUnclear: true,
+            skipConsentCheck: true,
+          })
+        }
+        return
+      }
+
+      setUnclearTaskModal({
+        reason: info.reason,
+        stage: info.stage,
+        task: info.task,
+        pendingAnswers,
+      })
+
+      if (info.stage === 'generating') {
+        setActivity({
+          task: info.task,
+          stage: info.stage,
+          status: 'error',
+          message: 'Task unclear',
+          detail: info.reason,
+        })
+      }
+    },
+    [clarifyingAnswersRef, setActivity, setUnclearTaskModal]
+  )
+
+  const handleGeneratingUnclear = useCallback(
+    ({ reason, stage, task }: { reason: string; stage: 'generating'; task: string }) =>
+      handleUnclearTask({ reason, stage, task, pendingAnswers: clarifyingAnswersRef.current }),
+    [clarifyingAnswersRef, handleUnclearTask]
+  )
+
+  const handleClarifyingUnclear = useCallback(
+    ({ reason, stage, task }: { reason: string; stage: 'clarifying'; task: string }) =>
+      handleUnclearTask({ reason, stage, task }),
+    [handleUnclearTask]
+  )
+
+  const setAllowUnclear = useCallback((value: boolean, _task?: string | null) => {
+    void _task
+    unclearOverrideRef.current = value
+    setAllowUnclearFlag(value)
+  }, [])
+
+  const shouldAllowUnclearForTask = useCallback(() => allowUnclearFlag, [allowUnclearFlag])
+
+  const ensureAllowUnclearForTask = useCallback(() => {}, [])
 
   const appendLine = useCallback(
     (role: TerminalRole, content: string | TerminalStatus) => {
@@ -648,34 +747,40 @@ function PromptTerminalInner({
     [updatePreferencesLocally]
   )
 
-  function advancePreferences(answer: string) {
-    if (!preferencesStep) return
+  const advancePreferences = useCallback(
+    (answer: string) => {
+      if (!preferencesStep) return
 
-    if (preferencesStep === 'tone') {
-      const next = { ...preferences, tone: answer }
-      updatePreferencesLocally(next)
-      appendLine(ROLE.APP, 'Got it. Who are you usually writing for? (for example: founders, devs, general audience?)')
-      setPreferencesStep('audience')
-      return
-    }
+      if (preferencesStep === 'tone') {
+        const next = { ...preferences, tone: answer }
+        updatePreferencesLocally(next)
+        appendLine(
+          ROLE.APP,
+          'Got it. Who are you usually writing for? (for example: founders, devs, general audience?)'
+        )
+        setPreferencesStep('audience')
+        return
+      }
 
-    if (preferencesStep === 'audience') {
-      const next = { ...preferences, audience: answer }
-      updatePreferencesLocally(next)
-      appendLine(ROLE.APP, 'What domains do you mostly work in? (for example: product, marketing, engineering?)')
-      setPreferencesStep('domain')
-      return
-    }
+      if (preferencesStep === 'audience') {
+        const next = { ...preferences, audience: answer }
+        updatePreferencesLocally(next)
+        appendLine(ROLE.APP, 'What domains do you mostly work in? (for example: product, marketing, engineering?)')
+        setPreferencesStep('domain')
+        return
+      }
 
-    if (preferencesStep === 'domain') {
-      const next = { ...preferences, domain: answer }
-      updatePreferencesLocally(next)
-      appendLine(ROLE.APP, `Updated preferences: ${formatPreferencesSummary(next)}`)
-      appendLine(ROLE.APP, 'These will be used to steer how prompts are shaped for you.')
-      setPreferencesStep(null)
-      void handleSavePreferences(next)
-    }
-  }
+      if (preferencesStep === 'domain') {
+        const next = { ...preferences, domain: answer }
+        updatePreferencesLocally(next)
+        appendLine(ROLE.APP, `Updated preferences: ${formatPreferencesSummary(next)}`)
+        appendLine(ROLE.APP, 'These will be used to steer how prompts are shaped for you.')
+        setPreferencesStep(null)
+        void handleSavePreferences(next)
+      }
+    },
+    [appendLine, handleSavePreferences, preferences, preferencesStep, setPreferencesStep, updatePreferencesLocally]
+  )
 
   function handleHelpCommand() {
     appendHelpText((role, text) => appendLine(role as TerminalRole, text))
@@ -763,17 +868,27 @@ function PromptTerminalInner({
     user,
     awaitingQuestionConsent,
     consentRequired: true,
+    onUnclearTask: handleGeneratingUnclear,
   })
 
   const guardedGenerateFinalPromptForTask = useCallback(
-    async (task: string, answers: ClarifyingAnswer[], options?: { skipConsentCheck?: boolean }) => {
+    async (
+      task: string,
+      answers: ClarifyingAnswer[],
+      options?: { skipConsentCheck?: boolean; allowUnclear?: boolean }
+    ) => {
       if (!options?.skipConsentCheck && awaitingQuestionConsent) {
         return
       }
-      await generateFinalPromptForTask(task, answers, options)
+      const filteredAnswers = (answers ?? []).filter((ans) => Boolean(ans.answer && ans.answer.trim()))
+      await generateFinalPromptForTask(task, filteredAnswers, options)
     },
     [awaitingQuestionConsent, generateFinalPromptForTask]
   )
+
+  useEffect(() => {
+    guardedGenerateFinalPromptForTaskRef.current = guardedGenerateFinalPromptForTask
+  }, [guardedGenerateFinalPromptForTask])
 
   const runEditPrompt = useCallback(
     (instructions: string) => {
@@ -820,8 +935,28 @@ function PromptTerminalInner({
     appendLine: (role, text) => appendLine(role, text),
   })
 
+  const backToClarifyingFromPreferencesRef = useRef<(() => void) | null>(null)
+
+  const backToClarifyingFromPreferences = useCallback(() => {
+    setUnclearTaskModal(null)
+    setIsAskingPreferenceQuestions(false)
+    setCurrentPreferenceQuestionKey(null)
+    setPreferenceSelectedOptionIndex(null)
+    setPendingPreferenceUpdates({})
+    backToClarifyingFromPreferencesRef.current?.()
+  }, [
+    setCurrentPreferenceQuestionKey,
+    setIsAskingPreferenceQuestions,
+    setPendingPreferenceUpdates,
+    setPreferenceSelectedOptionIndex,
+    setUnclearTaskModal,
+  ])
+
   const {
     getPreferencesToAsk,
+    getPreferenceOrder,
+    getResumePreferenceIndex,
+    getPreferenceLastAnswer,
     startPreferenceQuestions,
     handlePreferenceAnswer,
     handlePreferenceOptionClick,
@@ -844,6 +979,7 @@ function PromptTerminalInner({
     setValue,
     clarifyingAnswersRef,
     generateFinalPromptForTask: guardedGenerateFinalPromptForTask,
+    onBackToClarifying: backToClarifyingFromPreferences,
   })
 
   const {
@@ -851,6 +987,7 @@ function PromptTerminalInner({
     handleQuestionConsent,
     handleClarifyingOptionClick,
     handleClarifyingAnswer,
+    handleClarifyingSkip: skipClarifyingQuestion,
     handleUndoAnswer,
     appendClarifyingQuestion,
     selectForQuestion,
@@ -877,17 +1014,114 @@ function PromptTerminalInner({
     focusInputToEnd,
     getPreferencesToAsk,
     startPreferenceQuestions: () => startPreferenceQuestions(),
-    generateFinalPromptForTask: guardedGenerateFinalPromptForTask,
+    generateFinalPromptForTask: (task, answers, options) =>
+      guardedGenerateFinalPromptForTask(task, answers, {
+        ...options,
+        allowUnclear: options?.allowUnclear ?? allowUnclearFlag,
+      }),
+    onUnclearTask: handleClarifyingUnclear,
   })
 
+  useEffect(() => {
+    backToClarifyingFromPreferencesRef.current = handleUndoAnswer
+  }, [handleUndoAnswer])
+
+  useEffect(() => {
+    startClarifyingQuestionsRef.current = startClarifyingQuestions
+  }, [startClarifyingQuestions])
+
+  useEffect(() => {
+    if (!clarifyingAnswers.length) return
+    const nextHistory: Record<string, string> = { ...clarifyingAnswerHistoryRef.current }
+    clarifyingAnswers.forEach((ans) => {
+      if (ans.questionId && ans.answer !== undefined && ans.answer !== null) {
+        nextHistory[ans.questionId] = ans.answer
+      }
+    })
+    clarifyingAnswerHistoryRef.current = nextHistory
+    setClarifyingAnswerHistory(nextHistory)
+  }, [clarifyingAnswers])
+
+  const handleUnclearDismiss = useCallback(() => {
+    setUnclearTaskModal(null)
+  }, [setUnclearTaskModal])
+
+  const handleUnclearKeyDown = useCallback(
+    (event: React.KeyboardEvent) => {
+      if (!unclearTaskModal) return
+      const buttons = unclearButtonRefs.current.filter(Boolean) as HTMLButtonElement[]
+      if (!buttons.length) return
+
+      const active = document.activeElement
+      const currentIndex = buttons.findIndex((btn) => btn === active)
+
+      if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+        event.preventDefault()
+        const next = (currentIndex + 1 + buttons.length) % buttons.length
+        buttons[next]?.focus()
+        return
+      }
+
+      if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+        event.preventDefault()
+        const prev = (currentIndex - 1 + buttons.length) % buttons.length
+        buttons[prev]?.focus()
+        return
+      }
+
+      if ((event.key === 'Enter' || event.key === ' ') && currentIndex >= 0) {
+        event.preventDefault()
+        buttons[currentIndex]?.click()
+      }
+    },
+    [unclearTaskModal]
+  )
+
+  const handleUnclearEdit = useCallback(() => {
+    if (!unclearTaskModal) return
+    setAllowUnclear(true, unclearTaskModal.task)
+    setValue(unclearTaskModal.task)
+    setUnclearTaskModal(null)
+    focusInputToEnd()
+  }, [focusInputToEnd, setAllowUnclear, setUnclearTaskModal, setValue, unclearTaskModal])
+
+  const handleUnclearContinue = useCallback(async () => {
+    const modal = unclearTaskModal
+    if (!modal) return
+    setAllowUnclear(true, modal.task)
+    setUnclearTaskModal(null)
+    if (modal.stage === 'clarifying') {
+      await startClarifyingQuestions(modal.task, { allowUnclear: true })
+      return
+    }
+    await guardedGenerateFinalPromptForTask(modal.task, modal.pendingAnswers ?? [], {
+      allowUnclear: true,
+      skipConsentCheck: true,
+    })
+  }, [
+    guardedGenerateFinalPromptForTask,
+    setAllowUnclear,
+    setUnclearTaskModal,
+    startClarifyingQuestions,
+    unclearTaskModal,
+  ])
+
   const handleClarifyingSkip = useCallback(() => {
-    void handleClarifyingAnswer('')
-  }, [handleClarifyingAnswer])
+    lastRemovedClarifyingAnswerRef.current = { questionId: null, answer: null }
+    skipClarifyingQuestion()
+  }, [skipClarifyingQuestion])
+
+  const handleStartNewConversationAndClear = useCallback(() => {
+    setValue('')
+    setAllowUnclear(false, null)
+    handleStartNewConversation()
+  }, [handleStartNewConversation, setAllowUnclear, setValue])
 
   const handleClarifyingNext = useCallback(
     (forcedIndex?: number | null) => {
       const trimmed = value.trim()
       if (trimmed) {
+        lastRemovedClarifyingAnswerRef.current = { questionId: null, answer: null }
         void handleClarifyingAnswer(trimmed)
         setValue('')
         return
@@ -895,6 +1129,18 @@ function PromptTerminalInner({
 
       const selection = typeof forcedIndex === 'number' ? forcedIndex : clarifyingSelectedOptionIndex ?? null
       if (selection === -1) {
+        // Stash last answered value for display before moving back.
+        if (clarifyingQuestions && clarifyingAnswers.length > 0) {
+          const lastIdx = Math.min(clarifyingAnswers.length - 1, clarifyingQuestions.length - 1)
+          const lastAnswer = clarifyingAnswers[lastIdx]
+          const lastQuestion = clarifyingQuestions[lastIdx]
+          lastRemovedClarifyingAnswerRef.current = {
+            questionId: lastQuestion?.id ?? null,
+            answer: lastAnswer?.answer ?? null,
+          }
+        } else {
+          lastRemovedClarifyingAnswerRef.current = { questionId: null, answer: null }
+        }
         handleUndoAnswer()
         return
       }
@@ -914,6 +1160,7 @@ function PromptTerminalInner({
         clarifyingQuestions.length > 0 &&
         currentQuestionIndex < clarifyingQuestions.length
       ) {
+        lastRemovedClarifyingAnswerRef.current = { questionId: null, answer: null }
         void handleClarifyingOptionClick(selection)
         return
       }
@@ -923,6 +1170,7 @@ function PromptTerminalInner({
     },
     [
       appendLine,
+      clarifyingAnswers,
       clarifyingQuestions,
       clarifyingSelectedOptionIndex,
       currentQuestionIndex,
@@ -939,6 +1187,65 @@ function PromptTerminalInner({
   const clarifyingCanSubmit =
     Boolean(value.trim()) || (clarifyingSelectedOptionIndex !== null && clarifyingSelectedOptionIndex >= 0)
 
+  const clarifyingLastAnswerForDisplay =
+    answeringQuestions &&
+    clarifyingQuestions &&
+    clarifyingQuestions.length > 0 &&
+    currentQuestionIndex !== null &&
+    currentQuestionIndex >= 0 &&
+    currentQuestionIndex < clarifyingQuestions.length
+      ? (() => {
+          const qid = clarifyingQuestions[currentQuestionIndex]?.id
+          if (!qid) return null
+          const fromHistory = clarifyingAnswerHistory[qid]
+          if (fromHistory !== undefined && fromHistory !== null) {
+            const trimmed = String(fromHistory).trim()
+            if (trimmed.length) return trimmed
+          }
+          const live = clarifyingAnswers[currentQuestionIndex]?.answer
+          if (live !== undefined && live !== null) {
+            const trimmed = String(live).trim()
+            return trimmed.length ? trimmed : null
+          }
+          return null
+        })()
+      : null
+
+  const preferenceLastAnswerForDisplay =
+    currentPreferenceQuestionKey !== null
+      ? (() => {
+          const raw = getPreferenceLastAnswer
+            ? getPreferenceLastAnswer(currentPreferenceQuestionKey as PreferenceKey)
+            : null
+          if (raw === undefined || raw === null) return null
+          const trimmed = String(raw).trim()
+          return trimmed.length > 0 ? trimmed : null
+        })()
+      : null
+
+  const handlePreferenceBackNav = useCallback(() => {
+    if (!currentPreferenceQuestionKey || !getPreferencesToAsk) {
+      handlePreferenceAnswer('back')
+      return
+    }
+
+    const order = getPreferenceOrder ? getPreferenceOrder() : getPreferencesToAsk()
+    const currentIndex = order.indexOf(currentPreferenceQuestionKey as PreferenceKey)
+
+    if (currentIndex <= 0) {
+      backToClarifyingFromPreferences()
+      return
+    }
+
+    handlePreferenceAnswer('back')
+  }, [
+    currentPreferenceQuestionKey,
+    getPreferenceOrder,
+    getPreferencesToAsk,
+    handlePreferenceAnswer,
+    backToClarifyingFromPreferences,
+  ])
+
   const handlePreferenceNext = useCallback(
     (forcedIndex?: number | null) => {
       const trimmed = value.trim()
@@ -951,7 +1258,12 @@ function PromptTerminalInner({
       const selection = typeof forcedIndex === 'number' ? forcedIndex : preferenceSelectedOptionIndex ?? null
 
       if (selection === -1) {
-        handlePreferenceOptionClick(-1)
+        handlePreferenceBackNav()
+        return
+      }
+
+      if (selection === -3) {
+        handlePreferenceOptionClick(-3)
         return
       }
 
@@ -969,6 +1281,7 @@ function PromptTerminalInner({
       handlePreferenceAnswer,
       handlePreferenceOptionClick,
       focusInputToEnd,
+      handlePreferenceBackNav,
       preferenceSelectedOptionIndex,
       setValue,
       value,
@@ -1020,78 +1333,64 @@ function PromptTerminalInner({
     [focusInputToEnd, handlePreferenceNext, setPreferenceSelectedOptionIndex]
   )
 
-  const handlePreferenceBackNav = useCallback(() => {
-    if (!currentPreferenceQuestionKey || !getPreferencesToAsk) {
-      handlePreferenceAnswer('back')
-      return
-    }
-
-    const prefsToAsk = getPreferencesToAsk()
-    const currentIndex = prefsToAsk.indexOf(currentPreferenceQuestionKey as PreferenceKey)
-
-    if (currentIndex <= 0) {
-      // Exit preference flow and return to the last clarifying question
-      setIsAskingPreferenceQuestions(false)
-      setCurrentPreferenceQuestionKey(null)
-      setPreferenceSelectedOptionIndex(null)
-      setPendingPreferenceUpdates({})
-      handleUndoAnswer()
-      return
-    }
-
-    handlePreferenceAnswer('back')
-  }, [
-    currentPreferenceQuestionKey,
-    getPreferencesToAsk,
-    handlePreferenceAnswer,
-    handleUndoAnswer,
-    setCurrentPreferenceQuestionKey,
-    setIsAskingPreferenceQuestions,
-    setPendingPreferenceUpdates,
-    setPreferenceSelectedOptionIndex,
-  ])
-
   const handleGlobalBack = useCallback(() => {
-    // If a final prompt is rendered, drop it and reopen the most recent step.
-    if (editablePrompt && clarifyingQuestions && clarifyingQuestions.length > 0 && clarifyingAnswers.length > 0) {
-      const prefKeys = Object.keys(pendingPreferenceUpdates ?? {})
-      if (prefKeys.length > 0 && getPreferenceOptions) {
-        const lastKey = prefKeys[prefKeys.length - 1] as PreferenceKey
-        const saved = pendingPreferenceUpdates[lastKey] ?? preferences[lastKey]
-        const opts = getPreferenceOptions(lastKey) ?? []
-        const trimmed = saved !== undefined && saved !== null ? String(saved).trim() : ''
-        let sel: number | null = null
-        if (trimmed) {
-          if (opts.length > 0) {
-            const idx = opts.findIndex((o) => o.label === trimmed)
-            sel = idx >= 0 ? idx : -2
-          } else {
-            sel = -2
-          }
-        }
-        setEditablePrompt(null)
-        setPromptEditDiff(null)
-        setActivity({
-          task: pendingTask ?? '',
-          stage: 'preferences',
-          status: 'loading',
-          message: 'Preferences',
-          detail: 'Answering these questions improves the quality of your prompt.',
-        })
-        setIsAskingPreferenceQuestions(true)
-        setCurrentPreferenceQuestionKey(lastKey)
-        setPreferenceSelectedOptionIndex(sel)
-        setValue(trimmed)
-        return
-      }
+    // Quick mode: drop the final prompt and return to mode selection with the task preserved.
+    if (editablePrompt && generationMode === 'quick') {
       setEditablePrompt(null)
       setPromptEditDiff(null)
+      setActivity(null)
+      setHasRunInitialTask(false)
+      setAnsweringQuestions(false)
+      setAwaitingQuestionConsent(false)
+      setConsentSelectedIndex(null)
+      setClarifyingQuestions(null)
+      setClarifyingAnswers([], 0)
+      setClarifyingSelectedOptionIndex(null)
+      const restoredValue = pendingTask ?? value
+      setValue(restoredValue)
+      focusInputToEnd()
+      return
+    }
+    // If a final prompt is rendered, drop it and reopen the most recent step.
+    if (editablePrompt && clarifyingQuestions && clarifyingQuestions.length > 0 && clarifyingAnswers.length > 0) {
+      const lastIdx = Math.min(clarifyingAnswers.length - 1, clarifyingQuestions.length - 1)
+      const lastAnswer = clarifyingAnswers[lastIdx]
+      const lastQuestion = clarifyingQuestions[lastIdx]
+      lastRemovedClarifyingAnswerRef.current = {
+        questionId: lastQuestion?.id ?? null,
+        answer: lastAnswer?.answer ?? null,
+      }
+      const order = getPreferenceOrder ? getPreferenceOrder() : []
+      const prefsToAsk = order.length ? order : getPreferencesToAsk ? getPreferencesToAsk() : []
+      const resumeIndex = getResumePreferenceIndex ? getResumePreferenceIndex() : -1
+      const targetIndex =
+        resumeIndex >= 0 && resumeIndex < prefsToAsk.length
+          ? resumeIndex
+          : prefsToAsk.length > 0
+          ? prefsToAsk.length - 1
+          : -1
+      setEditablePrompt(null)
+      setPromptEditDiff(null)
+      if (targetIndex >= 0) {
+        void startPreferenceQuestions({ resumeIndex: targetIndex, preservePending: true })
+        return
+      }
       setActivity(null)
       handleUndoAnswer()
       return
     }
 
     if (isAskingPreferenceQuestions) {
+      const order = getPreferenceOrder ? getPreferenceOrder() : getPreferencesToAsk ? getPreferencesToAsk() : []
+      if (order.length === 0 && clarifyingQuestions && clarifyingAnswers.length > 0) {
+        const lastIdx = Math.min(clarifyingAnswers.length - 1, clarifyingQuestions.length - 1)
+        const lastAnswer = clarifyingAnswers[lastIdx]
+        const lastQuestion = clarifyingQuestions[lastIdx]
+        lastRemovedClarifyingAnswerRef.current = {
+          questionId: lastQuestion?.id ?? null,
+          answer: lastAnswer?.answer ?? null,
+        }
+      }
       handlePreferenceBackNav()
       return
     }
@@ -1100,24 +1399,32 @@ function PromptTerminalInner({
       return
     }
   }, [
-    answeringQuestions,
-    clarifyingAnswers.length,
-    clarifyingQuestions,
     editablePrompt,
-    getPreferenceOptions,
-    handlePreferenceBackNav,
-    handleUndoAnswer,
+    generationMode,
+    clarifyingQuestions,
+    clarifyingAnswers,
     isAskingPreferenceQuestions,
-    pendingPreferenceUpdates,
-    preferences,
-    pendingTask,
-    setActivity,
-    setCurrentPreferenceQuestionKey,
+    answeringQuestions,
     setEditablePrompt,
-    setIsAskingPreferenceQuestions,
-    setPreferenceSelectedOptionIndex,
     setPromptEditDiff,
+    setActivity,
+    setHasRunInitialTask,
+    setAnsweringQuestions,
+    setAwaitingQuestionConsent,
+    setConsentSelectedIndex,
+    setClarifyingQuestions,
+    setClarifyingAnswers,
+    setClarifyingSelectedOptionIndex,
+    pendingTask,
+    value,
     setValue,
+    focusInputToEnd,
+    getPreferencesToAsk,
+    getPreferenceOrder,
+    getResumePreferenceIndex,
+    handleUndoAnswer,
+    handlePreferenceBackNav,
+    startPreferenceQuestions,
   ])
 
   const consentNav = {
@@ -1150,62 +1457,124 @@ function PromptTerminalInner({
     setSelectedIndex: setPreferenceSelectedOptionIndex,
     onSelectOption: (index: number) => handlePreferenceNext(index),
     onBack: handlePreferenceBackNav,
-    onSkip: () => handlePreferenceOptionClick(-1),
+    onSkip: () => handlePreferenceOptionClick(-3),
     onFreeAnswer: focusInputToEnd,
   }
 
-  const { submitCurrent, handleFormSubmit } = createTaskFlowHandlers({
-    state: {
-      isGenerating,
-      value,
-      lines,
-      preferencesStep,
-      awaitingQuestionConsent,
-      pendingTask,
-      consentSelectedIndex,
-      answeringQuestions,
-      clarifyingQuestions,
-      clarifyingAnswers,
-      currentQuestionIndex,
-      isAskingPreferenceQuestions,
-      currentPreferenceQuestionKey,
-      hasRunInitialTask,
-      isRevising,
-      generationMode,
-      editablePrompt,
-    },
-    actions: {
-      setValue,
-      appendLine,
-      handleCommand,
-      advancePreferences,
-      handleQuestionConsent,
-      handleClarifyingAnswer,
-      handlePreferenceAnswer,
-      runEditPrompt,
-      setHasRunInitialTask,
-      setPendingTask,
-      setActivity,
-      resetClarifyingFlowState,
-      resetPreferenceFlowState,
-      setEditablePrompt,
-      setIsPromptEditable,
-      setIsPromptFinalized,
-      setLikeState,
-      setAwaitingQuestionConsent,
-      setConsentSelectedIndex,
-      startClarifyingQuestions,
-      setAnsweringQuestions,
-      setCurrentQuestionIndex,
-      selectForQuestion,
-      appendClarifyingQuestion,
-      focusInputToEnd,
-      guardedGenerateFinalPromptForTask,
-      setIsRevising,
-      setClarifyingSelectedOptionIndex,
-      setLastApprovedPrompt,
-    },
-  })
+  const taskFlowHandlersRef = useRef<{
+    submitCurrent: () => void
+    handleFormSubmit: (e: React.FormEvent) => void
+  } | null>(null)
+
+  useEffect(() => {
+    taskFlowHandlersRef.current = createTaskFlowHandlers({
+      state: {
+        isGenerating,
+        value,
+        lines,
+        preferencesStep,
+        awaitingQuestionConsent,
+        pendingTask,
+        consentSelectedIndex,
+        answeringQuestions,
+        clarifyingQuestions,
+        clarifyingAnswers,
+        currentQuestionIndex,
+        isAskingPreferenceQuestions,
+        currentPreferenceQuestionKey,
+        hasRunInitialTask,
+        isRevising,
+        generationMode,
+        editablePrompt,
+      },
+      actions: {
+        setValue,
+        appendLine,
+        handleCommand,
+        advancePreferences,
+        handleQuestionConsent,
+        handleClarifyingAnswer,
+        handlePreferenceAnswer,
+        runEditPrompt,
+        setHasRunInitialTask,
+        setPendingTask,
+        setActivity,
+        resetClarifyingFlowState,
+        resetPreferenceFlowState,
+        setEditablePrompt,
+        setIsPromptEditable,
+        setIsPromptFinalized,
+        setLikeState,
+        setAwaitingQuestionConsent,
+        setConsentSelectedIndex,
+        startClarifyingQuestions,
+        setAnsweringQuestions,
+        setCurrentQuestionIndex,
+        selectForQuestion,
+        appendClarifyingQuestion,
+        focusInputToEnd,
+        guardedGenerateFinalPromptForTask,
+        ensureAllowUnclearForTask,
+        shouldAllowUnclearForTask,
+        resetAllowUnclear: () => setAllowUnclear(false),
+        setIsRevising,
+        setClarifyingSelectedOptionIndex,
+        setLastApprovedPrompt,
+      },
+    })
+  }, [
+    isGenerating,
+    value,
+    lines,
+    preferencesStep,
+    awaitingQuestionConsent,
+    pendingTask,
+    consentSelectedIndex,
+    answeringQuestions,
+    clarifyingQuestions,
+    clarifyingAnswers,
+    currentQuestionIndex,
+    isAskingPreferenceQuestions,
+    currentPreferenceQuestionKey,
+    hasRunInitialTask,
+    isRevising,
+    generationMode,
+    editablePrompt,
+    setValue,
+    appendLine,
+    handleCommand,
+    advancePreferences,
+    handleQuestionConsent,
+    handleClarifyingAnswer,
+    handlePreferenceAnswer,
+    runEditPrompt,
+    setHasRunInitialTask,
+    setPendingTask,
+    setActivity,
+    resetClarifyingFlowState,
+    resetPreferenceFlowState,
+    setEditablePrompt,
+    setIsPromptEditable,
+    setIsPromptFinalized,
+    setLikeState,
+    setAwaitingQuestionConsent,
+    setConsentSelectedIndex,
+    startClarifyingQuestions,
+    setAnsweringQuestions,
+    setCurrentQuestionIndex,
+    selectForQuestion,
+    appendClarifyingQuestion,
+    focusInputToEnd,
+    guardedGenerateFinalPromptForTask,
+    ensureAllowUnclearForTask,
+    shouldAllowUnclearForTask,
+    setClarifyingSelectedOptionIndex,
+    setLastApprovedPrompt,
+    setAllowUnclear,
+  ])
+
+  const submitCurrent = useCallback(() => taskFlowHandlersRef.current?.submitCurrent(), [])
+  const handleFormSubmit = useCallback((e: React.FormEvent) => taskFlowHandlersRef.current?.handleFormSubmit(e), [])
 
   const promptControls = {
     value,
@@ -1338,6 +1707,7 @@ function PromptTerminalInner({
     currentClarifyingQuestionIndex: answeringQuestions ? currentQuestionIndex : null,
     clarifyingTotalCount: clarifyingQuestions?.length ?? 0,
     clarifyingSelectedOptionIndex,
+    clarifyingLastAnswer: clarifyingLastAnswerForDisplay,
     editablePromptRef,
     scrollRef,
     inputRef,
@@ -1358,7 +1728,7 @@ function PromptTerminalInner({
     onClarifyingSkip: handleClarifyingSkip,
     onCopyEditable: (text?: string) => void copyEditablePrompt(text),
     onUpdateEditablePrompt: handleManualPromptUpdate,
-    onStartNewConversation: handleStartNewConversation,
+    onStartNewConversation: handleStartNewConversationAndClear,
     onFocusInput: focusInputToEnd,
     onLike: handleLikePrompt,
     onDislike: handleDislikePrompt,
@@ -1367,15 +1737,17 @@ function PromptTerminalInner({
     isAskingPreferenceQuestions,
     currentPreferenceQuestionKey,
     preferenceSelectedOptionIndex,
+    preferenceLastAnswer: preferenceLastAnswerForDisplay,
     onPreferenceFocusInputSelectFree: handlePreferenceFree,
     preferenceCanSubmit,
     onPreferenceOptionClick: handlePreferenceOptionSelect,
     onPreferenceNext: () => handlePreferenceNext(),
     onPreferenceBack: handlePreferenceBackNav,
     onPreferenceYourAnswer: focusInputToEnd,
-    onPreferenceSkip: () => handlePreferenceOptionClick(-1),
+    onPreferenceSkip: () => handlePreferenceOptionClick(-3),
     getPreferenceOptions,
     getPreferenceQuestionText,
+    getPreferenceOrder,
     getPreferencesToAsk,
     showStarter: isFreshSession,
     generationMode,
@@ -1385,6 +1757,66 @@ function PromptTerminalInner({
     },
     onFinalBack: editablePrompt ? handleGlobalBack : undefined,
   }
+
+  const unclearModal = unclearTaskModal ? (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+      <div
+        className="relative w-full max-w-md space-y-5 rounded-2xl border border-slate-800 bg-slate-950 p-6 shadow-2xl"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Task looks unclear"
+        onKeyDown={handleUnclearKeyDown}
+      >
+        <button
+          type="button"
+          aria-label="Close"
+          className="absolute right-3 top-3 h-8 w-8 cursor-pointer rounded-full text-slate-400 transition hover:bg-slate-800 hover:text-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-1 focus-visible:ring-offset-slate-950"
+          onClick={handleUnclearDismiss}
+        >
+          <span className="flex h-full w-full items-center justify-center text-lg">×</span>
+        </button>
+        <div className="flex items-start gap-3">
+          <div className="mt-0.5 flex h-9 w-9 items-center justify-center text-amber-300">
+            <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+              <path d="M12 9v4" strokeLinecap="round" />
+              <path d="M12 17h.01" strokeLinecap="round" />
+              <path
+                d="M10.29 3.86 2.82 18a1 1 0 0 0 .87 1.5h16.62a1 1 0 0 0 .87-1.5l-7.47-14.14a1 1 0 0 0-1.78 0Z"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </div>
+          <div className="space-y-2">
+            <div className="text-base font-semibold text-slate-100">Task looks unclear</div>
+            <div className="text-sm text-slate-300">{unclearTaskModal.reason}</div>
+          </div>
+        </div>
+        <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
+          <button
+            type="button"
+            className="h-[44px] w-full max-w-[180px] cursor-pointer rounded-lg border border-slate-700 bg-slate-900 px-4 text-sm font-semibold text-slate-100 transition hover:border-slate-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-1 focus-visible:ring-offset-slate-950"
+            ref={(el) => {
+              unclearButtonRefs.current[0] = el
+            }}
+            onClick={handleUnclearEdit}
+          >
+            Edit task
+          </button>
+          <button
+            type="button"
+            className="h-[44px] w-full max-w-[180px] cursor-pointer rounded-lg border border-slate-700 bg-slate-900 px-4 text-sm font-semibold text-slate-100 transition hover:border-slate-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-1 focus-visible:ring-offset-slate-950"
+            ref={(el) => {
+              unclearButtonRefs.current[1] = el
+            }}
+            onClick={handleUnclearContinue}
+          >
+            Continue anyway
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : null
 
   const mainNode = (
     <TerminalMain
@@ -1409,5 +1841,10 @@ function PromptTerminalInner({
     />
   )
 
-  return <TerminalShellView toastMessage={toastMessage} header={headerNode} panels={panelsNode} main={mainNode} />
+  return (
+    <>
+      <TerminalShellView toastMessage={toastMessage} header={headerNode} panels={panelsNode} main={mainNode} />
+      {unclearModal}
+    </>
+  )
 }

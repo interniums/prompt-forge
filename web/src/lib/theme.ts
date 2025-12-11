@@ -32,10 +32,21 @@ export function setStoredTheme(next?: ThemeName) {
   }
 }
 
+let themeAnimationTimeout: number | undefined
+
 export function applyThemeToDocument(theme: ThemeName | undefined, fallback: ThemeName = DEFAULT_THEME) {
   if (typeof document === 'undefined') return
   const resolved = normalizeTheme(theme, fallback)
   const root = document.documentElement
   root.dataset.theme = resolved
   root.style.colorScheme = resolved === 'light' ? 'light' : 'dark'
+
+  // Smoothen theme flips without long-running transitions.
+  root.classList.add('theme-anim')
+  if (themeAnimationTimeout) {
+    window.clearTimeout(themeAnimationTimeout)
+  }
+  themeAnimationTimeout = window.setTimeout(() => {
+    root.classList.remove('theme-anim')
+  }, 220)
 }

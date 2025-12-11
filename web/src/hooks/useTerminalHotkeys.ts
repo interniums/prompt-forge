@@ -3,13 +3,6 @@
 import { useEffect, useCallback } from 'react'
 import type { ClarifyingQuestion } from '@/lib/types'
 
-type KeyEventInfo = {
-  key: string
-  metaKey: boolean
-  ctrlKey: boolean
-  value: string
-}
-
 type ConsentNav = {
   active: boolean
   value: string
@@ -108,10 +101,10 @@ export function useTerminalHotkeys({ consent, clarifying, preference, prompt }: 
         const hasFree = Boolean(clarifying.onFreeAnswer)
         const hasSkip = Boolean(clarifying.onSkip)
         const slotOrder: number[] = []
-        if (hasBack) slotOrder.push(-1)
-        if (hasFree) slotOrder.push(-2)
-        if (hasSkip) slotOrder.push(-3)
         for (let i = 0; i < options.length; i += 1) slotOrder.push(i)
+        if (hasFree) slotOrder.push(-2)
+        if (hasBack) slotOrder.push(-1)
+        if (hasSkip) slotOrder.push(-3)
         const totalSlots = slotOrder.length
 
         if (totalSlots > 0) {
@@ -130,26 +123,37 @@ export function useTerminalHotkeys({ consent, clarifying, preference, prompt }: 
             return
           }
 
-          if (isPlainEnter && !prompt.value.trim()) {
+          if (isPlainEnter) {
             preventDefault()
             const sel = clarifying.selectedIndex
-            if (sel === null) return
-            if (sel === -1 && hasBack) {
-              clarifying.onUndo()
-              return
+            if (sel !== null) {
+              if (sel === -1 && hasBack) {
+                clarifying.onUndo()
+                return
+              }
+              if (sel === -2 && hasFree) {
+                const trimmed = prompt.value.trim()
+                if (trimmed) {
+                  prompt.submit()
+                } else {
+                  clarifying.onFreeAnswer?.()
+                }
+                return
+              }
+              if (sel === -3 && hasSkip) {
+                clarifying.onSkip?.()
+                return
+              }
+              if (sel >= 0 && sel < options.length) {
+                void clarifying.onSelectOption(sel)
+                return
+              }
             }
-            if (sel === -2 && hasFree) {
-              clarifying.onFreeAnswer?.()
-              return
+            const trimmed = prompt.value.trim()
+            if (trimmed) {
+              prompt.submit()
             }
-            if (sel === -3 && hasSkip) {
-              clarifying.onSkip?.()
-              return
-            }
-            if (sel >= 0 && sel < options.length) {
-              void clarifying.onSelectOption(sel)
-              return
-            }
+            return
           }
         }
       }
@@ -161,10 +165,10 @@ export function useTerminalHotkeys({ consent, clarifying, preference, prompt }: 
         const hasFree = Boolean(preference.onFreeAnswer)
         const hasSkip = Boolean(preference.onSkip)
         const slotOrder: number[] = []
-        if (hasBack) slotOrder.push(-1)
-        if (hasFree) slotOrder.push(-2)
-        if (hasSkip) slotOrder.push(-3)
         for (let i = 0; i < options.length; i += 1) slotOrder.push(i)
+        if (hasFree) slotOrder.push(-2)
+        if (hasBack) slotOrder.push(-1)
+        if (hasSkip) slotOrder.push(-3)
         const totalSlots = slotOrder.length
 
         if (totalSlots > 0) {
@@ -198,7 +202,12 @@ export function useTerminalHotkeys({ consent, clarifying, preference, prompt }: 
               return
             }
             if (sel === -2 && hasFree) {
-              preference.onFreeAnswer?.()
+              const trimmed = prompt.value.trim()
+              if (trimmed) {
+                prompt.submit()
+              } else {
+                preference.onFreeAnswer?.()
+              }
               return
             }
             if (sel === -3 && hasSkip) {

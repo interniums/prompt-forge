@@ -14,7 +14,7 @@ export function CenteredToast({ message }: CenteredToastProps) {
       role="status"
       aria-live="polite"
       aria-atomic="true"
-      className="pointer-events-none fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2"
+      className="pointer-events-none fixed left-1/2 top-1/2 z-60 -translate-x-1/2 -translate-y-1/2"
     >
       <div className={toastClassName}>
         <span className="text-slate-100 text-sm" aria-hidden="true">

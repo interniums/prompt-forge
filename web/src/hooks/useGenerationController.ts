@@ -26,6 +26,12 @@ type GenDeps = {
   user: { id: string; email?: string | null } | null
   awaitingQuestionConsent: boolean
   consentRequired: boolean
+  onUnclearTask?: (info: {
+    reason: string
+    stage: 'generating'
+    task: string
+    pendingAnswers?: ClarifyingAnswer[]
+  }) => void
 }
 
 export function useGenerationController({
@@ -47,6 +53,7 @@ export function useGenerationController({
   user,
   awaitingQuestionConsent,
   consentRequired,
+  onUnclearTask,
 }: GenDeps) {
   const generationRunIdRef = useRef(0)
   const resumeRunTaskRef = useRef<string | null>(null)
@@ -55,7 +62,7 @@ export function useGenerationController({
     async (
       task: string,
       answers: ClarifyingAnswer[],
-      options?: { skipConsentCheck?: boolean; preferencesOverride?: Preferences }
+      options?: { skipConsentCheck?: boolean; preferencesOverride?: Preferences; allowUnclear?: boolean }
     ) => {
       if (!options?.skipConsentCheck && consentRequired && awaitingQuestionConsent) {
         return
@@ -89,7 +96,12 @@ export function useGenerationController({
       })
 
       try {
-        const prompt = await generateFinalPrompt({ task, preferences: effectivePreferences, answers })
+        const prompt = await generateFinalPrompt({
+          task,
+          preferences: effectivePreferences,
+          answers,
+          allowUnclear: options?.allowUnclear,
+        })
 
         if (runId !== generationRunIdRef.current) {
           return
@@ -172,6 +184,25 @@ export function useGenerationController({
           return
         }
 
+        if (code === 'UNCLEAR_TASK') {
+          const detail =
+            (err as { reason?: string }).reason ??
+            'We could not understand the task. Please describe what you want in plain language.'
+          setIsGenerating(false)
+          if (typeof onUnclearTask === 'function') {
+            onUnclearTask({ reason: detail, stage: 'generating', task, pendingAnswers: clarifyingAnswersRef.current })
+            return
+          }
+          setActivity({
+            task,
+            stage: 'error',
+            status: 'error',
+            message: 'Task unclear',
+            detail,
+          })
+          return
+        }
+
         if (code === 'QUOTA_EXCEEDED') {
           setIsGenerating(false)
           showToast('Plan limit reached. Quota resets next cycle.')
@@ -211,22 +242,23 @@ export function useGenerationController({
       }
     },
     [
-      awaitingQuestionConsent,
-      clarifyingAnswersRef,
       consentRequired,
+      awaitingQuestionConsent,
+      user,
       preferences,
-      setPromptEditDiff,
-      setAnsweringQuestions,
-      setEditablePrompt,
       setIsGenerating,
+      setAnsweringQuestions,
+      setActivity,
+      setLoginRequiredOpen,
+      setPendingTask,
+      clarifyingAnswersRef,
+      setEditablePrompt,
+      setPromptEditDiff,
       setIsPromptEditable,
       setIsPromptFinalized,
       setLastApprovedPrompt,
-      setLoginRequiredOpen,
-      setPendingTask,
-      setActivity,
       showToast,
-      user,
+      onUnclearTask,
     ]
   )
 
@@ -339,15 +371,16 @@ export function useGenerationController({
       }
     },
     [
-      appendLine,
-      preferences,
+      setIsGenerating,
       setActivity,
+      preferences,
       setEditablePrompt,
       setPromptEditDiff,
-      setIsGenerating,
       setIsPromptEditable,
       setIsPromptFinalized,
       setLastApprovedPrompt,
+      appendLine,
+      showToast,
     ]
   )
 

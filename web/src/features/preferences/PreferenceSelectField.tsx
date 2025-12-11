@@ -17,6 +17,7 @@ type PreferenceSelectFieldProps = {
   onClear: () => void
   rightSlot?: React.ReactNode
   hideClear?: boolean
+  showClear?: boolean
 }
 
 export function PreferenceSelectField({
@@ -29,7 +30,10 @@ export function PreferenceSelectField({
   onClear,
   rightSlot,
   hideClear = false,
+  showClear,
 }: PreferenceSelectFieldProps) {
+  const shouldShowClear = showClear ?? Boolean(value)
+
   return (
     <div className="space-y-2">
       <div className="flex items-end gap-3 h-14">
@@ -52,7 +56,7 @@ export function PreferenceSelectField({
             ))}
           </SelectContent>
         </Select>
-        {!hideClear && <ClearButton onClick={onClear} show={Boolean(value)} />}
+        {!hideClear && <ClearButton onClick={onClear} show={shouldShowClear} />}
       </div>
     </div>
   )
