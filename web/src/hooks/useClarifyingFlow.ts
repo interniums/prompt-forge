@@ -1,18 +1,19 @@
 'use client'
 
-import { useCallback } from 'react'
-import { generateClarifyingQuestions } from '@/services/promptService'
-import { recordEvent } from '@/services/eventsService'
-import { ROLE } from '@/lib/constants'
-import type { TerminalRole } from '@/lib/constants'
-import type { ClarifyingAnswer, ClarifyingQuestion, Preferences, TerminalStatus, TaskActivity } from '@/lib/types'
+import type React from 'react'
+import { useCallback, useMemo } from 'react'
+import type { ClarifyingAnswer, ClarifyingQuestion, Preferences, TaskActivity } from '@/lib/types'
 import type { PreferenceKey } from '@/features/terminal/terminalState'
-
-const debugFlow = process.env.NEXT_PUBLIC_DEBUG_FLOW === 'true'
-const logFlow = (...args: unknown[]) => {
-  if (!debugFlow) return
-  console.info('[pf:flow]', ...args)
-}
+import { createBeginQuestionFlow } from './clarifyingFlow/beginQuestionFlow'
+import {
+  createHandleClarifyingAnswer,
+  createHandleClarifyingOptionClick,
+  createHandleClarifyingSkip,
+  createHandleUndoAnswer,
+} from './clarifyingFlow/answerNavigation'
+import { createHandleQuestionConsent } from './clarifyingFlow/questionConsent'
+import { createSelectForQuestion } from './clarifyingFlow/selectForQuestion'
+import { createStartClarifyingQuestions } from './clarifyingFlow/startClarifyingQuestions'
 
 export type ClarifyingFlowDeps = {
   pendingTask: string | null
@@ -29,14 +30,14 @@ export type ClarifyingFlowDeps = {
   setAwaitingQuestionConsent: (value: boolean) => void
   setConsentSelectedIndex: (value: number | null) => void
   setClarifyingSelectedOptionIndex: (value: number | null) => void
-  setHasRunInitialTask: (value: boolean) => void
+  setLastRemovedClarifyingAnswer: (value: { questionId: string | null; answer: string | null }) => void
   setValue: (value: string) => void
-  appendLine: (role: TerminalRole, text: string | TerminalStatus) => void
   setActivity: (activity: TaskActivity | null) => void
   showToast: (msg: string) => void
   focusInputToEnd: () => void
+  blurInput: () => void
   getPreferencesToAsk: () => PreferenceKey[]
-  startPreferenceQuestions: () => Promise<void>
+  startPreferenceQuestions: () => Promise<void> | void
   generateFinalPromptForTask: (
     task: string,
     answers: ClarifyingAnswer[],
@@ -45,593 +46,292 @@ export type ClarifyingFlowDeps = {
   onUnclearTask?: (info: { reason: string; stage: 'clarifying'; task: string }) => void
 }
 
-function detectUnclearTaskClient(task: string): string | null {
-  const normalized = task.trim()
-  if (!normalized) return 'Task is empty. Please describe what you want to accomplish.'
-
-  const lower = normalized.toLowerCase()
-  const shortAllowlist = new Set(['api', 'sql', 'css', 'ui', 'ux'])
-  if (normalized.length < 4 && !shortAllowlist.has(lower)) {
-    return 'Task is very short. Please describe what you want to accomplish in more detail.'
-  }
-
-  const letters = normalized.replace(/[^\p{L}]/gu, '')
-  const digits = normalized.replace(/[^\p{N}]/gu, '')
-  const nonSpace = normalized.replace(/\s+/g, '')
-  const symbols = nonSpace.replace(/[\p{L}\p{N}]/gu, '')
-  const hasLetters = letters.length > 0
-  const hasDigits = digits.length > 0
-  const hasSymbols = symbols.length > 0
-
-  if (!hasLetters && !hasDigits && hasSymbols) {
-    return 'Task contains only symbols or emojis. Please describe what you want to accomplish in words.'
-  }
-  if (!hasLetters && hasDigits && !hasSymbols) {
-    return 'Task contains only numbers. Please describe what you want to accomplish in words.'
-  }
-  if (!hasLetters) {
-    return 'Task has no readable words. Please describe what you want to accomplish.'
-  }
-
-  const length = nonSpace.length
-  const vowelMatches = letters.match(/[aeiouy]/gi)
-  const vowelCount = vowelMatches?.length ?? 0
-  const digitRatio = hasDigits ? digits.length / Math.max(length, 1) : 0
-  const hasSpaces = /\s/.test(normalized)
-
-  if (!hasSpaces && letters.length >= 10 && vowelCount === 0) {
-    return 'This looks like random characters. Please describe the goal in plain language.'
-  }
-
-  if (!hasSpaces && length >= 10 && digitRatio > 0.4) {
-    return 'Task mixes letters and digits without clear context. Please describe the goal in plain language.'
-  }
-
-  const hasLongRepeat = /(.)\1{5,}/u.test(normalized)
-  if (hasLongRepeat) {
-    return 'Task contains long character repeats. Please describe the goal more clearly.'
-  }
-
-  return null
+export type ClarifyingFlowHandlers = {
+  startClarifyingQuestions: (task: string, options?: { allowUnclear?: boolean }) => Promise<void>
+  handleQuestionConsent: (answer: string) => Promise<void>
+  handleClarifyingOptionClick: (idx: number) => void
+  handleClarifyingAnswer: (answer: string) => Promise<void>
+  handleClarifyingSkip: () => void
+  handleUndoAnswer: () => void
+  appendClarifyingQuestion: (question: ClarifyingQuestion, index: number, total: number) => void
+  selectForQuestion: (question: ClarifyingQuestion | null, hasBack: boolean) => void
 }
 
-const FALLBACK_QUESTIONS: ClarifyingQuestion[] = [
-  {
-    id: 'fallback_outcome',
-    question: 'What outcome do you want?',
-    options: [],
-  },
-  {
-    id: 'fallback_audience',
-    question: 'Who is this for?',
-    options: [
-      { id: 'a', label: 'Customers' },
-      { id: 'b', label: 'Internal team' },
-      { id: 'c', label: 'Just me' },
-      { id: 'd', label: 'Not sure' },
-    ],
-  },
-  {
-    id: 'fallback_style',
-    question: 'How should it be written?',
-    options: [
-      { id: 'a', label: 'Concise bullets' },
-      { id: 'b', label: 'Narrative' },
-      { id: 'c', label: 'Steps' },
-      { id: 'd', label: 'No preference' },
-    ],
-  },
-]
-
-export function useClarifyingFlow({
-  pendingTask,
-  preferences,
-  clarifyingQuestions,
-  currentQuestionIndex,
-  generationRunIdRef,
-  clarifyingAnswersRef,
-  setIsGenerating,
-  setClarifyingQuestions,
-  setClarifyingAnswers,
-  setCurrentQuestionIndex,
-  setAnsweringQuestions,
-  setAwaitingQuestionConsent,
-  setConsentSelectedIndex,
-  setClarifyingSelectedOptionIndex,
-  setHasRunInitialTask,
-  setValue,
-  appendLine,
-  setActivity,
-  showToast,
-  focusInputToEnd,
-  getPreferencesToAsk,
-  startPreferenceQuestions,
-  generateFinalPromptForTask,
-  onUnclearTask,
-}: ClarifyingFlowDeps) {
-  const selectForQuestion = useCallback(
-    (question: ClarifyingQuestion | null, hasBack: boolean) => {
-      if (!question) {
-        setClarifyingSelectedOptionIndex(null)
-        return
-      }
-      // Do not preselect an option; keep selection neutral for arrow navigation.
-      if (question.options.length > 0) {
-        setClarifyingSelectedOptionIndex(null)
-        return
-      }
-      if (hasBack) {
-        setClarifyingSelectedOptionIndex(-1)
-        return
-      }
-      setClarifyingSelectedOptionIndex(null)
-    },
-    [setClarifyingSelectedOptionIndex]
-  )
-
-  // Do not log clarifying questions into the transcript; UI handles display.
+export function useClarifyingFlow(deps: ClarifyingFlowDeps): ClarifyingFlowHandlers {
   const appendClarifyingQuestion = useCallback((_question?: ClarifyingQuestion, _index?: number, _total?: number) => {
     void _question
     void _index
     void _total
   }, [])
 
-  const beginQuestionFlow = useCallback(
-    (questions: ClarifyingQuestion[]) => {
-      if (!questions.length) return
-      logFlow('clarifying:begin', { count: questions.length, firstId: questions[0]?.id })
-      setClarifyingQuestions(questions)
-      clarifyingAnswersRef.current = []
-      setClarifyingAnswers([], 0)
-      selectForQuestion(questions[0], true)
-      setAwaitingQuestionConsent(false)
-      setConsentSelectedIndex(null)
-      setAnsweringQuestions(true)
-      const remaining = Math.max(0, questions.length - 1)
-      setActivity({
-        task: pendingTask ?? '',
-        stage: 'clarifying',
-        status: 'loading',
-        message: `Clarifying ${1}/${questions.length}${remaining ? ` · ${remaining} left` : ''}`,
-        detail: 'Answering these questions improves the quality of your prompt.',
-      })
-      appendClarifyingQuestion(questions[0], 0, questions.length)
-      focusInputToEnd()
-    },
+  const selectForQuestion = useMemo(
+    () => createSelectForQuestion(deps.setClarifyingSelectedOptionIndex),
+    [deps.setClarifyingSelectedOptionIndex]
+  )
+
+  const beginQuestionFlow = useMemo(
+    () =>
+      createBeginQuestionFlow({
+        pendingTask: deps.pendingTask,
+        clarifyingAnswersRef: deps.clarifyingAnswersRef,
+        setClarifyingQuestions: deps.setClarifyingQuestions,
+        setClarifyingAnswers: deps.setClarifyingAnswers,
+        setAwaitingQuestionConsent: deps.setAwaitingQuestionConsent,
+        setConsentSelectedIndex: deps.setConsentSelectedIndex,
+        setAnsweringQuestions: deps.setAnsweringQuestions,
+        setActivity: deps.setActivity,
+        selectForQuestion,
+        appendClarifyingQuestion,
+      }),
     [
       appendClarifyingQuestion,
-      clarifyingAnswersRef,
-      focusInputToEnd,
-      pendingTask,
+      deps.clarifyingAnswersRef,
+      deps.pendingTask,
+      deps.setActivity,
+      deps.setAnsweringQuestions,
+      deps.setAwaitingQuestionConsent,
+      deps.setClarifyingAnswers,
+      deps.setClarifyingQuestions,
+      deps.setConsentSelectedIndex,
       selectForQuestion,
-      setAnsweringQuestions,
-      setActivity,
-      setAwaitingQuestionConsent,
-      setClarifyingAnswers,
-      setClarifyingQuestions,
-      setConsentSelectedIndex,
     ]
   )
 
-  const startClarifyingQuestions = useCallback(
-    async (task: string, options?: { allowUnclear?: boolean }) => {
-      if (!options?.allowUnclear) {
-        const unclear = detectUnclearTaskClient(task)
-        if (unclear) {
-          if (typeof onUnclearTask === 'function') {
-            onUnclearTask({ reason: unclear, stage: 'clarifying', task })
-          }
-          setIsGenerating(false)
-          setAwaitingQuestionConsent(false)
-          setAnsweringQuestions(false)
-          return
-        }
-      }
-      const runId = (generationRunIdRef.current += 1)
-      logFlow('clarifying:start', { task, runId })
-      setIsGenerating(true)
-      setActivity({
-        task,
-        stage: 'clarifying',
-        status: 'loading',
-        message: 'Preparing clarifying questions',
-        detail: 'Finding the quickest questions to sharpen your task.',
-      })
-
-      try {
-        const questions = await generateClarifyingQuestions({ task, preferences, allowUnclear: options?.allowUnclear })
-        logFlow('clarifying:received', { runId, count: questions.length })
-
-        if (runId !== generationRunIdRef.current) {
-          logFlow('clarifying:stale_run', { runId, current: generationRunIdRef.current })
-          return
-        }
-
-        setIsGenerating(false)
-        setActivity({
-          task,
-          stage: 'clarifying',
-          status: 'success',
-          message: 'Clarifying ready',
-          detail: 'Answer a few quick questions to tailor the prompt.',
-        })
-
-        beginQuestionFlow(questions.length ? questions : FALLBACK_QUESTIONS)
-      } catch (err) {
-        logFlow('clarifying:error', { runId, error: err instanceof Error ? err.message : String(err) })
-        if (runId === generationRunIdRef.current) {
-          console.error('Failed to generate clarifying questions', err)
-          const code = (err as { code?: string }).code
-          if (code === 'UNCLEAR_TASK') {
-            const detail =
-              (err as { reason?: string }).reason ??
-              'We could not understand the task. Please describe what you need in plain language.'
-            if (typeof onUnclearTask === 'function') {
-              onUnclearTask({ reason: detail, stage: 'clarifying', task })
-            }
-            setIsGenerating(false)
-            setAwaitingQuestionConsent(false)
-            setAnsweringQuestions(false)
-            return
-          }
-          if (code === 'QUOTA_EXCEEDED') {
-            showToast('Plan limit reached. Quota resets next cycle.')
-            setActivity({
-              task,
-              stage: 'clarifying',
-              status: 'error',
-              message: 'Plan limit reached',
-              detail: 'You have reached your plan quota. Upgrade or wait for the next cycle.',
-            })
-            setIsGenerating(false)
-            return
-          }
-          if (code === 'RATE_LIMITED') {
-            showToast('Too many requests. Please wait and try again.')
-            setActivity({
-              task,
-              stage: 'clarifying',
-              status: 'error',
-              message: 'Too many requests',
-              detail: 'You are sending requests too quickly. Please wait and try again.',
-            })
-            setIsGenerating(false)
-            return
-          }
-
-          showToast('System error. Please try again soon.')
-
-          setActivity({
-            task,
-            stage: 'clarifying',
-            status: 'error',
-            message: 'Questions unavailable',
-            detail: 'Could not generate clarifying questions. Using fallback instead.',
-          })
-          setIsGenerating(false)
-          beginQuestionFlow(FALLBACK_QUESTIONS)
-        }
-      }
-    },
+  const startClarifyingQuestions = useMemo(
+    () =>
+      createStartClarifyingQuestions({
+        preferences: deps.preferences,
+        generationRunIdRef: deps.generationRunIdRef,
+        setIsGenerating: deps.setIsGenerating,
+        setActivity: deps.setActivity,
+        setAwaitingQuestionConsent: deps.setAwaitingQuestionConsent,
+        setAnsweringQuestions: deps.setAnsweringQuestions,
+        beginQuestionFlow,
+        showToast: deps.showToast,
+        onUnclearTask: deps.onUnclearTask,
+      }),
     [
-      generationRunIdRef,
-      setIsGenerating,
-      setActivity,
-      preferences,
       beginQuestionFlow,
-      showToast,
-      onUnclearTask,
-      setAwaitingQuestionConsent,
-      setAnsweringQuestions,
+      deps.generationRunIdRef,
+      deps.onUnclearTask,
+      deps.preferences,
+      deps.setActivity,
+      deps.setAnsweringQuestions,
+      deps.setAwaitingQuestionConsent,
+      deps.setIsGenerating,
+      deps.showToast,
     ]
   )
 
-  const handleQuestionConsent = useCallback(
-    async (answer: string) => {
-      const raw = answer.trim().toLowerCase()
-      const normalized = raw === 'generate' || raw === 'gen' || raw === 'now' ? 'no' : raw === 'sharpen' ? 'yes' : raw
-
-      logFlow('clarifying:consent', { raw, normalized, pendingTask })
-      if (!pendingTask) {
-        appendLine(ROLE.APP, 'No task in memory. Describe a task first.')
-        setAwaitingQuestionConsent(false)
-        return
-      }
-
-      void recordEvent('question_consent', { task: pendingTask, answer: normalized })
-
-      if (normalized === 'yes' || normalized === 'y') {
-        setAwaitingQuestionConsent(false)
-        setConsentSelectedIndex(null)
-        if (clarifyingQuestions && clarifyingQuestions.length > 0) {
-          const answered = clarifyingAnswersRef.current.length
-          setAnsweringQuestions(true)
-          setCurrentQuestionIndex(answered)
-          const nextQuestion = clarifyingQuestions[Math.min(answered, clarifyingQuestions.length - 1)]
-          selectForQuestion(nextQuestion ?? null, true)
-          appendClarifyingQuestion(nextQuestion!, answered, clarifyingQuestions.length)
-          focusInputToEnd()
-        } else {
-          await startClarifyingQuestions(pendingTask)
-        }
-        return
-      }
-
-      if (normalized === 'no' || normalized === 'n') {
-        setAwaitingQuestionConsent(false)
-        setConsentSelectedIndex(null)
-        setAnsweringQuestions(false)
-        setActivity({
-          task: pendingTask,
-          stage: 'generating',
-          status: 'loading',
-          message: 'Generating without questions',
-          detail: 'Skipping clarifying; creating your prompt now.',
-        })
-        await generateFinalPromptForTask(pendingTask, [], { skipConsentCheck: true })
-        return
-      }
-
-      appendLine(ROLE.APP, 'Please answer "yes" or "no".')
-      focusInputToEnd()
-    },
+  const handleClarifyingAnswer = useMemo<(answer: string) => Promise<void>>(
+    () =>
+      createHandleClarifyingAnswer({
+        clarifyingQuestions: deps.clarifyingQuestions,
+        pendingTask: deps.pendingTask,
+        clarifyingAnswersRef: deps.clarifyingAnswersRef,
+        currentQuestionIndex: deps.currentQuestionIndex,
+        setAnsweringQuestions: deps.setAnsweringQuestions,
+        setClarifyingAnswers: deps.setClarifyingAnswers,
+        setCurrentQuestionIndex: deps.setCurrentQuestionIndex,
+        setClarifyingSelectedOptionIndex: deps.setClarifyingSelectedOptionIndex,
+        setActivity: deps.setActivity,
+        setValue: deps.setValue,
+        selectForQuestion,
+        appendClarifyingQuestion,
+        blurInput: deps.blurInput,
+        focusInputToEnd: deps.focusInputToEnd,
+        getPreferencesToAsk: deps.getPreferencesToAsk,
+        startPreferenceQuestions: deps.startPreferenceQuestions,
+        generateFinalPromptForTask: deps.generateFinalPromptForTask,
+      }),
     [
       appendClarifyingQuestion,
-      appendLine,
-      clarifyingAnswersRef,
-      clarifyingQuestions,
-      focusInputToEnd,
-      generateFinalPromptForTask,
-      pendingTask,
+      deps.blurInput,
+      deps.clarifyingAnswersRef,
+      deps.clarifyingQuestions,
+      deps.currentQuestionIndex,
+      deps.focusInputToEnd,
+      deps.generateFinalPromptForTask,
+      deps.getPreferencesToAsk,
+      deps.pendingTask,
+      deps.setActivity,
+      deps.setAnsweringQuestions,
+      deps.setClarifyingAnswers,
+      deps.setClarifyingSelectedOptionIndex,
+      deps.setCurrentQuestionIndex,
+      deps.setValue,
+      deps.startPreferenceQuestions,
       selectForQuestion,
-      setAnsweringQuestions,
-      setAwaitingQuestionConsent,
-      setConsentSelectedIndex,
-      setCurrentQuestionIndex,
-      setActivity,
+    ]
+  )
+
+  const handleClarifyingSkip = useMemo(
+    () =>
+      createHandleClarifyingSkip({
+        clarifyingQuestions: deps.clarifyingQuestions,
+        pendingTask: deps.pendingTask,
+        clarifyingAnswersRef: deps.clarifyingAnswersRef,
+        currentQuestionIndex: deps.currentQuestionIndex,
+        setAnsweringQuestions: deps.setAnsweringQuestions,
+        setClarifyingAnswers: deps.setClarifyingAnswers,
+        setCurrentQuestionIndex: deps.setCurrentQuestionIndex,
+        setClarifyingSelectedOptionIndex: deps.setClarifyingSelectedOptionIndex,
+        setActivity: deps.setActivity,
+        setValue: deps.setValue,
+        selectForQuestion,
+        appendClarifyingQuestion,
+        blurInput: deps.blurInput,
+        focusInputToEnd: deps.focusInputToEnd,
+        getPreferencesToAsk: deps.getPreferencesToAsk,
+        startPreferenceQuestions: deps.startPreferenceQuestions,
+        generateFinalPromptForTask: deps.generateFinalPromptForTask,
+      }),
+    [
+      appendClarifyingQuestion,
+      deps.blurInput,
+      deps.clarifyingAnswersRef,
+      deps.clarifyingQuestions,
+      deps.currentQuestionIndex,
+      deps.focusInputToEnd,
+      deps.generateFinalPromptForTask,
+      deps.getPreferencesToAsk,
+      deps.pendingTask,
+      deps.setActivity,
+      deps.setAnsweringQuestions,
+      deps.setClarifyingAnswers,
+      deps.setClarifyingSelectedOptionIndex,
+      deps.setCurrentQuestionIndex,
+      deps.setValue,
+      deps.startPreferenceQuestions,
+      selectForQuestion,
+    ]
+  )
+
+  const handleClarifyingOptionClick = useMemo(
+    () =>
+      createHandleClarifyingOptionClick(
+        {
+          clarifyingQuestions: deps.clarifyingQuestions,
+          pendingTask: deps.pendingTask,
+          clarifyingAnswersRef: deps.clarifyingAnswersRef,
+          currentQuestionIndex: deps.currentQuestionIndex,
+          setAnsweringQuestions: deps.setAnsweringQuestions,
+          setClarifyingAnswers: deps.setClarifyingAnswers,
+          setCurrentQuestionIndex: deps.setCurrentQuestionIndex,
+          setClarifyingSelectedOptionIndex: deps.setClarifyingSelectedOptionIndex,
+          setActivity: deps.setActivity,
+          setValue: deps.setValue,
+          selectForQuestion,
+          appendClarifyingQuestion,
+          blurInput: deps.blurInput,
+          focusInputToEnd: deps.focusInputToEnd,
+          getPreferencesToAsk: deps.getPreferencesToAsk,
+          startPreferenceQuestions: deps.startPreferenceQuestions,
+          generateFinalPromptForTask: deps.generateFinalPromptForTask,
+        },
+        handleClarifyingAnswer
+      ),
+    [
+      appendClarifyingQuestion,
+      deps.blurInput,
+      deps.clarifyingAnswersRef,
+      deps.clarifyingQuestions,
+      deps.currentQuestionIndex,
+      deps.focusInputToEnd,
+      deps.generateFinalPromptForTask,
+      deps.getPreferencesToAsk,
+      deps.pendingTask,
+      deps.setActivity,
+      deps.setAnsweringQuestions,
+      deps.setClarifyingAnswers,
+      deps.setClarifyingSelectedOptionIndex,
+      deps.setCurrentQuestionIndex,
+      deps.setValue,
+      deps.startPreferenceQuestions,
+      handleClarifyingAnswer,
+      selectForQuestion,
+    ]
+  )
+
+  const handleQuestionConsent = useMemo(
+    () =>
+      createHandleQuestionConsent({
+        pendingTask: deps.pendingTask,
+        clarifyingQuestions: deps.clarifyingQuestions,
+        clarifyingAnswersRef: deps.clarifyingAnswersRef,
+        setAwaitingQuestionConsent: deps.setAwaitingQuestionConsent,
+        setConsentSelectedIndex: deps.setConsentSelectedIndex,
+        setAnsweringQuestions: deps.setAnsweringQuestions,
+        setCurrentQuestionIndex: deps.setCurrentQuestionIndex,
+        selectForQuestion,
+        appendClarifyingQuestion,
+        startClarifyingQuestions,
+        generateFinalPromptForTask: deps.generateFinalPromptForTask,
+        setActivity: deps.setActivity,
+        focusInputToEnd: deps.focusInputToEnd,
+      }),
+    [
+      appendClarifyingQuestion,
+      deps.clarifyingAnswersRef,
+      deps.clarifyingQuestions,
+      deps.focusInputToEnd,
+      deps.generateFinalPromptForTask,
+      deps.pendingTask,
+      deps.setActivity,
+      deps.setAnsweringQuestions,
+      deps.setAwaitingQuestionConsent,
+      deps.setConsentSelectedIndex,
+      deps.setCurrentQuestionIndex,
+      selectForQuestion,
       startClarifyingQuestions,
     ]
   )
 
-  const handleClarifyingAnswer = useCallback(
-    async (answer: string) => {
-      // Clear any stored "last removed" state in the consumer.
-      if (!clarifyingQuestions || !pendingTask) {
-        appendLine(ROLE.APP, 'No active questions. Describe a task first.')
-        setAnsweringQuestions(false)
-        return
-      }
-
-      const index = currentQuestionIndex
-      if (index < 0 || index >= clarifyingQuestions.length) {
-        logFlow('clarifying:answer_out_of_bounds', { index, total: clarifyingQuestions.length })
-        setAnsweringQuestions(false)
-        return
-      }
-
-      const question = clarifyingQuestions[index]
-      const trimmedAnswer = answer.trim()
-
-      logFlow('clarifying:answer', { questionId: question.id, index, trimmedAnswer })
-
-      const updated: ClarifyingAnswer[] = [
-        ...clarifyingAnswersRef.current,
-        {
-          questionId: question.id,
-          question: question.question,
-          answer: trimmedAnswer,
-        },
-      ]
-      clarifyingAnswersRef.current = updated
-      setClarifyingAnswers(updated, updated.length)
-      void recordEvent('clarifying_answer', {
-        task: pendingTask,
-        questionId: question.id,
-        question: question.question,
-        answer: trimmedAnswer,
-      })
-
-      const nextIndex = index + 1
-      if (nextIndex < clarifyingQuestions.length) {
-        setCurrentQuestionIndex(nextIndex)
-        const nextQuestion = clarifyingQuestions[nextIndex]
-        selectForQuestion(nextQuestion, true)
-        const remaining = Math.max(0, clarifyingQuestions.length - (nextIndex + 1))
-        setActivity({
-          task: pendingTask,
-          stage: 'clarifying',
-          status: 'loading',
-          message: `Clarifying ${nextIndex + 1}/${clarifyingQuestions.length}${
-            remaining ? ` · ${remaining} left` : ''
-          }`,
-          detail: 'Answering these questions improves the quality of your prompt.',
-        })
-        appendClarifyingQuestion(nextQuestion, nextIndex, clarifyingQuestions.length)
-        focusInputToEnd()
-      } else {
-        logFlow('clarifying:complete', { answers: updated.length })
-        setClarifyingSelectedOptionIndex(null)
-        setAnsweringQuestions(false)
-        const prefsToAsk = getPreferencesToAsk()
-        if (prefsToAsk.length > 0) {
-          logFlow('preferences:start_after_clarifying', { prefsToAsk })
-          void startPreferenceQuestions()
-        } else {
-          void generateFinalPromptForTask(pendingTask, updated)
-        }
-      }
-    },
+  const handleUndoAnswer = useMemo(
+    () =>
+      createHandleUndoAnswer({
+        clarifyingQuestions: deps.clarifyingQuestions,
+        pendingTask: deps.pendingTask,
+        clarifyingAnswersRef: deps.clarifyingAnswersRef,
+        currentQuestionIndex: deps.currentQuestionIndex,
+        setAnsweringQuestions: deps.setAnsweringQuestions,
+        setClarifyingAnswers: deps.setClarifyingAnswers,
+        setCurrentQuestionIndex: deps.setCurrentQuestionIndex,
+        setClarifyingSelectedOptionIndex: deps.setClarifyingSelectedOptionIndex,
+        setActivity: deps.setActivity,
+        setValue: deps.setValue,
+        selectForQuestion,
+        appendClarifyingQuestion,
+        blurInput: deps.blurInput,
+        focusInputToEnd: deps.focusInputToEnd,
+        getPreferencesToAsk: deps.getPreferencesToAsk,
+        startPreferenceQuestions: deps.startPreferenceQuestions,
+        generateFinalPromptForTask: deps.generateFinalPromptForTask,
+        setAwaitingQuestionConsent: deps.setAwaitingQuestionConsent,
+        setLastRemovedClarifyingAnswer: deps.setLastRemovedClarifyingAnswer,
+      }),
     [
       appendClarifyingQuestion,
-      appendLine,
-      clarifyingAnswersRef,
-      clarifyingQuestions,
-      currentQuestionIndex,
-      focusInputToEnd,
-      generateFinalPromptForTask,
-      getPreferencesToAsk,
-      pendingTask,
+      deps.blurInput,
+      deps.clarifyingAnswersRef,
+      deps.clarifyingQuestions,
+      deps.currentQuestionIndex,
+      deps.focusInputToEnd,
+      deps.generateFinalPromptForTask,
+      deps.getPreferencesToAsk,
+      deps.pendingTask,
+      deps.setActivity,
+      deps.setAnsweringQuestions,
+      deps.setAwaitingQuestionConsent,
+      deps.setClarifyingAnswers,
+      deps.setClarifyingSelectedOptionIndex,
+      deps.setCurrentQuestionIndex,
+      deps.setLastRemovedClarifyingAnswer,
+      deps.setValue,
+      deps.startPreferenceQuestions,
       selectForQuestion,
-      setAnsweringQuestions,
-      setClarifyingAnswers,
-      setClarifyingSelectedOptionIndex,
-      setCurrentQuestionIndex,
-      setActivity,
-      startPreferenceQuestions,
     ]
   )
-
-  const handleClarifyingOptionClick = useCallback(
-    (index: number) => {
-      if (!clarifyingQuestions || !pendingTask) return
-      const current = clarifyingQuestions[currentQuestionIndex]
-      if (!current || !current.options || index < 0 || index >= current.options.length) return
-      const chosen = current.options[index]
-      logFlow('clarifying:option', { questionId: current.id, option: chosen.label, index })
-      setClarifyingSelectedOptionIndex(index)
-      void handleClarifyingAnswer(chosen.label)
-      focusInputToEnd()
-    },
-    [
-      clarifyingQuestions,
-      currentQuestionIndex,
-      focusInputToEnd,
-      handleClarifyingAnswer,
-      pendingTask,
-      setClarifyingSelectedOptionIndex,
-    ]
-  )
-
-  const handleClarifyingSkip = useCallback(() => {
-    if (!clarifyingQuestions || !pendingTask) return
-    const index = currentQuestionIndex
-    if (index < 0 || index >= clarifyingQuestions.length) return
-
-    const question = clarifyingQuestions[index]
-    logFlow('clarifying:skip', { questionId: question.id, index })
-
-    const updated: ClarifyingAnswer[] = [
-      ...clarifyingAnswersRef.current,
-      { questionId: question.id, question: question.question, answer: '' },
-    ]
-    clarifyingAnswersRef.current = updated
-    setClarifyingAnswers(updated, updated.length)
-
-    const nextIndex = index + 1
-    if (nextIndex < clarifyingQuestions.length) {
-      setCurrentQuestionIndex(nextIndex)
-      const nextQuestion = clarifyingQuestions[nextIndex]
-      selectForQuestion(nextQuestion, true)
-      const remaining = Math.max(0, clarifyingQuestions.length - (nextIndex + 1))
-      setActivity({
-        task: pendingTask,
-        stage: 'clarifying',
-        status: 'loading',
-        message: `Clarifying ${nextIndex + 1}/${clarifyingQuestions.length}${remaining ? ` · ${remaining} left` : ''}`,
-        detail: 'Answering these questions improves the quality of your prompt.',
-      })
-      appendClarifyingQuestion(nextQuestion, nextIndex, clarifyingQuestions.length)
-      focusInputToEnd()
-      return
-    }
-
-    setClarifyingSelectedOptionIndex(null)
-    setAnsweringQuestions(false)
-    const prefsToAsk = getPreferencesToAsk()
-    if (prefsToAsk.length > 0) {
-      logFlow('preferences:start_after_skip', { prefsToAsk })
-      void startPreferenceQuestions()
-    } else {
-      void generateFinalPromptForTask(pendingTask, updated)
-    }
-  }, [
-    appendClarifyingQuestion,
-    clarifyingAnswersRef,
-    clarifyingQuestions,
-    currentQuestionIndex,
-    focusInputToEnd,
-    generateFinalPromptForTask,
-    getPreferencesToAsk,
-    pendingTask,
-    selectForQuestion,
-    setActivity,
-    setAnsweringQuestions,
-    setClarifyingAnswers,
-    setClarifyingSelectedOptionIndex,
-    setCurrentQuestionIndex,
-    startPreferenceQuestions,
-  ])
-
-  const handleUndoAnswer = useCallback(() => {
-    if (!clarifyingQuestions || !pendingTask) {
-      return
-    }
-    const answers = clarifyingAnswersRef.current
-    if (!answers.length) {
-      logFlow('clarifying:undo_empty')
-      // Return to mode selection while keeping the typed task.
-      setAnsweringQuestions(false)
-      setAwaitingQuestionConsent(false)
-      setConsentSelectedIndex(null)
-      setClarifyingSelectedOptionIndex(null)
-      setClarifyingQuestions(null)
-      clarifyingAnswersRef.current = []
-      setClarifyingAnswers([], 0)
-      setCurrentQuestionIndex(0)
-      setHasRunInitialTask(false)
-      setValue(pendingTask ?? '')
-      setActivity(null)
-      setTimeout(() => focusInputToEnd(), 0)
-      return
-    }
-    const lastAnswer = answers[answers.length - 1]
-    const nextAnswers = answers.slice(0, -1)
-    clarifyingAnswersRef.current = nextAnswers
-
-    // Return to the just-removed question for editing, showing the saved answer.
-    const targetIndex = Math.max(0, answers.length - 1)
-    const targetQuestion = clarifyingQuestions[targetIndex] ?? null
-
-    setClarifyingSelectedOptionIndex(null)
-    setClarifyingAnswers(nextAnswers, targetIndex)
-    setCurrentQuestionIndex(targetIndex)
-    setAnsweringQuestions(true)
-    setAwaitingQuestionConsent(false)
-    setValue((lastAnswer?.answer ?? '').trim())
-
-    if (targetQuestion) {
-      const remaining = Math.max(0, clarifyingQuestions.length - (targetIndex + 1))
-      setActivity({
-        task: pendingTask ?? '',
-        stage: 'clarifying',
-        status: 'loading',
-        message: `Clarifying ${targetIndex + 1}/${clarifyingQuestions.length}${
-          remaining ? ` · ${remaining} left` : ''
-        }`,
-        detail: 'Answer a few quick questions to sharpen your prompt.',
-      })
-    } else {
-      setActivity(null)
-    }
-
-    logFlow('clarifying:undo', { targetIndex, questionId: targetQuestion?.id })
-    focusInputToEnd()
-  }, [
-    clarifyingAnswersRef,
-    clarifyingQuestions,
-    focusInputToEnd,
-    setValue,
-    pendingTask,
-    setAnsweringQuestions,
-    setAwaitingQuestionConsent,
-    setClarifyingAnswers,
-    setClarifyingSelectedOptionIndex,
-    setConsentSelectedIndex,
-    setCurrentQuestionIndex,
-    setClarifyingQuestions,
-    setHasRunInitialTask,
-    setActivity,
-  ])
 
   return {
     startClarifyingQuestions,

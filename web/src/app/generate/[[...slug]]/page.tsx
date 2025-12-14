@@ -17,9 +17,9 @@ export default async function GeneratePage() {
   const initialPreferences: Preferences = state.preferences
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center">
+    <>
       {/* Background gradient */}
-      <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top,rgba(148,163,184,0.18),transparent_55%),radial-gradient(circle_at_bottom,rgba(37,99,235,0.18),transparent_55%)] opacity-80" />
+      <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top,rgba(148,163,184,0.12),transparent_50%),radial-gradient(circle_at_bottom,rgba(37,99,235,0.12),transparent_50%)] opacity-90" />
       <ErrorBoundary>
         <PromptTerminal
           initialLines={initialLines}
@@ -30,6 +30,6 @@ export default async function GeneratePage() {
           sessionId={state.sessionId}
         />
       </ErrorBoundary>
-    </main>
+    </>
   )
 }

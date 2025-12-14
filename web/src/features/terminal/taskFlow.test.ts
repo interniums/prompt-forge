@@ -14,8 +14,8 @@ import { createTaskFlowHandlers, type TaskFlowDeps } from './taskFlow'
 import { ROLE, MAX_TASK_LENGTH } from '@/lib/constants'
 
 function makeDeps(overrides?: Partial<TaskFlowDeps['state']>): TaskFlowDeps {
-  const appendLine = vi.fn()
   const setValue = vi.fn()
+  const setActivity = vi.fn()
   const advancePreferences = vi.fn()
   const handleCommand = vi.fn()
   const handleQuestionConsent = vi.fn()
@@ -53,6 +53,7 @@ function makeDeps(overrides?: Partial<TaskFlowDeps['state']>): TaskFlowDeps {
     consentSelectedIndex: null,
     answeringQuestions: false,
     clarifyingQuestions: null,
+    clarifyingAnswers: [],
     currentQuestionIndex: 0,
     isAskingPreferenceQuestions: false,
     currentPreferenceQuestionKey: null,
@@ -65,10 +66,9 @@ function makeDeps(overrides?: Partial<TaskFlowDeps['state']>): TaskFlowDeps {
 
   return {
     state,
-    refs: { clarifyingAnswersRef: { current: [] } },
     actions: {
       setValue,
-      appendLine,
+      setActivity,
       handleCommand,
       advancePreferences,
       handleQuestionConsent,
@@ -131,7 +131,7 @@ describe('createTaskFlowHandlers', () => {
     const deps = makeDeps()
     const { handleTask } = createTaskFlowHandlers(deps)
     await handleTask('hi')
-    expect(deps.actions.appendLine).toHaveBeenCalledWith(ROLE.APP, expect.stringContaining('detail'))
+    // Short tasks are now handled heuristically - no minimum length validation
     expect(deps.actions.guardedGenerateFinalPromptForTask).not.toHaveBeenCalled()
   })
 
@@ -139,7 +139,7 @@ describe('createTaskFlowHandlers', () => {
     const deps = makeDeps()
     const { handleTask } = createTaskFlowHandlers(deps)
     await handleTask('a'.repeat(MAX_TASK_LENGTH + 10))
-    expect(deps.actions.appendLine).toHaveBeenCalledWith(ROLE.APP, expect.stringContaining('too long'))
+    // Long tasks are silently rejected
     expect(deps.actions.guardedGenerateFinalPromptForTask).not.toHaveBeenCalled()
   })
 
@@ -152,8 +152,8 @@ describe('createTaskFlowHandlers', () => {
       isRevising: true,
       pendingTask: 'same task',
       clarifyingQuestions,
+      clarifyingAnswers: [{ questionId: 'q1', question: 'Q1', answer: 'A1' }],
     })
-    deps.refs.clarifyingAnswersRef.current = [{ questionId: 'q1', question: 'Q1', answer: 'A1' }]
     const { handleTask } = createTaskFlowHandlers(deps)
 
     await handleTask('same task')
@@ -169,9 +169,9 @@ describe('createTaskFlowHandlers', () => {
     const { handleTask } = createTaskFlowHandlers(deps)
     await handleTask('valid task text')
 
-    expect(deps.actions.appendLine).toHaveBeenCalledWith(ROLE.APP, expect.objectContaining({ title: 'Quick Draft' }))
     expect(deps.actions.guardedGenerateFinalPromptForTask).toHaveBeenCalledWith('valid task text', [], {
       skipConsentCheck: true,
+      allowUnclear: undefined,
     })
     expect(deps.actions.startClarifyingQuestions).not.toHaveBeenCalled()
   })
@@ -181,7 +181,9 @@ describe('createTaskFlowHandlers', () => {
     const { handleTask } = createTaskFlowHandlers(deps)
     await handleTask('valid guided task')
 
-    expect(deps.actions.startClarifyingQuestions).toHaveBeenCalledWith('valid guided task')
+    expect(deps.actions.startClarifyingQuestions).toHaveBeenCalledWith('valid guided task', {
+      allowUnclear: undefined,
+    })
     expect(deps.actions.guardedGenerateFinalPromptForTask).not.toHaveBeenCalled()
   })
 

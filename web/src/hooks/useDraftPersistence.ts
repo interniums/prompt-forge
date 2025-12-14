@@ -54,7 +54,7 @@ export interface DraftState {
   headerHelpShown: boolean
   /** Last approved prompt text, if any */
   lastApprovedPrompt: string | null
-  /** Whether the prompt was liked or disliked */
+  /** Whether the prompt was liked */
   likeState: LikeState
   /** Whether the preferences panel was open */
   isPreferencesOpen: boolean

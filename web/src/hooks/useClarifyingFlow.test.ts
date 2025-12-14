@@ -30,7 +30,6 @@ function createDeps() {
     setClarifyingSelectedOptionIndex: vi.fn(),
     setHasRunInitialTask: vi.fn(),
     setValue: vi.fn(),
-    appendLine: vi.fn(),
     setActivity: vi.fn(),
     showToast: vi.fn(),
     focusInputToEnd: vi.fn(),

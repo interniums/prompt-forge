@@ -12,8 +12,7 @@ import type {
   TaskActivity,
 } from '@/lib/types'
 import type { PreferenceKey, SessionSnapshot } from '@/features/terminal/terminalState'
-import { ROLE, MESSAGE, type TerminalRole } from '@/lib/constants'
-import type { TerminalStatus } from '@/lib/types'
+import { ROLE, MESSAGE } from '@/lib/constants'
 
 type SnapshotDeps = {
   lines: TerminalLine[]
@@ -39,7 +38,6 @@ type SnapshotDeps = {
   preferenceSelectedOptionIndex: number | null
   pendingPreferenceUpdates: Partial<Preferences>
   lastSnapshot: SessionSnapshot | null
-  appendLine: (role: TerminalRole, text: string | TerminalStatus) => void
   setLines: (next: TerminalLine[]) => void
   setActivity: (value: TaskActivity | null) => void
   setEditablePrompt: (value: string | null) => void
@@ -62,7 +60,7 @@ type SnapshotDeps = {
   setCurrentPreferenceQuestionKey: (value: PreferenceKey | null) => void
   setPreferenceSelectedOptionIndex: (value: number | null) => void
   setPendingPreferenceUpdates: (value: Partial<Preferences>) => void
-  setLikeState: (value: 'none' | 'liked' | 'disliked') => void
+  setLikeState: (value: 'none' | 'liked') => void
   setLastHistory: (value: HistoryItem[] | null) => void
   setLastSnapshot: (value: SessionSnapshot | null) => void
   setValue: (value: string) => void
@@ -94,7 +92,6 @@ export function useTerminalSnapshots(deps: SnapshotDeps) {
     preferenceSelectedOptionIndex,
     pendingPreferenceUpdates,
     lastSnapshot,
-    appendLine,
     setLines,
     setActivity,
     setEditablePrompt,
@@ -148,7 +145,6 @@ export function useTerminalSnapshots(deps: SnapshotDeps) {
       currentPreferenceQuestionKey,
       preferenceSelectedOptionIndex,
       pendingPreferenceUpdates,
-      promptEditDiff,
     })
   }, [
     answeringQuestions,
@@ -217,14 +213,18 @@ export function useTerminalSnapshots(deps: SnapshotDeps) {
     setPendingTask(null)
     setHasRunInitialTask(false)
     resetClarifyingFlowState()
+    clarifyingAnswersRef.current = [] // Clear the ref as well
     setLastHistory(null)
     setLastApprovedPrompt(null)
     setPreferenceSelectedOptionIndex(null)
     setPendingPreferenceUpdates({})
     setIsAskingPreferenceQuestions(false)
     setCurrentPreferenceQuestionKey(null)
+    setLikeState('none')
+    setValue('') // Clear input value
     clearDraft()
   }, [
+    clarifyingAnswersRef,
     clearDraft,
     setPromptEditDiff,
     setActivity,
@@ -238,15 +238,18 @@ export function useTerminalSnapshots(deps: SnapshotDeps) {
     setLastApprovedPrompt,
     setLastHistory,
     setLastSnapshot,
+    setLikeState,
     setLines,
     setPendingPreferenceUpdates,
     setPendingTask,
     setPreferenceSelectedOptionIndex,
     setHeaderHelpShown,
+    setValue,
   ])
 
   const handleStartNewConversation = useCallback(() => {
     saveSnapshot()
+    setHeaderHelpShown(false)
     setActivity(null)
     setLines([])
     setEditablePrompt(null)
@@ -256,28 +259,41 @@ export function useTerminalSnapshots(deps: SnapshotDeps) {
     setPendingTask(null)
     setHasRunInitialTask(false)
     resetClarifyingFlowState()
+    clarifyingAnswersRef.current = [] // Clear the ref as well
     setLastHistory(null)
     setLastApprovedPrompt(null)
     setLikeState('none')
+    // Reset preference flow state
+    setPreferenceSelectedOptionIndex(null)
+    setPendingPreferenceUpdates({})
+    setIsAskingPreferenceQuestions(false)
+    setCurrentPreferenceQuestionKey(null)
+    setValue('') // Clear input value
   }, [
+    clarifyingAnswersRef,
     resetClarifyingFlowState,
     saveSnapshot,
     setActivity,
+    setCurrentPreferenceQuestionKey,
     setEditablePrompt,
     setPromptEditDiff,
     setHasRunInitialTask,
+    setHeaderHelpShown,
+    setIsAskingPreferenceQuestions,
     setIsPromptEditable,
     setIsPromptFinalized,
     setLastApprovedPrompt,
     setLastHistory,
     setLines,
+    setPendingPreferenceUpdates,
     setPendingTask,
+    setPreferenceSelectedOptionIndex,
     setLikeState,
+    setValue,
   ])
 
   const handleRestore = useCallback(() => {
     if (!lastSnapshot) {
-      appendLine(ROLE.APP, 'Nothing to restore yet.')
       return
     }
 
@@ -306,7 +322,6 @@ export function useTerminalSnapshots(deps: SnapshotDeps) {
     }
     setLastSnapshot(null)
   }, [
-    appendLine,
     clarifyingAnswersRef,
     lastSnapshot,
     setAnsweringQuestions,
@@ -335,26 +350,14 @@ export function useTerminalSnapshots(deps: SnapshotDeps) {
   const handleHistory = useCallback(
     (items: HistoryItem[]) => {
       setLastHistory(items)
-
-      if (!items.length) {
-        appendLine(ROLE.APP, 'No history yet for this session.')
-        return
-      }
-
-      appendLine(ROLE.APP, 'History (most recent first):')
-      items.forEach((item, index) => {
-        const shortTask = item.task.length > 80 ? `${item.task.slice(0, 77)}...` : item.task
-        appendLine(ROLE.APP, `#${index + 1} — ${item.label} — ${shortTask}`)
-      })
     },
-    [appendLine, setLastHistory]
+    [setLastHistory]
   )
 
   const handleUseFromHistory = useCallback(
     (index: number, items: HistoryItem[]) => {
       const item = items[index]
       if (!item) {
-        appendLine(ROLE.APP, `No history item found for #${index + 1}.`)
         return
       }
       setPendingTask(item.task)
@@ -373,12 +376,8 @@ export function useTerminalSnapshots(deps: SnapshotDeps) {
       clarifyingAnswersRef.current = []
       setClarifyingAnswers([], 0)
       setValue(item.task)
-      appendLine(ROLE.APP, `Loaded task #${index + 1} from history into the input.`)
-      appendLine(ROLE.USER, item.task)
-      appendLine(ROLE.APP, `Restored prompt (${item.label}):\n\n${item.body}`)
     },
     [
-      appendLine,
       clarifyingAnswersRef,
       setAnsweringQuestions,
       setAwaitingQuestionConsent,

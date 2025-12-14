@@ -11,20 +11,27 @@ export type TerminalHeaderProps = {
 }
 
 const headerButtonClass =
-  'group inline-flex h-8 w-8 items-center justify-center cursor-pointer rounded-lg border border-slate-700/80 bg-slate-950 text-slate-200 shadow-[0_4px_12px_rgba(0,0,0,0.18)] transition hover:border-slate-500 hover:text-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-1 focus-visible:ring-offset-slate-950'
+  'group inline-flex h-9 w-9 items-center justify-center cursor-pointer rounded-full text-slate-400 transition hover:bg-slate-800/50 hover:text-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950'
 
 const themeOrder: ThemeName[] = ['light', 'dim', 'dark']
 
 export function TerminalHeader({ onProfileClick, onSettingsClick, theme, onThemeChange }: TerminalHeaderProps) {
   return (
-    <div className="flex flex-col gap-2 text-[13px] text-slate-400 sm:flex-row sm:items-center sm:justify-between pt-4 px-4 z-10 pb-4">
-      <div className="flex items-center gap-1.5">
-        <span className="h-2.5 w-2.5 rounded-full bg-red-500" />
-        <span className="h-2.5 w-2.5 rounded-full bg-amber-400" />
-        <span className="h-2.5 w-2.5 rounded-full bg-green-500" />
-      </div>
+    <header className="flex items-center justify-between px-4 py-3 sm:px-6">
+      {/* Logo / Brand */}
       <div className="flex items-center gap-2">
-        <div className="flex items-center gap-1 rounded-lg border border-slate-700/80 bg-transparent px-2 py-1 shadow-[0_4px_12px_rgba(0,0,0,0.18)]">
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-linear-to-br from-emerald-500 to-cyan-500">
+          <svg className="h-4 w-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+          </svg>
+        </div>
+        <span className="text-lg font-semibold text-slate-100 hidden sm:block">PromptForge</span>
+      </div>
+
+      {/* Controls */}
+      <div className="flex items-center gap-1">
+        {/* Theme switcher */}
+        <div className="flex items-center gap-0.5 rounded-full bg-slate-800/40 p-1">
           {themeOrder.map((option) => {
             const isActive = option === theme
             const label = option === 'light' ? 'Light' : option === 'dim' ? 'Dim' : 'Dark'
@@ -33,10 +40,8 @@ export function TerminalHeader({ onProfileClick, onSettingsClick, theme, onTheme
                 key={option}
                 type="button"
                 onClick={() => onThemeChange(option)}
-                className={`flex h-6 w-6 items-center justify-center rounded-md text-[11px] font-semibold transition cursor-pointer ${
-                  isActive
-                    ? 'bg-transparent text-slate-100 ring-1 ring-slate-400/70'
-                    : 'bg-transparent text-slate-400 hover:text-slate-100'
+                className={`flex h-7 w-7 items-center justify-center rounded-full transition cursor-pointer ${
+                  isActive ? 'bg-slate-700 text-slate-100 shadow-sm' : 'text-slate-500 hover:text-slate-300'
                 }`}
                 aria-label={`Switch to ${label} theme`}
               >
@@ -47,8 +52,10 @@ export function TerminalHeader({ onProfileClick, onSettingsClick, theme, onTheme
             )
           })}
         </div>
+
+        {/* Settings */}
         <button type="button" onClick={onSettingsClick} className={headerButtonClass} title="Preferences">
-          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+          <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
             <path
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -57,8 +64,10 @@ export function TerminalHeader({ onProfileClick, onSettingsClick, theme, onTheme
             <circle cx="12" cy="12" r="3" />
           </svg>
         </button>
+
+        {/* Profile */}
         <button type="button" onClick={onProfileClick} className={headerButtonClass} title="User profile">
-          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
             <path
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -67,6 +76,6 @@ export function TerminalHeader({ onProfileClick, onSettingsClick, theme, onTheme
           </svg>
         </button>
       </div>
-    </div>
+    </header>
   )
 }

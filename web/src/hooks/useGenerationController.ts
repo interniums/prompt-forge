@@ -4,8 +4,8 @@ import { useCallback, useRef, useEffect } from 'react'
 import { generateFinalPrompt, editPrompt } from '@/services/promptService'
 import { recordGeneration } from '@/services/historyService'
 import { recordEvent } from '@/services/eventsService'
-import { MESSAGE, ROLE } from '@/lib/constants'
-import type { ClarifyingAnswer, Preferences, TerminalStatus, TaskActivity } from '@/lib/types'
+import { MESSAGE } from '@/lib/constants'
+import type { ClarifyingAnswer, Preferences, TaskActivity } from '@/lib/types'
 
 type GenDeps = {
   preferences: Preferences
@@ -21,7 +21,6 @@ type GenDeps = {
   setPendingTask: (value: string | null) => void
   setLoginRequiredOpen: (value: boolean) => void
   setActivity: (activity: TaskActivity | null) => void
-  appendLine: (role: (typeof ROLE)[keyof typeof ROLE], text: string | TerminalStatus) => void
   showToast: (msg: string) => void
   user: { id: string; email?: string | null } | null
   awaitingQuestionConsent: boolean
@@ -48,7 +47,6 @@ export function useGenerationController({
   setPendingTask,
   setLoginRequiredOpen,
   setActivity,
-  appendLine,
   showToast,
   user,
   awaitingQuestionConsent,
@@ -304,10 +302,6 @@ export function useGenerationController({
         setIsPromptFinalized(false)
         setLastApprovedPrompt(null)
 
-        if (finalPrompt === previousPrompt) {
-          appendLine(ROLE.APP, 'The AI could not apply your edit; the prompt is unchanged. Try again or edit manually.')
-        }
-
         void recordGeneration({
           task: pendingTask ?? 'Edited prompt',
           prompt: {
@@ -379,7 +373,6 @@ export function useGenerationController({
       setIsPromptEditable,
       setIsPromptFinalized,
       setLastApprovedPrompt,
-      appendLine,
       showToast,
     ]
   )

@@ -3,7 +3,6 @@
 import React from 'react'
 import dynamic from 'next/dynamic'
 import { TerminalInputBar } from '@/components/terminal/TerminalInputBar'
-import { terminalMainSurfaceClass } from './styles'
 
 const TerminalOutputAreaLazy = dynamic(
   () => import('@/components/terminal/TerminalOutputArea').then((m) => m.TerminalOutputArea),
@@ -20,6 +19,7 @@ type TerminalMainProps = {
     value: string
     onChange: (value: string) => void
     onKeyDown: (event: React.KeyboardEvent<HTMLTextAreaElement> | KeyboardEvent) => void
+    onFocus?: () => void
     placeholder: string
     inputRef: React.RefObject<HTMLTextAreaElement | null>
     disabled: boolean
@@ -29,8 +29,14 @@ type TerminalMainProps = {
   onSubmit: () => void
   onStop: () => void
   isGenerating: boolean
-  onVoiceClick?: () => void
-  voiceAvailable?: boolean
+  /** Called when mic button is clicked while NOT listening (to start) */
+  onVoiceStart?: () => void
+  /** Called when stop button is clicked while listening (to stop) */
+  onVoiceStop?: () => void
+  /** Whether voice input is currently active (listening) */
+  isVoiceListening?: boolean
+  /** Whether voice input is supported in this browser */
+  voiceSupported?: boolean
 }
 
 export function TerminalMain({
@@ -40,34 +46,43 @@ export function TerminalMain({
   onSubmit,
   onStop,
   isGenerating,
-  onVoiceClick,
-  voiceAvailable = true,
+  onVoiceStart,
+  onVoiceStop,
+  isVoiceListening = false,
+  voiceSupported = true,
 }: TerminalMainProps) {
   return (
-    <form onSubmit={onFormSubmit} className="relative flex-1 text-sm">
-      <div className={terminalMainSurfaceClass}>
-        <div className="mx-2">
-          <div className="border-t border-slate-600" aria-hidden="true" />
-        </div>
-        <div className="flex min-h-0 flex-1 flex-col rounded-2xl">
-          <TerminalOutputAreaLazy {...outputProps} />
-          <div className="border-t border-slate-600 bg-slate-950 pt-3 px-2 rounded-b-2xl mx-2">
-            <TerminalInputBar
-              value={inputProps.value}
-              onChange={inputProps.onChange}
-              onKeyDown={inputProps.onKeyDown}
-              placeholder={inputProps.placeholder}
-              inputRef={inputProps.inputRef}
-              disabled={inputProps.disabled}
-              isGenerating={isGenerating}
-              onSubmit={onSubmit}
-              onStop={onStop}
-              onVoiceClick={onVoiceClick}
-              voiceAvailable={voiceAvailable}
-              onBack={inputProps.onBack}
-              showBack={inputProps.showBack}
-            />
-          </div>
+    <form onSubmit={onFormSubmit} className="relative h-full flex flex-col">
+      {/* Scrollable content area - content scrolls behind header and input */}
+      <div className="flex-1 overflow-hidden">
+        <TerminalOutputAreaLazy {...outputProps} />
+      </div>
+
+      {/* Input bar - fixed at bottom, centered, floating, content scrolls behind */}
+      <div className="fixed bottom-0 left-0 right-0 z-20 flex justify-center pointer-events-none">
+        {/* Fade gradient overlay to hide content below input */}
+        <div className="absolute bottom-0 left-0 right-0 h-32 input-bar-gradient pointer-events-none" />
+        {/* Bottom safe area - blocks scroll behind this zone */}
+        <div className="absolute bottom-0 left-0 right-0 h-6 bg-transparent" />
+        <div className="pointer-events-auto w-full max-w-2xl pb-6 px-4 relative z-10">
+          <TerminalInputBar
+            value={inputProps.value}
+            onChange={inputProps.onChange}
+            onKeyDown={inputProps.onKeyDown}
+            onFocus={inputProps.onFocus}
+            placeholder={inputProps.placeholder}
+            inputRef={inputProps.inputRef}
+            disabled={inputProps.disabled}
+            isGenerating={isGenerating}
+            onSubmit={onSubmit}
+            onStop={onStop}
+            onVoiceStart={onVoiceStart}
+            onVoiceStop={onVoiceStop}
+            isVoiceListening={isVoiceListening}
+            voiceSupported={voiceSupported}
+            onBack={inputProps.onBack}
+            showBack={inputProps.showBack}
+          />
         </div>
       </div>
     </form>

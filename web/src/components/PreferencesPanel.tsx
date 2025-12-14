@@ -16,6 +16,7 @@ import {
   AUDIO_MODEL_OPTIONS,
   LANGUAGE_SELECT_OPTIONS,
   EXAMPLES_PREFERENCE_OPTIONS,
+  VOICE_LANGUAGE_OPTIONS,
 } from '@/lib/constants'
 import type {
   GenerationMode,
@@ -485,6 +486,20 @@ export function PreferencesPanel({
                     </p>
                   </div>
                 </label>
+
+                <PreferenceSelectField
+                  label="Voice input language"
+                  description="Language for voice recognition (mic button)"
+                  value={uiDefaults.voiceLanguage ?? 'auto'}
+                  placeholder="Auto (browser)"
+                  options={VOICE_LANGUAGE_OPTIONS}
+                  showClear={(uiDefaults.voiceLanguage ?? 'auto') !== 'auto'}
+                  onChange={(value) => {
+                    const next = value || 'auto'
+                    updateUiDefaults({ voiceLanguage: next })
+                  }}
+                  onClear={() => updateUiDefaults({ voiceLanguage: 'auto' })}
+                />
               </div>
 
               <div className="xl:col-span-2">

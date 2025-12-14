@@ -1,10 +1,11 @@
 'use client'
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import React from 'react'
 import { useTerminalSnapshots } from '@/hooks/useTerminalSnapshots'
 import { ROLE, MESSAGE } from '@/lib/constants'
 import { renderHook, act } from '@testing-library/react'
+import type { ClarifyingAnswer } from '@/lib/types'
+import type { SessionSnapshot } from '@/features/terminal/terminalState'
 
 type Mutable<T> = {
   [K in keyof T]: T[K]
@@ -16,10 +17,12 @@ function createState() {
       { id: 0, role: ROLE.SYSTEM, text: MESSAGE.WELCOME },
       { id: 1, role: ROLE.USER, text: 'Task' },
     ],
+    activity: null,
     editablePrompt: 'prompt',
+    promptEditDiff: null,
     pendingTask: 'task',
     clarifyingQuestions: null,
-    clarifyingAnswersRef: { current: [] as any[] },
+    clarifyingAnswersRef: { current: [] as ClarifyingAnswer[] },
     currentQuestionIndex: 0,
     answeringQuestions: false,
     awaitingQuestionConsent: false,
@@ -35,7 +38,7 @@ function createState() {
     currentPreferenceQuestionKey: null,
     preferenceSelectedOptionIndex: null,
     pendingPreferenceUpdates: {},
-    lastSnapshot: null as any,
+    lastSnapshot: null as SessionSnapshot | null,
   }
 }
 
@@ -85,7 +88,10 @@ function createActions(state: Mutable<ReturnType<typeof createState>>) {
     setValue: vi.fn(),
     clearDraft: vi.fn(),
     resetClarifyingFlowState: vi.fn(),
-    appendLine: vi.fn(),
+    setActivity: vi.fn(),
+    setPromptEditDiff: vi.fn((val) => {
+      state.promptEditDiff = val
+    }),
   }
 }
 

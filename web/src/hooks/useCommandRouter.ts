@@ -1,109 +1,30 @@
 'use client'
 
 import { useCallback } from 'react'
-import { COMMAND, ROLE, type TerminalRole } from '@/lib/constants'
+import { COMMAND } from '@/lib/constants'
 import { recordEvent } from '@/services/eventsService'
-import type { TerminalStatus } from '@/lib/types'
 
 type CommandDeps = {
-  editablePrompt: string | null
-  handleHelpCommand: () => void
-  handleClear: () => void
-  handleRestore: () => void
   handleDiscard: () => void
-  handleHistory: () => void
-  handleUseFromHistory: (index: number) => void
-  handleEditPrompt: (instructions: string) => void
-  startPreferencesFlow: () => void
-  appendLine: (role: TerminalRole, text: string | TerminalStatus) => void
 }
 
-export function useCommandRouter({
-  editablePrompt,
-  handleHelpCommand,
-  handleClear,
-  handleRestore,
-  handleDiscard,
-  handleHistory,
-  handleUseFromHistory,
-  handleEditPrompt,
-  startPreferencesFlow,
-  appendLine,
-}: CommandDeps) {
+export function useCommandRouter({ handleDiscard }: CommandDeps) {
   const handleCommand = useCallback(
     (line: string) => {
-      const parts = line.trim().split(/\s+/)
-      const [command, ...rest] = parts
+      const command = line.trim().split(/\s+/)[0]
       void recordEvent('command', { command: line.trim() })
 
       switch (command) {
-        case COMMAND.HELP: {
-          handleHelpCommand()
-          return
-        }
-        case COMMAND.PREFERENCES: {
-          startPreferencesFlow()
-          return
-        }
-        case COMMAND.CLEAR: {
-          handleClear()
-          return
-        }
-        case COMMAND.RESTORE: {
-          handleRestore()
-          return
-        }
         case COMMAND.DISCARD: {
           handleDiscard()
           return
         }
-        case COMMAND.HISTORY: {
-          void handleHistory()
-          return
-        }
-        case COMMAND.USE: {
-          const arg = rest[0]
-          const index = Number(arg)
-          if (!arg || Number.isNaN(index)) {
-            appendLine(ROLE.APP, `Usage: ${COMMAND.USE} <number>. Use ${COMMAND.HISTORY} to see entries.`)
-            return
-          }
-          handleUseFromHistory(index)
-          return
-        }
-        case COMMAND.EDIT: {
-          const instructions = rest.join(' ')
-          if (!instructions.trim()) {
-            appendLine(
-              ROLE.APP,
-              `Usage: ${COMMAND.EDIT} <how you want the current prompt changed> (for example: "shorter", "for a CTO").`
-            )
-            return
-          }
-          if (!editablePrompt) {
-            appendLine(ROLE.APP, 'There is no prompt to edit yet. Generate one first.')
-            return
-          }
-          handleEditPrompt(instructions.trim())
-          return
-        }
         default: {
-          appendLine(ROLE.APP, `Unknown command: ${command}. Type ${COMMAND.HELP} to see what you can do.`)
+          // Unknown command - silently ignored
         }
       }
     },
-    [
-      appendLine,
-      editablePrompt,
-      handleClear,
-      handleDiscard,
-      handleEditPrompt,
-      handleHelpCommand,
-      handleHistory,
-      handleRestore,
-      handleUseFromHistory,
-      startPreferencesFlow,
-    ]
+    [handleDiscard]
   )
 
   return { handleCommand }

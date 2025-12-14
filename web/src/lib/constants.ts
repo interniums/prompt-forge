@@ -16,16 +16,7 @@ export type TerminalRole = (typeof ROLE)[keyof typeof ROLE]
 
 /** Slash commands recognized by the terminal */
 export const COMMAND = {
-  HELP: '/help',
-  PREFERENCES: '/preferences',
-  CLEAR: '/clear',
-  RESTORE: '/restore',
   DISCARD: '/discard',
-  HISTORY: '/history',
-  USE: '/use',
-  EDIT: '/edit',
-  BACK: '/back',
-  REVISE: '/revise',
 } as const
 
 export type Command = (typeof COMMAND)[keyof typeof COMMAND]
@@ -162,6 +153,36 @@ export const EXAMPLES_PREFERENCE_OPTIONS = [
   { value: 'none', label: 'No examples' },
   { value: 'one', label: 'One example' },
   { value: 'few', label: 'A few examples' },
+] as const
+
+/**
+ * Voice input language options (BCP 47 language tags).
+ * 'auto' means use browser's navigator.language.
+ */
+export const VOICE_LANGUAGE_OPTIONS = [
+  { value: 'auto', label: 'Auto (browser language)' },
+  { value: 'en-US', label: 'English (US)' },
+  { value: 'en-GB', label: 'English (UK)' },
+  { value: 'uk-UA', label: 'Ukrainian' },
+  { value: 'es-ES', label: 'Spanish (Spain)' },
+  { value: 'es-MX', label: 'Spanish (Mexico)' },
+  { value: 'fr-FR', label: 'French' },
+  { value: 'de-DE', label: 'German' },
+  { value: 'it-IT', label: 'Italian' },
+  { value: 'pt-BR', label: 'Portuguese (Brazil)' },
+  { value: 'pt-PT', label: 'Portuguese (Portugal)' },
+  { value: 'ru-RU', label: 'Russian' },
+  { value: 'pl-PL', label: 'Polish' },
+  { value: 'nl-NL', label: 'Dutch' },
+  { value: 'ja-JP', label: 'Japanese' },
+  { value: 'ko-KR', label: 'Korean' },
+  { value: 'zh-CN', label: 'Chinese (Simplified)' },
+  { value: 'zh-TW', label: 'Chinese (Traditional)' },
+  { value: 'ar-SA', label: 'Arabic' },
+  { value: 'hi-IN', label: 'Hindi' },
+  { value: 'tr-TR', label: 'Turkish' },
+  { value: 'vi-VN', label: 'Vietnamese' },
+  { value: 'th-TH', label: 'Thai' },
 ] as const
 
 export const CREATIVITY_PRESET_OPTIONS = [

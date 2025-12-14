@@ -1,28 +1,31 @@
 'use client'
 
 import { useEffect, useRef, useState, useCallback, useLayoutEffect, useMemo } from 'react'
-import { listHistory } from '@/services/historyService'
 import { recordEvent } from '@/services/eventsService'
-import { TerminalHeader } from './terminal/TerminalHeader'
 import { useToast } from '@/hooks/useToast'
+import { useVoiceRecognition } from '@/hooks/useVoiceRecognition'
 import { clearDraft } from '@/hooks/useDraftPersistence'
-import { ROLE, COMMAND, MESSAGE, type TerminalRole } from '@/lib/constants'
+import { MESSAGE } from '@/lib/constants'
 import { DEFAULT_THEME } from '@/lib/constants'
-import { TerminalShellView } from '@/features/terminal/TerminalShellView'
-import { TerminalPanels } from '@/features/terminal/TerminalPanels'
-import { TerminalMain } from '@/features/terminal/TerminalMain'
-import { appendHelpText, formatPreferencesSummary } from '@/features/terminal/terminalText'
-import { useTerminalSnapshotsController } from '@/hooks/useTerminalSnapshotsController'
+
 import { usePreferencesController } from '@/hooks/usePreferencesController'
-import { useClarifyingFlow } from '@/hooks/useClarifyingFlow'
-import { usePreferenceQuestions } from '@/hooks/usePreferenceQuestions'
 import { useTerminalPersistence } from '@/hooks/useTerminalPersistence'
 import { useTerminalHotkeys } from '@/hooks/useTerminalHotkeys'
+import { useUnclearTask } from '@/features/terminal/hooks/useUnclearTask'
 import { useTerminalFocus } from '@/hooks/useTerminalFocus'
 import { useGenerationController } from '@/hooks/useGenerationController'
 import { useCommandRouter } from '@/hooks/useCommandRouter'
-import { createTaskFlowHandlers } from '@/features/terminal/taskFlow'
-import { createModeController } from '@/features/terminal/modeController'
+import { UnclearTaskModal } from '@/features/terminal/UnclearTaskModal'
+import { VoiceLanguageModal, resolveVoiceLanguage } from '@/features/terminal/VoiceLanguageModal'
+import { useTaskFlowHandlers } from '@/features/terminal/hooks/useTaskFlowHandlers'
+import { useTerminalNav } from '@/features/terminal/hooks/useTerminalNav'
+import { usePromptControls } from '@/features/terminal/hooks/usePromptControls'
+import { useClarifyingPreferenceFlows } from '@/features/terminal/hooks/useClarifyingPreferenceFlows'
+import { useClarifyingHistory } from '@/features/terminal/hooks/useClarifyingHistory'
+import { useTerminalChrome } from '@/features/terminal/hooks/useTerminalChrome'
+import { useTerminalLayout } from '@/features/terminal/hooks/useTerminalLayout'
+import { useTerminalHistory } from '@/features/terminal/hooks/useTerminalHistory'
+import { useTerminalOutputProps } from '@/features/terminal/hooks/useTerminalOutputProps'
 import {
   TerminalStateProvider,
   useTerminalState,
@@ -33,7 +36,6 @@ import {
 } from '@/features/terminal/terminalState'
 import {
   setInput,
-  appendLines,
   replaceLines,
   setGenerating as setGeneratingAction,
   setPendingTask as setPendingTaskAction,
@@ -74,10 +76,10 @@ import type {
   PreferenceSource,
   UserIdentity,
   GenerationMode,
-  TerminalStatus,
   TaskActivity,
   ThemeName,
 } from '@/lib/types'
+import { createModeController } from '@/features/terminal/modeController'
 
 // Re-export types for external consumers
 export type { TerminalLine, Preferences }
@@ -153,17 +155,30 @@ function PromptTerminalInner({
     lastSnapshot,
   } = state
 
-  const { message: toastMessage, showToast } = useToast()
+  const { toast, showToast, showTypedToast, hideToast } = useToast()
+  const toastMessage = toast?.text ?? null
+  const toastType = toast?.type
   // Initialize clarifying answers from saved draft if available
   const clarifyingAnswersRef = useRef<ClarifyingAnswer[]>([])
-  const lastRemovedClarifyingAnswerRef = useRef<{ questionId: string | null; answer: string | null }>({
-    questionId: null,
-    answer: null,
-  })
+  // Track the last removed answer for display when backing to a question
+  const [lastRemovedClarifyingAnswer, setLastRemovedClarifyingAnswer] = useState<{
+    questionId: string | null
+    answer: string | null
+  }>({ questionId: null, answer: null })
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const editablePromptRef = useRef<HTMLDivElement | null>(null)
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
-  const clarifyingRunIdRef = useRef(0)
+  const startClarifyingQuestionsRef = useRef<
+    ((task: string, options?: { allowUnclear?: boolean }) => Promise<void>) | null
+  >(null)
+  const guardedGenerateFinalPromptForTaskRef = useRef<
+    | ((
+        task: string,
+        answers: ClarifyingAnswer[],
+        options?: { skipConsentCheck?: boolean; allowUnclear?: boolean }
+      ) => Promise<void>)
+    | null
+  >(null)
   const {
     preferences,
     preferenceSource,
@@ -181,28 +196,7 @@ function PromptTerminalInner({
   })
   const [preferencesStep, setPreferencesStep] = useState<PreferencesStep>(null)
   const [isRevising, setIsRevising] = useState(false)
-  const [unclearTaskModal, setUnclearTaskModal] = useState<{
-    reason: string
-    stage: 'clarifying' | 'generating'
-    task: string
-    pendingAnswers?: ClarifyingAnswer[]
-  } | null>(null)
-  const unclearOverrideRef = useRef(false)
-  const [allowUnclearFlag, setAllowUnclearFlag] = useState(false)
-  const unclearButtonRefs = useRef<Array<HTMLButtonElement | null>>([])
-  const startClarifyingQuestionsRef = useRef<
-    ((task: string, options?: { allowUnclear?: boolean }) => Promise<void>) | null
-  >(null)
-  const guardedGenerateFinalPromptForTaskRef = useRef<
-    | ((
-        task: string,
-        answers: ClarifyingAnswer[],
-        options?: { skipConsentCheck?: boolean; allowUnclear?: boolean }
-      ) => Promise<void>)
-    | null
-  >(null)
-  const clarifyingAnswerHistoryRef = useRef<Record<string, string>>({})
-  const [clarifyingAnswerHistory, setClarifyingAnswerHistory] = useState<Record<string, string>>({})
+  const { clarifyingAnswerHistory } = useClarifyingHistory(clarifyingAnswers)
   const activeSessionId = initialSessionId ?? null
   const activeUserId = user?.id ?? null
   const setIsAskingPreferenceQuestions = useCallback(
@@ -259,18 +253,97 @@ function PromptTerminalInner({
     clarifyingAnswersRef.current = clarifyingAnswers
   }, [clarifyingAnswers])
 
-  useEffect(() => {
-    if (unclearTaskModal) {
-      const firstButton = unclearButtonRefs.current[0]
-      if (firstButton) {
-        firstButton.focus()
-      }
-    } else {
-      unclearButtonRefs.current = []
-    }
-  }, [unclearTaskModal])
-
   const setValue = useCallback((next: string) => dispatch(setInput(next)), [dispatch])
+
+  // Voice language modal state - shown on first mic use if language not configured
+  const [isVoiceLanguageModalOpen, setIsVoiceLanguageModalOpen] = useState(false)
+
+  // Get voice language from preferences (or 'auto' as default)
+  const configuredVoiceLanguage = preferences.uiDefaults?.voiceLanguage ?? 'auto'
+  const resolvedVoiceLanguage = resolveVoiceLanguage(configuredVoiceLanguage)
+
+  // Voice recognition integration - appends transcribed text to input
+  const handleVoiceResult = useCallback(
+    (transcript: string) => {
+      // Append the voice transcript to current input value
+      const currentValue = state.inputValue
+      const separator = currentValue.trim() ? ' ' : ''
+      setValue(currentValue + separator + transcript)
+      // Focus input after voice result
+      inputRef.current?.focus()
+    },
+    [setValue, state.inputValue]
+  )
+
+  const handleVoiceError = useCallback(
+    (error: string, message?: string) => {
+      if (error === 'permission-denied') {
+        showTypedToast(message ?? 'Microphone access denied', 'error')
+      } else if (error === 'not-supported') {
+        showTypedToast('Voice input not supported in this browser', 'error')
+      } else if (error !== 'aborted' && error !== 'no-speech') {
+        // Don't show toast for user-aborted or no-speech (silent failures)
+        showTypedToast(message ?? 'Voice input error', 'error')
+      }
+    },
+    [showTypedToast]
+  )
+
+  const {
+    isSupported: voiceSupported,
+    isListening: isVoiceListening,
+    startListening: rawStartVoiceListening,
+    stopListening: stopVoiceListening,
+  } = useVoiceRecognition({
+    language: resolvedVoiceLanguage,
+    onResult: handleVoiceResult,
+    onError: handleVoiceError,
+  })
+
+  // Check if we should show language modal on first mic use
+  const hasAskedVoiceLanguage = useCallback(() => {
+    if (typeof window === 'undefined') return true
+    // If user has explicitly set a language in preferences, don't ask
+    if (configuredVoiceLanguage !== 'auto') return true
+    // Check localStorage flag
+    return localStorage.getItem('pf_voice_language_asked') === 'true'
+  }, [configuredVoiceLanguage])
+
+  // Wrapped start listening that shows modal on first use
+  const startVoiceListening = useCallback(() => {
+    if (!hasAskedVoiceLanguage()) {
+      setIsVoiceLanguageModalOpen(true)
+      return
+    }
+    rawStartVoiceListening()
+  }, [hasAskedVoiceLanguage, rawStartVoiceListening])
+
+  // Handle voice language modal confirm
+  const handleVoiceLanguageConfirm = useCallback(
+    (language: string) => {
+      // Save to localStorage so we don't ask again
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('pf_voice_language_asked', 'true')
+      }
+      // Update preferences with the selected language
+      if (language !== 'auto') {
+        updatePreferencesLocally({
+          ...preferences,
+          uiDefaults: { ...preferences.uiDefaults, voiceLanguage: language },
+        })
+      }
+      setIsVoiceLanguageModalOpen(false)
+      // Start listening immediately - must be in user gesture context (click handler)
+      // Chrome requires Speech Recognition to start directly from user interaction
+      rawStartVoiceListening()
+    },
+    [preferences, rawStartVoiceListening, updatePreferencesLocally]
+  )
+
+  // Handle voice language modal dismiss
+  const handleVoiceLanguageDismiss = useCallback(() => {
+    setIsVoiceLanguageModalOpen(false)
+  }, [])
 
   const setLines = useCallback(
     (next: TerminalLine[] | ((prev: TerminalLine[]) => TerminalLine[])) => {
@@ -281,112 +354,6 @@ function PromptTerminalInner({
   )
 
   const setActivity = useCallback((next: TaskActivity | null) => dispatch(setActivityAction(next)), [dispatch])
-
-  const handleUnclearTask = useCallback(
-    (info: {
-      reason: string
-      stage: 'clarifying' | 'generating'
-      task: string
-      pendingAnswers?: ClarifyingAnswer[]
-    }) => {
-      const pendingAnswers = info.pendingAnswers ?? clarifyingAnswersRef.current
-      if (unclearOverrideRef.current) {
-        if (info.stage === 'clarifying') {
-          void startClarifyingQuestionsRef.current?.(info.task, { allowUnclear: true })
-        } else {
-          void guardedGenerateFinalPromptForTaskRef.current?.(info.task, pendingAnswers ?? [], {
-            allowUnclear: true,
-            skipConsentCheck: true,
-          })
-        }
-        return
-      }
-
-      setUnclearTaskModal({
-        reason: info.reason,
-        stage: info.stage,
-        task: info.task,
-        pendingAnswers,
-      })
-
-      if (info.stage === 'generating') {
-        setActivity({
-          task: info.task,
-          stage: info.stage,
-          status: 'error',
-          message: 'Task unclear',
-          detail: info.reason,
-        })
-      }
-    },
-    [clarifyingAnswersRef, setActivity, setUnclearTaskModal]
-  )
-
-  const handleGeneratingUnclear = useCallback(
-    ({ reason, stage, task }: { reason: string; stage: 'generating'; task: string }) =>
-      handleUnclearTask({ reason, stage, task, pendingAnswers: clarifyingAnswersRef.current }),
-    [clarifyingAnswersRef, handleUnclearTask]
-  )
-
-  const handleClarifyingUnclear = useCallback(
-    ({ reason, stage, task }: { reason: string; stage: 'clarifying'; task: string }) =>
-      handleUnclearTask({ reason, stage, task }),
-    [handleUnclearTask]
-  )
-
-  const setAllowUnclear = useCallback((value: boolean, _task?: string | null) => {
-    void _task
-    unclearOverrideRef.current = value
-    setAllowUnclearFlag(value)
-  }, [])
-
-  const shouldAllowUnclearForTask = useCallback(() => allowUnclearFlag, [allowUnclearFlag])
-
-  const ensureAllowUnclearForTask = useCallback(() => {}, [])
-
-  const appendLine = useCallback(
-    (role: TerminalRole, content: string | TerminalStatus) => {
-      const currentLines = lines
-      const nextId = currentLines.length ? currentLines[currentLines.length - 1].id + 1 : 0
-      if (typeof content === 'string') {
-        dispatch(appendLines([{ id: nextId, role, text: content }]))
-        return
-      }
-
-      const fallbackText = `${content.title} — ${content.description}`
-      const last = currentLines[currentLines.length - 1]
-      if (last?.status && last.status.title === content.title) {
-        const updatedLines = [...currentLines.slice(0, -1), { ...last, text: fallbackText, status: content }]
-        dispatch(replaceLines(updatedLines))
-        return
-      }
-
-      // Replace the most recent matching status (same title) to avoid duplicates mid-stream
-      const lastMatchIndex = [...currentLines].reverse().findIndex((l) => l.status?.title === content.title)
-      if (lastMatchIndex >= 0) {
-        const idx = currentLines.length - 1 - lastMatchIndex
-        const updated = [...currentLines]
-        updated[idx] = { ...updated[idx], text: fallbackText, status: content }
-        dispatch(replaceLines(updated))
-        return
-      }
-
-      // If we are moving to success/error, replace the most recent loading status to avoid stale spinners.
-      if (content.state && content.state !== 'loading') {
-        const lastLoadingIndex = [...currentLines].reverse().findIndex((l) => l.status?.state === 'loading')
-        if (lastLoadingIndex >= 0) {
-          const idx = currentLines.length - 1 - lastLoadingIndex
-          const updated = [...currentLines]
-          updated[idx] = { ...updated[idx], text: fallbackText, status: content }
-          dispatch(replaceLines(updated))
-          return
-        }
-      }
-
-      dispatch(appendLines([{ id: nextId, role, text: fallbackText, status: content }]))
-    },
-    [dispatch, lines]
-  )
 
   const setIsGenerating = useCallback((value: boolean) => dispatch(setGeneratingAction(value)), [dispatch])
 
@@ -440,17 +407,17 @@ function PromptTerminalInner({
     (value: PromptEditDiff | null) => dispatch(setPromptEditDiffAction(value)),
     [dispatch]
   )
-  const setLikeState = useCallback(
-    (value: 'none' | 'liked' | 'disliked') => dispatch(setLikeStateAction(value)),
-    [dispatch]
-  )
+  const setLikeState = useCallback((value: 'none' | 'liked') => dispatch(setLikeStateAction(value)), [dispatch])
 
-  // Default-select the first consent option so keyboard users see focus immediately
+  // Default-select the preferred mode (quick = 0, guided = 1) so keyboard users see focus immediately
   useEffect(() => {
     if (awaitingQuestionConsent && consentSelectedIndex === null) {
-      setConsentSelectedIndex(0)
+      // Index 0 = 'Generate now' (quick mode)
+      // Index 1 = 'Sharpen first (quick questions)' (guided mode)
+      const preferredIndex = generationMode === 'quick' ? 0 : 1
+      setConsentSelectedIndex(preferredIndex)
     }
-  }, [awaitingQuestionConsent, consentSelectedIndex, setConsentSelectedIndex])
+  }, [awaitingQuestionConsent, consentSelectedIndex, setConsentSelectedIndex, generationMode])
 
   useTerminalPersistence({
     sessionId: activeSessionId,
@@ -473,7 +440,6 @@ function PromptTerminalInner({
     headerHelpShown,
     lastApprovedPrompt,
     likeState,
-    isGenerating,
     isAskingPreferenceQuestions,
     currentPreferenceQuestionKey,
     preferenceSelectedOptionIndex,
@@ -526,15 +492,12 @@ function PromptTerminalInner({
           await navigator.clipboard.writeText(promptToCopy)
           showToast(MESSAGE.PROMPT_COPIED)
           void recordEvent('prompt_copied', { prompt: promptToCopy })
-        } else {
-          appendLine(ROLE.APP, 'Clipboard is not available in this environment.')
         }
       } catch (err) {
         console.error('Failed to copy editable prompt', err)
-        appendLine(ROLE.APP, 'Could not copy to clipboard. You can still select and copy manually.')
       }
     },
-    [appendLine, editablePrompt, showToast]
+    [editablePrompt, showToast]
   )
 
   const handleManualPromptUpdate = useCallback(
@@ -551,11 +514,41 @@ function PromptTerminalInner({
     [setEditablePrompt, setIsPromptEditable, setIsPromptFinalized, setLastApprovedPrompt, setPromptEditDiff, showToast]
   )
 
-  const { focusInputToEnd } = useTerminalFocus({
+  const { focusInputToEnd, blurInput } = useTerminalFocus({
     editablePrompt,
     inputRef,
     copyEditablePrompt: () => void copyEditablePrompt(),
   })
+
+  const {
+    allowUnclearFlag,
+    unclearTaskModal,
+    setEditButtonRef,
+    setContinueButtonRef,
+    clearUnclearButtonRefs,
+    shouldAllowUnclearForTask,
+    ensureAllowUnclearForTask,
+    handleGeneratingUnclear,
+    handleClarifyingUnclear,
+    handleUnclearDismiss,
+    handleUnclearKeyDown,
+    handleUnclearEdit,
+    handleUnclearContinue,
+    resetAllowUnclear,
+  } = useUnclearTask({
+    clarifyingAnswersRef,
+    focusInputToEnd,
+    setValue,
+    setActivity,
+    startClarifyingQuestionsRef,
+    guardedGenerateFinalPromptForTaskRef,
+  })
+
+  useEffect(() => {
+    if (!unclearTaskModal) {
+      clearUnclearButtonRefs()
+    }
+  }, [clearUnclearButtonRefs, unclearTaskModal])
 
   // Clarifying flow hook is instantiated after dependent callbacks are defined (see below).
 
@@ -571,6 +564,8 @@ function PromptTerminalInner({
     setAnsweringQuestions(false)
     setAwaitingQuestionConsent(false)
     setConsentSelectedIndex(null)
+    // Also reset the last removed answer state
+    setLastRemovedClarifyingAnswer({ questionId: null, answer: null })
   }, [
     setAnsweringQuestions,
     setAwaitingQuestionConsent,
@@ -593,14 +588,7 @@ function PromptTerminalInner({
     setPreferenceSelectedOptionIndex,
   ])
 
-  const {
-    handleClear,
-    handleDiscard,
-    handleStartNewConversation,
-    handleRestore,
-    handleHistory: renderHistoryItems,
-    handleUseFromHistory: applyHistoryItem,
-  } = useTerminalSnapshotsController(
+  const { handleDiscard, handleStartNewConversation } = useTerminalHistory(
     {
       lines,
       activity,
@@ -625,9 +613,9 @@ function PromptTerminalInner({
       preferenceSelectedOptionIndex,
       pendingPreferenceUpdates,
       lastSnapshot,
+      lastHistory,
     },
     {
-      appendLine,
       setLines: (next) => setLines(next),
       setActivity,
       setEditablePrompt,
@@ -711,6 +699,29 @@ function PromptTerminalInner({
     return () => window.removeEventListener('keydown', handleFocusShortcut)
   }, [editablePrompt, setIsPromptEditable, setIsPromptFinalized])
 
+  // Blur input in quick mode after final prompt is generated, or when entering unclear flow
+  const blurredForPromptRef = useRef<string | null>(null)
+  useEffect(() => {
+    // Blur in quick mode after final prompt
+    if (
+      editablePrompt &&
+      generationMode === 'quick' &&
+      !isGenerating &&
+      blurredForPromptRef.current !== editablePrompt
+    ) {
+      blurredForPromptRef.current = editablePrompt
+      blurInput()
+    }
+    // Blur when unclear modal is shown
+    if (unclearTaskModal) {
+      blurInput()
+    }
+    // Reset when prompt is cleared
+    if (!editablePrompt) {
+      blurredForPromptRef.current = null
+    }
+  }, [editablePrompt, generationMode, isGenerating, blurInput, unclearTaskModal])
+
   // Approve flow removed per new requirements
 
   useEffect(() => {
@@ -724,21 +735,6 @@ function PromptTerminalInner({
     window.addEventListener('keydown', handleGlobalCopy)
     return () => window.removeEventListener('keydown', handleGlobalCopy)
   }, [copyEditablePrompt, editablePrompt])
-
-  function startPreferencesFlow() {
-    setPendingTask(null)
-    resetClarifyingFlowState()
-    setPreferencesStep(null)
-    setUserManagementOpen(true)
-    setPreferencesOpen(true)
-    appendLine(
-      ROLE.APP,
-      `Opening preferences (${user ? 'signed in' : 'local mode'}). Current settings: ${formatPreferencesSummary(
-        preferences
-      )}.`
-    )
-    focusInputToEnd()
-  }
 
   const handlePreferencesChange = useCallback(
     (next: Preferences) => {
@@ -754,10 +750,6 @@ function PromptTerminalInner({
       if (preferencesStep === 'tone') {
         const next = { ...preferences, tone: answer }
         updatePreferencesLocally(next)
-        appendLine(
-          ROLE.APP,
-          'Got it. Who are you usually writing for? (for example: founders, devs, general audience?)'
-        )
         setPreferencesStep('audience')
         return
       }
@@ -765,7 +757,6 @@ function PromptTerminalInner({
       if (preferencesStep === 'audience') {
         const next = { ...preferences, audience: answer }
         updatePreferencesLocally(next)
-        appendLine(ROLE.APP, 'What domains do you mostly work in? (for example: product, marketing, engineering?)')
         setPreferencesStep('domain')
         return
       }
@@ -773,81 +764,23 @@ function PromptTerminalInner({
       if (preferencesStep === 'domain') {
         const next = { ...preferences, domain: answer }
         updatePreferencesLocally(next)
-        appendLine(ROLE.APP, `Updated preferences: ${formatPreferencesSummary(next)}`)
-        appendLine(ROLE.APP, 'These will be used to steer how prompts are shaped for you.')
         setPreferencesStep(null)
         void handleSavePreferences(next)
       }
     },
-    [appendLine, handleSavePreferences, preferences, preferencesStep, setPreferencesStep, updatePreferencesLocally]
+    [handleSavePreferences, preferences, preferencesStep, setPreferencesStep, updatePreferencesLocally]
   )
-
-  function handleHelpCommand() {
-    appendHelpText((role, text) => appendLine(role as TerminalRole, text))
-    scrollToBottom()
-  }
 
   // Snapshot, history, and reset handlers moved to useTerminalSnapshots
 
   const handleLikePrompt = useCallback(() => {
     if (!editablePrompt) {
-      appendLine(ROLE.APP, 'There is no prompt to like yet.')
       return
     }
     void recordEvent('prompt_vote', { vote: 'like', prompt: editablePrompt })
     setLikeState('liked')
     showToast('Thanks for the feedback!')
-  }, [appendLine, editablePrompt, setLikeState, showToast])
-
-  const handleDislikePrompt = useCallback(() => {
-    if (!editablePrompt) {
-      appendLine(ROLE.APP, 'There is no prompt to dislike yet.')
-      return
-    }
-    void recordEvent('prompt_vote', { vote: 'dislike', prompt: editablePrompt })
-    setLikeState('disliked')
-    showToast('Thanks for the feedback!')
-  }, [appendLine, editablePrompt, setLikeState, showToast])
-
-  const handleHistory = useCallback(async () => {
-    try {
-      const items = await listHistory(10)
-      renderHistoryItems(items)
-    } catch (err) {
-      console.error('Failed to load history', err)
-      appendLine(ROLE.APP, 'Something went wrong while loading history.')
-    }
-  }, [appendLine, renderHistoryItems])
-
-  const handleUseFromHistory = useCallback(
-    async (index: number) => {
-      let history = lastHistory
-
-      if (!history || history.length === 0) {
-        try {
-          const items = await listHistory(10)
-          renderHistoryItems(items)
-          history = items
-        } catch (err) {
-          console.error('Failed to load history for /use', err)
-          appendLine(ROLE.APP, `Could not load history. Try ${COMMAND.HISTORY} first.`)
-          return
-        }
-      }
-
-      if (!history || history.length === 0) {
-        appendLine(ROLE.APP, 'No history yet for this session.')
-        return
-      }
-      if (index < 1 || index > history.length) {
-        appendLine(ROLE.APP, `No such history entry. Use ${COMMAND.HISTORY} to see entries.`)
-        return
-      }
-
-      applyHistoryItem(index - 1, history)
-    },
-    [appendLine, applyHistoryItem, lastHistory, renderHistoryItems]
-  )
+  }, [editablePrompt, setLikeState, showToast])
 
   const { generateFinalPromptForTask, handleEditPrompt, handleStop } = useGenerationController({
     preferences,
@@ -863,7 +796,6 @@ function PromptTerminalInner({
     setPendingTask,
     setLoginRequiredOpen,
     setActivity,
-    appendLine,
     showToast,
     user,
     awaitingQuestionConsent,
@@ -886,19 +818,14 @@ function PromptTerminalInner({
     [awaitingQuestionConsent, generateFinalPromptForTask]
   )
 
-  useEffect(() => {
-    guardedGenerateFinalPromptForTaskRef.current = guardedGenerateFinalPromptForTask
-  }, [guardedGenerateFinalPromptForTask])
-
   const runEditPrompt = useCallback(
     (instructions: string) => {
       if (!editablePrompt) {
-        appendLine(ROLE.APP, 'There is no prompt to edit yet. Generate one first.')
         return
       }
       void handleEditPrompt(editablePrompt, instructions.trim(), pendingTask)
     },
-    [appendLine, editablePrompt, handleEditPrompt, pendingTask]
+    [editablePrompt, handleEditPrompt, pendingTask]
   )
 
   useEffect(() => {
@@ -915,42 +842,141 @@ function PromptTerminalInner({
     clarifyingAnswers,
   ])
 
+  // Wrap handleDiscard to also reset the unclear flag (same as starting a new conversation)
+  const handleDiscardWithReset = useCallback(() => {
+    resetAllowUnclear()
+    handleDiscard()
+  }, [handleDiscard, resetAllowUnclear])
+
   const { handleCommand } = useCommandRouter({
-    editablePrompt,
-    handleHelpCommand: () => {
-      if (headerHelpShown) {
-        appendLine(ROLE.APP, `Help is already shown. Use ${COMMAND.CLEAR} to reset the terminal.`)
-        return
-      }
-      handleHelpCommand()
-      setHeaderHelpShown(true)
-    },
-    handleClear,
-    handleRestore,
-    handleDiscard,
-    handleHistory: () => handleHistory(),
-    handleUseFromHistory: (index: number) => handleUseFromHistory(index),
-    handleEditPrompt: runEditPrompt,
-    startPreferencesFlow,
-    appendLine: (role, text) => appendLine(role, text),
+    handleDiscard: handleDiscardWithReset,
   })
 
   const backToClarifyingFromPreferencesRef = useRef<(() => void) | null>(null)
 
   const backToClarifyingFromPreferences = useCallback(() => {
-    setUnclearTaskModal(null)
+    handleUnclearDismiss()
     setIsAskingPreferenceQuestions(false)
     setCurrentPreferenceQuestionKey(null)
     setPreferenceSelectedOptionIndex(null)
-    setPendingPreferenceUpdates({})
-    backToClarifyingFromPreferencesRef.current?.()
+
+    // When backing from preferences to clarifying, we need to go back to the last
+    // clarifying question. If there's only 1 clarifying question (index 0) and we
+    // try to call handleUndoAnswer, it will return early. So we need to handle this
+    // case by re-showing the last clarifying question without calling handleUndoAnswer.
+    const answers = clarifyingAnswersRef.current
+    if (answers.length > 0 && clarifyingQuestions && clarifyingQuestions.length > 0) {
+      const lastIdx = answers.length - 1
+      const lastAnswer = answers[lastIdx]
+      const lastQuestion = clarifyingQuestions[lastIdx]
+
+      // Don't remove the answer - keep it so user can see/edit it
+      setClarifyingAnswers(answers, lastIdx)
+      setCurrentQuestionIndex(lastIdx)
+      setAnsweringQuestions(true)
+      // Check if the answer was a custom "own answer"
+      const answerText = (lastAnswer?.answer ?? '').trim()
+      const isOwnAnswer =
+        lastQuestion && lastQuestion.options.length > 0
+          ? !lastQuestion.options.some((opt) => opt.label.trim().toLowerCase() === answerText.toLowerCase())
+          : true
+
+      if (isOwnAnswer && answerText) {
+        setValue(answerText)
+        setClarifyingSelectedOptionIndex(-2)
+        focusInputToEnd()
+      } else {
+        setValue('')
+        // Restore the previously selected option index when backing
+        if (lastQuestion && lastQuestion.options.length > 0 && answerText) {
+          const matchingOptionIndex = lastQuestion.options.findIndex(
+            (opt) => opt.label.trim().toLowerCase() === answerText.toLowerCase()
+          )
+          if (matchingOptionIndex >= 0) {
+            setClarifyingSelectedOptionIndex(matchingOptionIndex)
+          } else {
+            // If no match found, select first option as fallback
+            setClarifyingSelectedOptionIndex(0)
+          }
+        } else {
+          // No options or no answer - select first option if available, otherwise null
+          setClarifyingSelectedOptionIndex(lastQuestion && lastQuestion.options.length > 0 ? 0 : null)
+        }
+      }
+
+      // Store the removed answer for display
+      setLastRemovedClarifyingAnswer({
+        questionId: lastQuestion?.id ?? null,
+        answer: lastAnswer?.answer ?? null,
+      })
+
+      setActivity({
+        task: pendingTask ?? '',
+        stage: 'clarifying',
+        status: 'loading',
+        message: `Clarifying ${lastIdx + 1}/${clarifyingQuestions.length}`,
+        detail: 'Answer a few quick questions to sharpen your prompt.',
+      })
+    }
   }, [
+    clarifyingAnswersRef,
+    clarifyingQuestions,
+    focusInputToEnd,
+    handleUnclearDismiss,
+    pendingTask,
+    setActivity,
+    setAnsweringQuestions,
+    setClarifyingAnswers,
+    setClarifyingSelectedOptionIndex,
     setCurrentPreferenceQuestionKey,
+    setCurrentQuestionIndex,
     setIsAskingPreferenceQuestions,
-    setPendingPreferenceUpdates,
+    setLastRemovedClarifyingAnswer,
     setPreferenceSelectedOptionIndex,
-    setUnclearTaskModal,
+    setValue,
   ])
+
+  const { preference, clarifying } = useClarifyingPreferenceFlows({
+    pendingTask,
+    preferences,
+    focusInputToEnd,
+    blurInput,
+    setValue,
+    setActivity,
+    clarifyingAnswersRef,
+    guardedGenerateFinalPromptForTask,
+    onBackToClarifying: backToClarifyingFromPreferences,
+    allowUnclearFlag,
+    handleClarifyingUnclear,
+    clarifyingQuestions,
+    clarifyingAnswers,
+    currentQuestionIndex,
+    consentSelectedIndex,
+    answeringQuestions,
+    generationMode,
+    setIsGenerating,
+    setClarifyingQuestions,
+    setClarifyingAnswers,
+    setCurrentQuestionIndex,
+    setAnsweringQuestions,
+    setAwaitingQuestionConsent,
+    setConsentSelectedIndex,
+    setClarifyingSelectedOptionIndex,
+    setLastRemovedClarifyingAnswer,
+    setHasRunInitialTask,
+    showToast,
+    getPreferencesToAsk: () => preference.getPreferencesToAsk(),
+    startPreferenceQuestions: () => preference.startPreferenceQuestions(),
+    currentPreferenceQuestionKey,
+    isAskingPreferenceQuestions,
+    preferenceSelectedOptionIndex,
+    pendingPreferenceUpdates,
+    preferencesStep,
+    setIsAskingPreferenceQuestions,
+    setCurrentPreferenceQuestionKey,
+    setPreferenceSelectedOptionIndex,
+    setPendingPreferenceUpdates,
+  })
 
   const {
     getPreferencesToAsk,
@@ -962,25 +988,7 @@ function PromptTerminalInner({
     handlePreferenceOptionClick,
     getPreferenceOptions,
     getPreferenceQuestionText,
-  } = usePreferenceQuestions({
-    preferences,
-    pendingTask,
-    currentPreferenceQuestionKey,
-    isAskingPreferenceQuestions,
-    preferenceSelectedOptionIndex,
-    pendingPreferenceUpdates,
-    preferenceQuestionsEnabled: preferences.uiDefaults?.askPreferencesInGuided !== false,
-    setIsAskingPreferenceQuestions,
-    setCurrentPreferenceQuestionKey,
-    setPreferenceSelectedOptionIndex,
-    setPendingPreferenceUpdates,
-    setActivity,
-    focusInputToEnd,
-    setValue,
-    clarifyingAnswersRef,
-    generateFinalPromptForTask: guardedGenerateFinalPromptForTask,
-    onBackToClarifying: backToClarifyingFromPreferences,
-  })
+  } = preference
 
   const {
     startClarifyingQuestions,
@@ -991,36 +999,7 @@ function PromptTerminalInner({
     handleUndoAnswer,
     appendClarifyingQuestion,
     selectForQuestion,
-  } = useClarifyingFlow({
-    pendingTask,
-    preferences,
-    clarifyingQuestions,
-    currentQuestionIndex,
-    generationRunIdRef: clarifyingRunIdRef,
-    clarifyingAnswersRef,
-    setIsGenerating,
-    setClarifyingQuestions,
-    setClarifyingAnswers,
-    setCurrentQuestionIndex,
-    setAnsweringQuestions,
-    setAwaitingQuestionConsent,
-    setConsentSelectedIndex,
-    setClarifyingSelectedOptionIndex,
-    setHasRunInitialTask,
-    setValue,
-    appendLine,
-    setActivity,
-    showToast,
-    focusInputToEnd,
-    getPreferencesToAsk,
-    startPreferenceQuestions: () => startPreferenceQuestions(),
-    generateFinalPromptForTask: (task, answers, options) =>
-      guardedGenerateFinalPromptForTask(task, answers, {
-        ...options,
-        allowUnclear: options?.allowUnclear ?? allowUnclearFlag,
-      }),
-    onUnclearTask: handleClarifyingUnclear,
-  })
+  } = clarifying
 
   useEffect(() => {
     backToClarifyingFromPreferencesRef.current = handleUndoAnswer
@@ -1031,97 +1010,25 @@ function PromptTerminalInner({
   }, [startClarifyingQuestions])
 
   useEffect(() => {
-    if (!clarifyingAnswers.length) return
-    const nextHistory: Record<string, string> = { ...clarifyingAnswerHistoryRef.current }
-    clarifyingAnswers.forEach((ans) => {
-      if (ans.questionId && ans.answer !== undefined && ans.answer !== null) {
-        nextHistory[ans.questionId] = ans.answer
-      }
-    })
-    clarifyingAnswerHistoryRef.current = nextHistory
-    setClarifyingAnswerHistory(nextHistory)
-  }, [clarifyingAnswers])
-
-  const handleUnclearDismiss = useCallback(() => {
-    setUnclearTaskModal(null)
-  }, [setUnclearTaskModal])
-
-  const handleUnclearKeyDown = useCallback(
-    (event: React.KeyboardEvent) => {
-      if (!unclearTaskModal) return
-      const buttons = unclearButtonRefs.current.filter(Boolean) as HTMLButtonElement[]
-      if (!buttons.length) return
-
-      const active = document.activeElement
-      const currentIndex = buttons.findIndex((btn) => btn === active)
-
-      if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
-        event.preventDefault()
-        const next = (currentIndex + 1 + buttons.length) % buttons.length
-        buttons[next]?.focus()
-        return
-      }
-
-      if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
-        event.preventDefault()
-        const prev = (currentIndex - 1 + buttons.length) % buttons.length
-        buttons[prev]?.focus()
-        return
-      }
-
-      if ((event.key === 'Enter' || event.key === ' ') && currentIndex >= 0) {
-        event.preventDefault()
-        buttons[currentIndex]?.click()
-      }
-    },
-    [unclearTaskModal]
-  )
-
-  const handleUnclearEdit = useCallback(() => {
-    if (!unclearTaskModal) return
-    setAllowUnclear(true, unclearTaskModal.task)
-    setValue(unclearTaskModal.task)
-    setUnclearTaskModal(null)
-    focusInputToEnd()
-  }, [focusInputToEnd, setAllowUnclear, setUnclearTaskModal, setValue, unclearTaskModal])
-
-  const handleUnclearContinue = useCallback(async () => {
-    const modal = unclearTaskModal
-    if (!modal) return
-    setAllowUnclear(true, modal.task)
-    setUnclearTaskModal(null)
-    if (modal.stage === 'clarifying') {
-      await startClarifyingQuestions(modal.task, { allowUnclear: true })
-      return
-    }
-    await guardedGenerateFinalPromptForTask(modal.task, modal.pendingAnswers ?? [], {
-      allowUnclear: true,
-      skipConsentCheck: true,
-    })
-  }, [
-    guardedGenerateFinalPromptForTask,
-    setAllowUnclear,
-    setUnclearTaskModal,
-    startClarifyingQuestions,
-    unclearTaskModal,
-  ])
+    guardedGenerateFinalPromptForTaskRef.current = guardedGenerateFinalPromptForTask
+  }, [guardedGenerateFinalPromptForTask])
 
   const handleClarifyingSkip = useCallback(() => {
-    lastRemovedClarifyingAnswerRef.current = { questionId: null, answer: null }
+    setLastRemovedClarifyingAnswer({ questionId: null, answer: null })
     skipClarifyingQuestion()
   }, [skipClarifyingQuestion])
 
   const handleStartNewConversationAndClear = useCallback(() => {
     setValue('')
-    setAllowUnclear(false, null)
+    resetAllowUnclear()
     handleStartNewConversation()
-  }, [handleStartNewConversation, setAllowUnclear, setValue])
+  }, [handleStartNewConversation, resetAllowUnclear, setValue])
 
   const handleClarifyingNext = useCallback(
     (forcedIndex?: number | null) => {
       const trimmed = value.trim()
       if (trimmed) {
-        lastRemovedClarifyingAnswerRef.current = { questionId: null, answer: null }
+        setLastRemovedClarifyingAnswer({ questionId: null, answer: null })
         void handleClarifyingAnswer(trimmed)
         setValue('')
         return
@@ -1129,18 +1036,17 @@ function PromptTerminalInner({
 
       const selection = typeof forcedIndex === 'number' ? forcedIndex : clarifyingSelectedOptionIndex ?? null
       if (selection === -1) {
-        // Stash last answered value for display before moving back.
-        if (clarifyingQuestions && clarifyingAnswers.length > 0) {
-          const lastIdx = Math.min(clarifyingAnswers.length - 1, clarifyingQuestions.length - 1)
-          const lastAnswer = clarifyingAnswers[lastIdx]
-          const lastQuestion = clarifyingQuestions[lastIdx]
-          lastRemovedClarifyingAnswerRef.current = {
-            questionId: lastQuestion?.id ?? null,
-            answer: lastAnswer?.answer ?? null,
-          }
-        } else {
-          lastRemovedClarifyingAnswerRef.current = { questionId: null, answer: null }
+        // Prevent going back from question 1 (index 0) - user should start new conversation instead
+        // Allow going back from question 2+ (index 1+) to previous questions
+        if (currentQuestionIndex === 0) {
+          return
         }
+        // Allow going back if we have at least one answer
+        // We're on question N (index N-1), so we need at least one answer to go back
+        if (clarifyingAnswers.length === 0) {
+          return
+        }
+        // handleUndoAnswer will set lastRemovedClarifyingAnswer correctly
         handleUndoAnswer()
         return
       }
@@ -1160,16 +1066,14 @@ function PromptTerminalInner({
         clarifyingQuestions.length > 0 &&
         currentQuestionIndex < clarifyingQuestions.length
       ) {
-        lastRemovedClarifyingAnswerRef.current = { questionId: null, answer: null }
+        setLastRemovedClarifyingAnswer({ questionId: null, answer: null })
         void handleClarifyingOptionClick(selection)
         return
       }
 
-      appendLine(ROLE.APP, 'Pick an option or type an answer to continue.')
       focusInputToEnd()
     },
     [
-      appendLine,
       clarifyingAnswers,
       clarifyingQuestions,
       clarifyingSelectedOptionIndex,
@@ -1197,6 +1101,11 @@ function PromptTerminalInner({
       ? (() => {
           const qid = clarifyingQuestions[currentQuestionIndex]?.id
           if (!qid) return null
+          // Check if we just backed to this question - use the removed answer for display
+          if (lastRemovedClarifyingAnswer.questionId === qid && lastRemovedClarifyingAnswer.answer) {
+            const trimmed = lastRemovedClarifyingAnswer.answer.trim()
+            if (trimmed.length) return trimmed
+          }
           const fromHistory = clarifyingAnswerHistory[qid]
           if (fromHistory !== undefined && fromHistory !== null) {
             const trimmed = String(fromHistory).trim()
@@ -1224,27 +1133,9 @@ function PromptTerminalInner({
       : null
 
   const handlePreferenceBackNav = useCallback(() => {
-    if (!currentPreferenceQuestionKey || !getPreferencesToAsk) {
-      handlePreferenceAnswer('back')
-      return
-    }
-
-    const order = getPreferenceOrder ? getPreferenceOrder() : getPreferencesToAsk()
-    const currentIndex = order.indexOf(currentPreferenceQuestionKey as PreferenceKey)
-
-    if (currentIndex <= 0) {
-      backToClarifyingFromPreferences()
-      return
-    }
-
+    // Allow going back from any preference question (including first one)
     handlePreferenceAnswer('back')
-  }, [
-    currentPreferenceQuestionKey,
-    getPreferenceOrder,
-    getPreferencesToAsk,
-    handlePreferenceAnswer,
-    backToClarifyingFromPreferences,
-  ])
+  }, [handlePreferenceAnswer])
 
   const handlePreferenceNext = useCallback(
     (forcedIndex?: number | null) => {
@@ -1272,11 +1163,9 @@ function PromptTerminalInner({
         return
       }
 
-      appendLine(ROLE.APP, 'Pick an option or type an answer to continue.')
       focusInputToEnd()
     },
     [
-      appendLine,
       currentPreferenceQuestionKey,
       handlePreferenceAnswer,
       handlePreferenceOptionClick,
@@ -1288,13 +1177,14 @@ function PromptTerminalInner({
     ]
   )
 
-  const preferenceCanSubmit =
-    Boolean(value.trim()) || (preferenceSelectedOptionIndex !== null && preferenceSelectedOptionIndex >= 0)
-
   const handleClarifyingOptionSelect = useCallback(
     (index: number) => {
       setClarifyingSelectedOptionIndex(index)
-      focusInputToEnd()
+      // Only focus input when user selects "my own answer" (-2)
+      if (index === -2) {
+        focusInputToEnd()
+      }
+      // Clicking a predefined option submits it immediately
       if (index >= 0) {
         handleClarifyingNext(index)
       }
@@ -1325,7 +1215,11 @@ function PromptTerminalInner({
   const handlePreferenceOptionSelect = useCallback(
     (index: number) => {
       setPreferenceSelectedOptionIndex(index)
-      focusInputToEnd()
+      // Only focus input when user selects "my own answer" (-2)
+      if (index === -2) {
+        focusInputToEnd()
+      }
+      // Clicking a predefined option submits it immediately
       if (index >= 0) {
         handlePreferenceNext(index)
       }
@@ -1356,10 +1250,10 @@ function PromptTerminalInner({
       const lastIdx = Math.min(clarifyingAnswers.length - 1, clarifyingQuestions.length - 1)
       const lastAnswer = clarifyingAnswers[lastIdx]
       const lastQuestion = clarifyingQuestions[lastIdx]
-      lastRemovedClarifyingAnswerRef.current = {
+      setLastRemovedClarifyingAnswer({
         questionId: lastQuestion?.id ?? null,
         answer: lastAnswer?.answer ?? null,
-      }
+      })
       const order = getPreferenceOrder ? getPreferenceOrder() : []
       const prefsToAsk = order.length ? order : getPreferencesToAsk ? getPreferencesToAsk() : []
       const resumeIndex = getResumePreferenceIndex ? getResumePreferenceIndex() : -1
@@ -1381,20 +1275,31 @@ function PromptTerminalInner({
     }
 
     if (isAskingPreferenceQuestions) {
+      // Allow going back from any preference question (including first one)
       const order = getPreferenceOrder ? getPreferenceOrder() : getPreferencesToAsk ? getPreferencesToAsk() : []
       if (order.length === 0 && clarifyingQuestions && clarifyingAnswers.length > 0) {
         const lastIdx = Math.min(clarifyingAnswers.length - 1, clarifyingQuestions.length - 1)
         const lastAnswer = clarifyingAnswers[lastIdx]
         const lastQuestion = clarifyingQuestions[lastIdx]
-        lastRemovedClarifyingAnswerRef.current = {
+        setLastRemovedClarifyingAnswer({
           questionId: lastQuestion?.id ?? null,
           answer: lastAnswer?.answer ?? null,
-        }
+        })
       }
       handlePreferenceBackNav()
       return
     }
     if (answeringQuestions || (clarifyingQuestions && clarifyingQuestions.length > 0)) {
+      // Prevent going back from question 1 (index 0) - user should start new conversation instead
+      // Allow going back from question 2+ (index 1+) to previous questions
+      if (currentQuestionIndex === 0) {
+        return
+      }
+      // Also prevent if there are no answers (shouldn't happen, but safety check)
+      if (clarifyingAnswers.length === 0) {
+        return
+      }
+      // handleUndoAnswer will set lastRemovedClarifyingAnswer correctly
       handleUndoAnswer()
       return
     }
@@ -1425,158 +1330,90 @@ function PromptTerminalInner({
     handleUndoAnswer,
     handlePreferenceBackNav,
     startPreferenceQuestions,
+    currentQuestionIndex,
   ])
 
-  const consentNav = {
-    active: awaitingQuestionConsent,
+  const { consentNav, clarifyingNav, preferenceNav } = useTerminalNav({
     value,
-    selected: consentSelectedIndex,
-    setSelected: setConsentSelectedIndex,
-    onAnswer: (answer: string) => {
-      return handleQuestionConsent(answer)
-    },
-  }
-
-  const clarifyingNav = {
-    active: answeringQuestions,
-    questions: clarifyingQuestions,
-    currentIndex: currentQuestionIndex,
-    selectedIndex: clarifyingSelectedOptionIndex,
-    setSelectedIndex: setClarifyingSelectedOptionIndex,
-    onSelectOption: (index: number) => handleClarifyingNext(index),
-    onUndo: handleUndoAnswer,
-    onSkip: handleClarifyingSkip,
-    onFreeAnswer: focusInputToEnd,
-  }
-
-  const preferenceNav = {
-    active: isAskingPreferenceQuestions,
-    options:
-      currentPreferenceQuestionKey && getPreferenceOptions ? getPreferenceOptions(currentPreferenceQuestionKey) : [],
-    selectedIndex: preferenceSelectedOptionIndex,
-    setSelectedIndex: setPreferenceSelectedOptionIndex,
-    onSelectOption: (index: number) => handlePreferenceNext(index),
-    onBack: handlePreferenceBackNav,
-    onSkip: () => handlePreferenceOptionClick(-3),
-    onFreeAnswer: focusInputToEnd,
-  }
-
-  const taskFlowHandlersRef = useRef<{
-    submitCurrent: () => void
-    handleFormSubmit: (e: React.FormEvent) => void
-  } | null>(null)
-
-  useEffect(() => {
-    taskFlowHandlersRef.current = createTaskFlowHandlers({
-      state: {
-        isGenerating,
-        value,
-        lines,
-        preferencesStep,
-        awaitingQuestionConsent,
-        pendingTask,
-        consentSelectedIndex,
-        answeringQuestions,
-        clarifyingQuestions,
-        clarifyingAnswers,
-        currentQuestionIndex,
-        isAskingPreferenceQuestions,
-        currentPreferenceQuestionKey,
-        hasRunInitialTask,
-        isRevising,
-        generationMode,
-        editablePrompt,
-      },
-      actions: {
-        setValue,
-        appendLine,
-        handleCommand,
-        advancePreferences,
-        handleQuestionConsent,
-        handleClarifyingAnswer,
-        handlePreferenceAnswer,
-        runEditPrompt,
-        setHasRunInitialTask,
-        setPendingTask,
-        setActivity,
-        resetClarifyingFlowState,
-        resetPreferenceFlowState,
-        setEditablePrompt,
-        setIsPromptEditable,
-        setIsPromptFinalized,
-        setLikeState,
-        setAwaitingQuestionConsent,
-        setConsentSelectedIndex,
-        startClarifyingQuestions,
-        setAnsweringQuestions,
-        setCurrentQuestionIndex,
-        selectForQuestion,
-        appendClarifyingQuestion,
-        focusInputToEnd,
-        guardedGenerateFinalPromptForTask,
-        ensureAllowUnclearForTask,
-        shouldAllowUnclearForTask,
-        resetAllowUnclear: () => setAllowUnclear(false),
-        setIsRevising,
-        setClarifyingSelectedOptionIndex,
-        setLastApprovedPrompt,
-      },
-    })
-  }, [
-    isGenerating,
-    value,
-    lines,
-    preferencesStep,
     awaitingQuestionConsent,
-    pendingTask,
     consentSelectedIndex,
+    setConsentSelectedIndex,
+    handleQuestionConsent,
     answeringQuestions,
     clarifyingQuestions,
-    clarifyingAnswers,
     currentQuestionIndex,
+    clarifyingSelectedOptionIndex,
+    setClarifyingSelectedOptionIndex,
+    handleClarifyingNext,
+    handleUndoAnswer,
+    handleClarifyingSkip,
+    focusInputToEnd,
     isAskingPreferenceQuestions,
     currentPreferenceQuestionKey,
-    hasRunInitialTask,
-    isRevising,
-    generationMode,
-    editablePrompt,
-    setValue,
-    appendLine,
-    handleCommand,
-    advancePreferences,
-    handleQuestionConsent,
-    handleClarifyingAnswer,
-    handlePreferenceAnswer,
-    runEditPrompt,
-    setHasRunInitialTask,
-    setPendingTask,
-    setActivity,
-    resetClarifyingFlowState,
-    resetPreferenceFlowState,
-    setEditablePrompt,
-    setIsPromptEditable,
-    setIsPromptFinalized,
-    setLikeState,
-    setAwaitingQuestionConsent,
-    setConsentSelectedIndex,
-    startClarifyingQuestions,
-    setAnsweringQuestions,
-    setCurrentQuestionIndex,
-    selectForQuestion,
-    appendClarifyingQuestion,
-    focusInputToEnd,
-    guardedGenerateFinalPromptForTask,
-    ensureAllowUnclearForTask,
-    shouldAllowUnclearForTask,
-    setClarifyingSelectedOptionIndex,
-    setLastApprovedPrompt,
-    setAllowUnclear,
-  ])
+    preferenceSelectedOptionIndex,
+    setPreferenceSelectedOptionIndex,
+    handlePreferenceNext,
+    handlePreferenceBackNav,
+    handlePreferenceOptionClick,
+    getPreferenceOptions: getPreferenceOptions ?? null,
+  })
 
-  const submitCurrent = useCallback(() => taskFlowHandlersRef.current?.submitCurrent(), [])
-  const handleFormSubmit = useCallback((e: React.FormEvent) => taskFlowHandlersRef.current?.handleFormSubmit(e), [])
+  const { submitCurrent, handleFormSubmit } = useTaskFlowHandlers({
+    state: {
+      isGenerating,
+      value,
+      lines,
+      preferencesStep,
+      awaitingQuestionConsent,
+      pendingTask,
+      consentSelectedIndex,
+      answeringQuestions,
+      clarifyingQuestions,
+      clarifyingAnswers,
+      currentQuestionIndex,
+      isAskingPreferenceQuestions,
+      currentPreferenceQuestionKey,
+      hasRunInitialTask,
+      isRevising,
+      generationMode,
+      editablePrompt,
+    },
+    actions: {
+      setValue,
+      handleCommand,
+      advancePreferences,
+      handleQuestionConsent,
+      handleClarifyingAnswer,
+      handlePreferenceAnswer,
+      runEditPrompt,
+      setHasRunInitialTask,
+      setPendingTask,
+      setActivity,
+      resetClarifyingFlowState,
+      resetPreferenceFlowState,
+      setEditablePrompt,
+      setIsPromptEditable,
+      setIsPromptFinalized,
+      setLikeState,
+      setAwaitingQuestionConsent,
+      setConsentSelectedIndex,
+      startClarifyingQuestions,
+      setAnsweringQuestions,
+      setCurrentQuestionIndex,
+      selectForQuestion,
+      appendClarifyingQuestion,
+      focusInputToEnd,
+      guardedGenerateFinalPromptForTask,
+      ensureAllowUnclearForTask,
+      shouldAllowUnclearForTask,
+      resetAllowUnclear,
+      setIsRevising,
+      setClarifyingSelectedOptionIndex,
+      setLastApprovedPrompt,
+    },
+  })
 
-  const promptControls = {
+  const promptControls = usePromptControls({
     value,
     submit: submitCurrent,
     editablePrompt,
@@ -1584,8 +1421,8 @@ function PromptTerminalInner({
     setIsPromptFinalized,
     editablePromptRef,
     inputRef,
-    onCopyEditablePrompt: () => void copyEditablePrompt(),
-  }
+    copyEditablePrompt,
+  })
 
   const { handleKeyDown } = useTerminalHotkeys({
     consent: consentNav,
@@ -1602,7 +1439,6 @@ function PromptTerminalInner({
     resetPreferenceFlowState,
     setAwaitingQuestionConsent,
     setGenerationMode,
-    appendLine,
   })
 
   const isFreshSession = !hasRunInitialTask
@@ -1621,63 +1457,24 @@ function PromptTerminalInner({
     ? 'Guided Build selected. Type your task to start clarifying.'
     : 'What are you trying to achieve?'
 
-  const headerNode = (
-    <TerminalHeader
-      onProfileClick={() => {
-        setUserManagementOpen(true)
-      }}
-      onSettingsClick={() => {
-        setPreferencesOpen(true)
-      }}
-      theme={(preferences.uiDefaults?.theme as ThemeName | undefined) ?? DEFAULT_THEME}
-      onThemeChange={(nextTheme) => {
-        const updated = {
-          ...preferences,
-          uiDefaults: { ...(preferences.uiDefaults ?? {}), theme: nextTheme },
-        }
-        updatePreferencesLocally(updated)
-      }}
-    />
-  )
-
-  const panelsNode = (
-    <TerminalPanels
-      preferences={{
-        open: isPreferencesOpen,
-        values: preferences,
-        source: preferenceSource,
-        user,
-        saving: isSavingPreferences,
-        canSave: Boolean(user),
-        onClose: () => setPreferencesOpen(false),
-        onChange: handlePreferencesChange,
-        onSave: handleSavePreferences,
-        onSignIn: handleSignIn,
-        onSignOut: handleSignOut,
-      }}
-      userManagement={{
-        open: isUserManagementOpen,
-        user,
-        onClose: () => {
-          setUserManagementOpen(false)
-          setPreferencesOpen(false)
-        },
-        onOpenPreferences: () => {
-          setPreferencesOpen(true)
-        },
-        onSignIn: handleSignIn,
-        onSignOut: handleSignOut,
-      }}
-      loginRequired={{
-        open: isLoginRequiredOpen,
-        onClose: () => {
-          setLoginRequiredOpen(false)
-          appendLine(ROLE.APP, 'Sign in required to generate prompts. Try again when you are ready.')
-        },
-        onSignIn: handleSignIn,
-      }}
-    />
-  )
+  const { headerNode, panelsNode } = useTerminalChrome({
+    preferences,
+    preferenceSource,
+    isPreferencesOpen,
+    isSavingPreferences,
+    isUserManagementOpen,
+    isLoginRequiredOpen,
+    setPreferencesOpen,
+    setUserManagementOpen,
+    setLoginRequiredOpen,
+    handlePreferencesChange,
+    handleSavePreferences,
+    handleSignIn,
+    handleSignOut,
+    updatePreferencesLocally,
+    user,
+    theme: (preferences.uiDefaults?.theme as ThemeName | undefined) ?? DEFAULT_THEME,
+  })
 
   const focusInput = useCallback(() => {
     if (inputRef.current) {
@@ -1687,7 +1484,7 @@ function PromptTerminalInner({
     }
   }, [])
 
-  const outputPropsWithRefs = {
+  const outputPropsWithRefs = useTerminalOutputProps({
     lines,
     activity,
     editablePrompt,
@@ -1696,7 +1493,6 @@ function PromptTerminalInner({
     awaitingQuestionConsent,
     consentSelectedIndex,
     answeringQuestions,
-    clarifyingAnswersCount: clarifyingAnswers.length,
     currentClarifyingQuestion:
       answeringQuestions &&
       clarifyingQuestions &&
@@ -1716,13 +1512,11 @@ function PromptTerminalInner({
       focusInputToEnd()
     },
     onConsentOptionClick: (index: number) => {
-      // Option order: 0 = Generate now (skip questions), 1 = Sharpen first (ask questions)
       const v = index === 0 ? 'no' : 'yes'
       setConsentSelectedIndex(index)
       void handleQuestionConsent(v)
     },
     onClarifyingOptionClick: handleClarifyingOptionSelect,
-    onClarifyingNext: () => handleClarifyingNext(),
     onFocusInputSelectFree: handleClarifyingFree,
     onUndoAnswer: handleUndoAnswer,
     onClarifyingSkip: handleClarifyingSkip,
@@ -1731,7 +1525,6 @@ function PromptTerminalInner({
     onStartNewConversation: handleStartNewConversationAndClear,
     onFocusInput: focusInputToEnd,
     onLike: handleLikePrompt,
-    onDislike: handleDislikePrompt,
     likeState,
     clarifyingCanSubmit,
     isAskingPreferenceQuestions,
@@ -1739,9 +1532,7 @@ function PromptTerminalInner({
     preferenceSelectedOptionIndex,
     preferenceLastAnswer: preferenceLastAnswerForDisplay,
     onPreferenceFocusInputSelectFree: handlePreferenceFree,
-    preferenceCanSubmit,
     onPreferenceOptionClick: handlePreferenceOptionSelect,
-    onPreferenceNext: () => handlePreferenceNext(),
     onPreferenceBack: handlePreferenceBackNav,
     onPreferenceYourAnswer: focusInputToEnd,
     onPreferenceSkip: () => handlePreferenceOptionClick(-3),
@@ -1756,95 +1547,77 @@ function PromptTerminalInner({
       handleModeChange(mode, opts ?? { silent: isFreshSession })
     },
     onFinalBack: editablePrompt ? handleGlobalBack : undefined,
-  }
+  })
 
-  const unclearModal = unclearTaskModal ? (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
-      <div
-        className="relative w-full max-w-md space-y-5 rounded-2xl border border-slate-800 bg-slate-950 p-6 shadow-2xl"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Task looks unclear"
-        onKeyDown={handleUnclearKeyDown}
-      >
-        <button
-          type="button"
-          aria-label="Close"
-          className="absolute right-3 top-3 h-8 w-8 cursor-pointer rounded-full text-slate-400 transition hover:bg-slate-800 hover:text-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-1 focus-visible:ring-offset-slate-950"
-          onClick={handleUnclearDismiss}
-        >
-          <span className="flex h-full w-full items-center justify-center text-lg">×</span>
-        </button>
-        <div className="flex items-start gap-3">
-          <div className="mt-0.5 flex h-9 w-9 items-center justify-center text-amber-300">
-            <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-              <path d="M12 9v4" strokeLinecap="round" />
-              <path d="M12 17h.01" strokeLinecap="round" />
-              <path
-                d="M10.29 3.86 2.82 18a1 1 0 0 0 .87 1.5h16.62a1 1 0 0 0 .87-1.5l-7.47-14.14a1 1 0 0 0-1.78 0Z"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </div>
-          <div className="space-y-2">
-            <div className="text-base font-semibold text-slate-100">Task looks unclear</div>
-            <div className="text-sm text-slate-300">{unclearTaskModal.reason}</div>
-          </div>
-        </div>
-        <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
-          <button
-            type="button"
-            className="h-[44px] w-full max-w-[180px] cursor-pointer rounded-lg border border-slate-700 bg-slate-900 px-4 text-sm font-semibold text-slate-100 transition hover:border-slate-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-1 focus-visible:ring-offset-slate-950"
-            ref={(el) => {
-              unclearButtonRefs.current[0] = el
-            }}
-            onClick={handleUnclearEdit}
-          >
-            Edit task
-          </button>
-          <button
-            type="button"
-            className="h-[44px] w-full max-w-[180px] cursor-pointer rounded-lg border border-slate-700 bg-slate-900 px-4 text-sm font-semibold text-slate-100 transition hover:border-slate-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-1 focus-visible:ring-offset-slate-950"
-            ref={(el) => {
-              unclearButtonRefs.current[1] = el
-            }}
-            onClick={handleUnclearContinue}
-          >
-            Continue anyway
-          </button>
-        </div>
-      </div>
-    </div>
-  ) : null
+  const handleSubmitWithFocus = useCallback(() => {
+    submitCurrent()
+    if (inputRef.current) {
+      inputRef.current.focus()
+      const len = inputRef.current.value.length
+      inputRef.current.setSelectionRange(len, len)
+    }
+  }, [inputRef, submitCurrent])
 
-  const mainNode = (
-    <TerminalMain
-      onFormSubmit={handleFormSubmit}
-      outputProps={outputPropsWithRefs}
-      inputProps={{
-        value,
-        onChange: setValue,
-        onKeyDown: handleKeyDown,
-        placeholder: inputPlaceholder,
-        disabled: inputDisabled,
-        inputRef,
-      }}
-      onSubmit={() => {
-        submitCurrent()
-        if (inputRef.current) inputRef.current.focus()
-      }}
-      onStop={handleStop}
-      isGenerating={isGenerating}
-      onVoiceClick={undefined}
-      voiceAvailable={true}
-    />
-  )
+  // When user manually focuses input during questions flow, select "my own answer"
+  const handleInputFocus = useCallback(() => {
+    if (answeringQuestions && clarifyingQuestions && clarifyingQuestions.length > 0) {
+      setClarifyingSelectedOptionIndex(-2)
+    } else if (isAskingPreferenceQuestions && currentPreferenceQuestionKey) {
+      setPreferenceSelectedOptionIndex(-2)
+    }
+  }, [
+    answeringQuestions,
+    clarifyingQuestions,
+    currentPreferenceQuestionKey,
+    isAskingPreferenceQuestions,
+    setClarifyingSelectedOptionIndex,
+    setPreferenceSelectedOptionIndex,
+  ])
+
+  const layoutNode = useTerminalLayout({
+    toastMessage,
+    toastType,
+    onToastClose: hideToast,
+    header: headerNode,
+    panels: panelsNode,
+    outputProps: outputPropsWithRefs,
+    inputProps: {
+      value,
+      onChange: setValue,
+      onKeyDown: handleKeyDown,
+      onFocus: handleInputFocus,
+      placeholder: inputPlaceholder,
+      disabled: inputDisabled,
+      inputRef,
+    },
+    onFormSubmit: handleFormSubmit,
+    onSubmit: handleSubmitWithFocus,
+    onStop: handleStop,
+    isGenerating,
+    onVoiceStart: startVoiceListening,
+    onVoiceStop: stopVoiceListening,
+    isVoiceListening,
+    voiceSupported,
+  })
 
   return (
     <>
-      <TerminalShellView toastMessage={toastMessage} header={headerNode} panels={panelsNode} main={mainNode} />
-      {unclearModal}
+      {layoutNode}
+      <UnclearTaskModal
+        open={Boolean(unclearTaskModal)}
+        reason={unclearTaskModal?.reason ?? ''}
+        onEditButtonRef={setEditButtonRef}
+        onContinueButtonRef={setContinueButtonRef}
+        onDismiss={handleUnclearDismiss}
+        onEdit={handleUnclearEdit}
+        onContinue={handleUnclearContinue}
+        onKeyDown={handleUnclearKeyDown}
+      />
+      <VoiceLanguageModal
+        open={isVoiceLanguageModalOpen}
+        onConfirm={handleVoiceLanguageConfirm}
+        onDismiss={handleVoiceLanguageDismiss}
+      />
     </>
   )
 }

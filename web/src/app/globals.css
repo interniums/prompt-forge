@@ -165,6 +165,75 @@ body {
   font-family: system-ui, -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
 }
 
+/* Light theme background image */
+:root[data-theme='light'] body {
+  background: url('/bg-light.png') center center / cover no-repeat fixed;
+  background-color: #f8fafc;
+}
+
+/* Input bar gradient - theme aware fade to hide content below */
+.input-bar-gradient {
+  background: linear-gradient(
+    to top,
+    var(--pf-background) 0%,
+    var(--pf-background) 25%,
+    rgba(5, 6, 8, 0.95) 40%,
+    rgba(5, 6, 8, 0.75) 55%,
+    rgba(5, 6, 8, 0.5) 70%,
+    rgba(5, 6, 8, 0.25) 85%,
+    transparent 100%
+  );
+}
+
+:root[data-theme='dim'] .input-bar-gradient {
+  background: linear-gradient(
+    to top,
+    var(--pf-background) 0%,
+    var(--pf-background) 25%,
+    rgba(22, 28, 43, 0.95) 40%,
+    rgba(22, 28, 43, 0.75) 55%,
+    rgba(22, 28, 43, 0.5) 70%,
+    rgba(22, 28, 43, 0.25) 85%,
+    transparent 100%
+  );
+}
+
+:root[data-theme='light'] .input-bar-gradient {
+  background: linear-gradient(
+    to top,
+    var(--pf-background) 0%,
+    var(--pf-background) 25%,
+    rgba(255, 255, 255, 0.95) 40%,
+    rgba(255, 255, 255, 0.8) 55%,
+    rgba(255, 255, 255, 0.5) 70%,
+    rgba(255, 255, 255, 0.25) 85%,
+    transparent 100%
+  );
+  backdrop-filter: blur(8px);
+}
+
+/* Input bar container - theme aware */
+.input-bar-container {
+  background: #0f172a;
+  border-color: rgba(71, 85, 105, 0.5);
+}
+
+.input-bar-container.focused {
+  background: #0f172a;
+  border-color: rgba(148, 163, 184, 0.7);
+}
+
+:root[data-theme='light'] .input-bar-container {
+  background: #ffffff;
+  border-color: rgba(203, 213, 225, 0.8);
+}
+
+:root[data-theme='light'] .input-bar-container.focused {
+  background: #ffffff;
+  border-color: rgba(148, 163, 184, 0.9);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15), 0 8px 24px rgba(0, 0, 0, 0.1);
+}
+
 /* Terminal-style caret and selection for the input area */
 .terminal-input {
   caret-color: var(--pf-foreground);

@@ -2,6 +2,7 @@
 
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Image from 'next/image'
+import { Pencil1Icon, CopyIcon, CheckIcon, HeartIcon, HeartFilledIcon } from '@radix-ui/react-icons'
 import type { TerminalLine, ClarifyingQuestion, Preferences, GenerationMode, TaskActivity } from '@/lib/types'
 import { ROLE } from '@/lib/constants'
 
@@ -100,8 +101,7 @@ export type TerminalOutputAreaProps = {
   onUpdateEditablePrompt: (nextPrompt: string, previousPrompt: string) => void
   onStartNewConversation: () => void
   onLike?: () => void
-  onDislike?: () => void
-  likeState?: 'none' | 'liked' | 'disliked'
+  likeState?: 'none' | 'liked'
   isAskingPreferenceQuestions?: boolean
   currentPreferenceQuestionKey?: keyof Preferences | null
   preferenceSelectedOptionIndex?: number | null
@@ -237,8 +237,6 @@ const PreferenceOptions = memo(function PreferenceOptions({
   questionText,
   options,
   selectedOptionIndex,
-  currentIndex,
-  totalCount,
   onOptionClick,
   onFocusInputSelectFree,
   onFocusInput,
@@ -249,8 +247,6 @@ const PreferenceOptions = memo(function PreferenceOptions({
   questionText: string
   options: Array<{ id: string; label: string }>
   selectedOptionIndex: number | null
-  currentIndex: number
-  totalCount: number
   onOptionClick: (index: number) => void
   onFocusInputSelectFree?: () => void
   onFocusInput: () => void
@@ -267,16 +263,18 @@ const PreferenceOptions = memo(function PreferenceOptions({
 
   return (
     <div className="mt-6 border-t border-slate-700/80 pt-4 text-[15px] text-slate-200 space-y-3">
-      <div className="text-[16px] text-slate-50 font-mono leading-relaxed">
-        Preference {currentIndex + 1}/{totalCount}: {questionText}
-      </div>
+      <div className="text-[16px] text-slate-50 font-mono leading-relaxed">{questionText}</div>
       <div className="text-[13px] text-slate-400">
         Pick one option or choose “My own answer” — click or use ↑↓; Enter to continue.
       </div>
       <div className="flex flex-col gap-2">
         {options.map((opt, index) => {
           const isSelected = index === selectedOptionIndex
-          const isLast = hasLast && normalizedLast === opt.label.trim()
+          // Check both label and value for outline matching (answer might be stored as value)
+          const optLabel = opt.label.trim().toLowerCase()
+          const optValue = ((opt as { value?: string }).value ?? opt.label).trim().toLowerCase()
+          const lastLower = normalizedLast.toLowerCase()
+          const isLast = hasLast && (lastLower === optLabel || lastLower === optValue)
           return (
             <button
               key={opt.id}
@@ -391,22 +389,24 @@ const ClarifyingQuestionPrompt = memo(function ClarifyingQuestionPrompt({
       {normalizedLast && <div className="text-[12px] text-slate-400">Previous answer: {normalizedLast}</div>}
       <div className="flex flex-wrap gap-3 text-[13px] text-slate-400" />
       <div className="flex flex-wrap gap-2 pt-2">
-        <button
-          type="button"
-          className={`${primaryActionButtonClass} ${backSelected ? selectedActionButtonClass : ''} justify-center`}
-          onClick={onUndoAnswer}
-          aria-label="Back"
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            className="h-4 w-4"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
+        {currentIndex > 0 && (
+          <button
+            type="button"
+            className={`${primaryActionButtonClass} ${backSelected ? selectedActionButtonClass : ''} justify-center`}
+            onClick={onUndoAnswer}
+            aria-label="Back"
           >
-            <path d="M15 18l-6-6 6-6" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-4 w-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+            >
+              <path d="M15 18l-6-6 6-6" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        )}
         <button
           type="button"
           className={`${primaryActionButtonClass} ${freeSelected ? selectedActionButtonClass : ''}`}
@@ -438,6 +438,7 @@ const ClarifyingQuestionPrompt = memo(function ClarifyingQuestionPrompt({
  */
 const ClarifyingOptions = memo(function ClarifyingOptions({
   question,
+  currentIndex,
   selectedOptionIndex,
   onOptionClick,
   onUndoAnswer,
@@ -447,6 +448,7 @@ const ClarifyingOptions = memo(function ClarifyingOptions({
   lastAnsweredValue = null,
 }: {
   question: ClarifyingQuestion
+  currentIndex: number
   selectedOptionIndex: number | null
   onOptionClick: (index: number) => void
   onUndoAnswer: () => void
@@ -469,9 +471,10 @@ const ClarifyingOptions = memo(function ClarifyingOptions({
       </div>
       <div className="flex flex-wrap gap-3 text-[13px] text-slate-400" />
       <div className="flex flex-col gap-2">
-        {question.options.map((opt, index) => {
+        {question.options.slice(0, 4).map((opt, index) => {
           const isSelected = index === selectedOptionIndex
-          const isLast = hasLast && normalizedLast === opt.label.trim()
+          // Case-insensitive comparison for outline matching
+          const isLast = hasLast && normalizedLast.toLowerCase() === opt.label.trim().toLowerCase()
           return (
             <button
               key={opt.id}
@@ -483,7 +486,7 @@ const ClarifyingOptions = memo(function ClarifyingOptions({
                   ? 'border-slate-500 bg-slate-900 text-slate-50'
                   : isLast
                   ? 'border-slate-600 bg-slate-950 text-slate-50/90 ring-1 ring-slate-600/70'
-                  : 'border-slate-800 bg-slate-950 text-slate-100 hover-border-slate-600 hover:bg-slate-900'
+                  : 'border-slate-800 bg-slate-950 text-slate-100 hover:border-slate-600 hover:bg-slate-900'
               }`}
             >
               <span className="mt-0.5 text-[13px] text-slate-500">{opt.id})</span>
@@ -511,22 +514,24 @@ const ClarifyingOptions = memo(function ClarifyingOptions({
         </button>
       </div>
       <div className="mt-4 flex flex-wrap gap-2">
-        <button
-          type="button"
-          className={`${primaryActionButtonClass} ${backSelected ? selectedActionButtonClass : ''} justify-center`}
-          onClick={onUndoAnswer}
-          aria-label="Back to previous question"
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            className="h-4 w-4"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
+        {currentIndex > 0 && (
+          <button
+            type="button"
+            className={`${primaryActionButtonClass} ${backSelected ? selectedActionButtonClass : ''} justify-center`}
+            onClick={onUndoAnswer}
+            aria-label="Back to previous question"
           >
-            <path d="M15 18l-6-6 6-6" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-4 w-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+            >
+              <path d="M15 18l-6-6 6-6" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        )}
         {onSkip && (
           <button
             type="button"
@@ -558,7 +563,6 @@ const EditablePromptSection = memo(function EditablePromptSection({
   onUpdateEditablePrompt,
   linksSlot = null,
   onLike,
-  onDislike,
   likeState = 'none',
 }: {
   editablePrompt: string
@@ -568,8 +572,7 @@ const EditablePromptSection = memo(function EditablePromptSection({
   onUpdateEditablePrompt: (nextPrompt: string, previousPrompt: string) => void
   linksSlot?: React.ReactNode
   onLike?: () => void
-  onDislike?: () => void
-  likeState?: 'none' | 'liked' | 'disliked'
+  likeState?: 'none' | 'liked'
 }) {
   const [copyState, setCopyState] = useState<'idle' | 'copied'>('idle')
   const [isEditing, setIsEditing] = useState(false)
@@ -745,33 +748,7 @@ const EditablePromptSection = memo(function EditablePromptSection({
             title={editButtonTitle}
             disabled={editDisabled}
           >
-            {isEditing ? (
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-5 w-5"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-              >
-                <path d="M5 13l4 4L19 7" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            ) : (
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-5 w-5"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-              >
-                <path
-                  d="M4 20h4l10.5-10.5a1.5 1.5 0 0 0-2.1-2.1L6 17.9V20z"
-                  strokeWidth={1.6}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-                <path d="M13.5 6.5l3 3" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            )}
+            {isEditing ? <CheckIcon className="h-5 w-5" /> : <Pencil1Icon className="h-5 w-5" />}
           </button>
           <button
             type="button"
@@ -783,28 +760,7 @@ const EditablePromptSection = memo(function EditablePromptSection({
             aria-label="Copy prompt"
             title={copyState === 'copied' ? 'Copied' : 'Copy prompt'}
           >
-            {copyState === 'copied' ? (
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-5 w-5"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-              >
-                <path d="M5 13l4 4L19 7" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            ) : (
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-5 w-5"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-              >
-                <rect x="9" y="9" width="10" height="12" rx="2" ry="2" strokeWidth={1.6} />
-                <path d="M5 15V5a2 2 0 012-2h8" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            )}
+            {copyState === 'copied' ? <CheckIcon className="h-5 w-5" /> : <CopyIcon className="h-5 w-5" />}
           </button>
         </div>
       </div>
@@ -826,64 +782,21 @@ const EditablePromptSection = memo(function EditablePromptSection({
           </pre>
         )}
       </div>
-      {(onLike || onDislike) && (
+      {onLike && (
         <div className="mt-3 flex items-center justify-end gap-2 text-[12px] text-slate-400">
-          {onLike && (
-            <button
-              type="button"
-              aria-label="Like prompt"
-              title="Like prompt"
-              className={sentimentButtonClass}
-              onClick={(e) => {
-                e.stopPropagation()
-                onLike()
-              }}
-              disabled={likeState === 'liked'}
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-5 w-5"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-              >
-                <path
-                  d="M10.5 20H6a2 2 0 0 1-2-2v-5.5A2.5 2.5 0 0 1 6.5 10H9l1.5-4.5A2 2 0 0 1 12.4 4a2 2 0 0 1 1.7 1L16 8h3a2 2 0 0 1 1.95 2.35l-1.1 6A2 2 0 0 1 17.9 18H12"
-                  strokeWidth={1.6}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </button>
-          )}
-          {onDislike && (
-            <button
-              type="button"
-              aria-label="Dislike prompt"
-              title="Dislike prompt"
-              className={sentimentButtonClass}
-              onClick={(e) => {
-                e.stopPropagation()
-                onDislike()
-              }}
-              disabled={likeState === 'disliked'}
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-5 w-5"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-              >
-                <path
-                  d="M13.5 4H18a2 2 0 0 1 2 2v5.5A2.5 2.5 0 0 1 17.5 14H15l-1.5 4.5A2 2 0 0 1 11.6 20a2 2 0 0 1-1.7-1L8 16H5a2 2 0 0 1-1.95-2.35l1.1-6A2 2 0 0 1 6.1 6H12"
-                  strokeWidth={1.6}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </button>
-          )}
+          <button
+            type="button"
+            aria-label="Like prompt"
+            title="Like prompt"
+            className={sentimentButtonClass}
+            onClick={(e) => {
+              e.stopPropagation()
+              onLike()
+            }}
+            disabled={likeState === 'liked'}
+          >
+            {likeState === 'liked' ? <HeartFilledIcon className="h-5 w-5" /> : <HeartIcon className="h-5 w-5" />}
+          </button>
         </div>
       )}
     </div>
@@ -1081,7 +994,6 @@ export const TerminalOutputArea = memo(function TerminalOutputArea({
   onUpdateEditablePrompt,
   onStartNewConversation,
   onLike,
-  onDislike,
   likeState = 'none',
   isAskingPreferenceQuestions = false,
   currentPreferenceQuestionKey = null,
@@ -1094,7 +1006,6 @@ export const TerminalOutputArea = memo(function TerminalOutputArea({
   onPreferenceBack,
   getPreferenceOptions,
   getPreferenceQuestionText,
-  getPreferenceOrder,
   getPreferencesToAsk,
   showStarter = false,
   generationMode = 'guided',
@@ -1144,253 +1055,270 @@ export const TerminalOutputArea = memo(function TerminalOutputArea({
   const hasLinksContainer = editablePrompt !== null || promptForLinks !== null
   const linksPrompt = (promptForLinks ?? editablePrompt ?? '').toString()
   const linksDisabled = linksPrompt.trim().length === 0
+
+  // Center content vertically when showing starter (empty/fresh state)
+  const isCenteredLayout = showStarter && !editablePrompt && !activity && lines.length === 0
+
   return (
-    <div ref={scrollRef} className="relative flex min-h-0 flex-1 overflow-visible">
-      <div className="terminal-scroll flex-1 space-y-3 overflow-y-auto overflow-x-hidden px-6 pb-6 text-[15px] leading-relaxed text-slate-200 font-mono bg-slate-950 pt-6">
-        {activity && (
-          <div className={`bg-slate-950 ${elevationShadowClass} rounded-xl`}>
-            <ActivityBlock activity={activity} />
-          </div>
-        )}
-        {onStartNewConversation && activity?.status === 'error' && activity?.message === 'Task unclear' && (
-          <div className="mt-2">
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation()
-                onStartNewConversation()
-              }}
-              className={`${primaryActionButtonClass} w-full justify-center h-[44px]`}
-            >
-              Start new conversation
-            </button>
-          </div>
-        )}
-
-        {lines.length > 0 && (
-          <div className="space-y-2" aria-label="Conversation history">
-            {lines.map((line, idx) => {
-              const roleClass =
-                line.role === ROLE.USER ? 'text-sky-200' : line.role === ROLE.APP ? 'text-slate-200' : 'text-slate-400'
-              return (
-                <div
-                  key={`${line.id}-${idx}`}
-                  className={`whitespace-pre-wrap text-[14px] leading-relaxed ${roleClass}`}
-                >
-                  {line.text}
-                </div>
-              )
-            })}
-          </div>
-        )}
-
-        {showStarter && onModeChange && (
-          <div className="space-y-3 pt-2 md:pt-4">
-            <div className="text-[15px] font-semibold text-slate-200">
-              Let&apos;s choose a mode and generate your prompt.
+    <div ref={scrollRef} className="relative h-full">
+      <div
+        className={`terminal-scroll h-full overflow-y-auto overflow-x-hidden px-4 pt-16 pb-32 text-[15px] leading-relaxed text-slate-200 font-mono ${
+          isCenteredLayout ? 'flex flex-col justify-center items-center' : ''
+        }`}
+      >
+        {/* Content container - same max-width as input bar */}
+        <div className="mx-auto w-full max-w-2xl space-y-3">
+          {activity && (
+            <div className={`bg-slate-950/80 backdrop-blur-sm ${elevationShadowClass} rounded-xl`}>
+              <ActivityBlock activity={activity} />
             </div>
-            <div className="grid gap-3 md:grid-cols-2" role="group" aria-label="Select mode for this prompt">
-              <button
-                type="button"
-                onClick={() => onModeChange?.('quick', { silent: true })}
-                onKeyDown={(e) => handleModeKeyDown(e, 'quick')}
-                autoFocus
-                data-mode-index="0"
-                className={`flex w-full cursor-pointer items-start gap-3 rounded-lg border px-3 py-3 text-left shadow-[0_12px_32px_rgba(0,0,0,0.35)] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-1 focus-visible:ring-offset-slate-950 ${
-                  generationMode === 'quick'
-                    ? 'border-slate-600 bg-slate-900 text-slate-50'
-                    : 'border-slate-800 bg-slate-950/50 text-slate-100 hover:border-slate-600 hover:bg-slate-900'
-                }`}
-              >
-                <div className="mt-0.5 flex h-9 w-9 items-center justify-center text-slate-100">
-                  <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
-                    <path d="M10 3l-4 10h5l-2 8 9-12h-6l2-6z" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                </div>
-                <div className="space-y-1">
-                  <div className="text-[14px] font-semibold text-slate-100">Quick Start</div>
-                  <div className="text-[13px] text-slate-300">
-                    Fastest. Generates the prompt immediately without clarifying or preference questions.
-                  </div>
-                </div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => onModeChange?.('guided', { silent: true })}
-                onKeyDown={(e) => handleModeKeyDown(e, 'guided')}
-                data-mode-index="1"
-                className={`flex w-full cursor-pointer items-start gap-3 rounded-lg border px-3 py-3 text-left shadow-[0_12px_32px_rgba(0,0,0,0.35)] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-1 focus-visible:ring-offset-slate-950 ${
-                  generationMode === 'guided'
-                    ? 'border-slate-600 bg-slate-900 text-slate-50'
-                    : 'border-slate-800 bg-slate-950/50 text-slate-100 hover:border-slate-600 hover:bg-slate-900'
-                }`}
-              >
-                <div className="mt-0.5 flex h-9 w-9 items-center justify-center text-slate-100">
-                  <svg
-                    className="h-5 w-5"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth={1.7}
-                    aria-hidden="true"
-                  >
-                    <path d="M9 18h6" strokeLinecap="round" />
-                    <path d="M10.5 20.5h3" strokeLinecap="round" />
-                    <path
-                      d="M12 3.5c-3 0-5.5 2.3-5.5 5.2 0 1.7.8 3.2 2.1 4.2.6.5 1 .9 1 1.6V16h4.8v-.5c0-.7.4-1.1 1-1.6 1.3-1 2.1-2.5 2.1-4.2 0-2.9-2.5-5.2-5.5-5.2Z"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                    <path d="M10.5 14h3" strokeLinecap="round" />
-                  </svg>
-                </div>
-                <div className="space-y-1">
-                  <div className="text-[14px] font-semibold text-slate-100">Guided Build</div>
-                  <div className="text-[13px] text-slate-300">
-                    Asks brief clarifying and preference questions first for higher-quality prompts.
-                  </div>
-                </div>
-              </button>
-            </div>
-          </div>
-        )}
-
-        {awaitingQuestionConsent && (
-          <ConsentButtons consentSelectedIndex={consentSelectedIndex} onConsentOptionClick={onConsentOptionClick} />
-        )}
-
-        {answeringQuestions && currentClarifyingQuestion && currentClarifyingQuestion.options.length === 0 && (
-          <ClarifyingQuestionPrompt
-            question={currentClarifyingQuestion}
-            currentIndex={currentClarifyingQuestionIndex ?? 0}
-            totalCount={clarifyingTotalCount}
-            selectedOptionIndex={clarifyingSelectedOptionIndex}
-            canSubmit={clarifyingCanSubmit}
-            lastAnsweredValue={clarifyingLastAnswer}
-            onUndoAnswer={onUndoAnswer}
-            onFocusInput={onFocusInput}
-            onFocusInputSelectFree={onFocusInputSelectFree}
-            onSkip={onClarifyingSkip}
-          />
-        )}
-
-        {answeringQuestions && currentClarifyingQuestion && currentClarifyingQuestion.options.length > 0 && (
-          <ClarifyingOptions
-            question={currentClarifyingQuestion}
-            selectedOptionIndex={clarifyingSelectedOptionIndex}
-            onOptionClick={onClarifyingOptionClick}
-            onUndoAnswer={onUndoAnswer}
-            onFocusInput={onFocusInput}
-            onFocusInputSelectFree={onFocusInputSelectFree}
-            onSkip={onClarifyingSkip}
-            lastAnsweredValue={clarifyingLastAnswer}
-          />
-        )}
-
-        {isAskingPreferenceQuestions &&
-          currentPreferenceQuestionKey &&
-          getPreferenceOptions &&
-          getPreferenceQuestionText &&
-          getPreferencesToAsk &&
-          onPreferenceOptionClick &&
-          (() => {
-            const options = getPreferenceOptions(currentPreferenceQuestionKey)
-            const prefsOrder =
-              typeof getPreferenceOrder === 'function' && getPreferenceOrder()
-                ? getPreferenceOrder()
-                : getPreferencesToAsk()
-            const currentIndex = prefsOrder.indexOf(currentPreferenceQuestionKey)
-            return (
-              <PreferenceOptions
-                questionText={getPreferenceQuestionText(currentPreferenceQuestionKey)}
-                options={options}
-                selectedOptionIndex={preferenceSelectedOptionIndex ?? null}
-                currentIndex={currentIndex}
-                totalCount={prefsOrder.length}
-                onOptionClick={onPreferenceOptionClick}
-                onFocusInput={onPreferenceYourAnswer ?? onFocusInput}
-                onFocusInputSelectFree={onPreferenceFocusInputSelectFree ?? onPreferenceYourAnswer ?? onFocusInput}
-                onUndoAnswer={onPreferenceBack ?? (() => {})}
-                onSkip={onPreferenceSkip}
-                lastAnsweredValue={preferenceLastAnswer}
-              />
-            )
-          })()}
-
-        {editablePrompt !== null && (
-          <EditablePromptSection
-            editablePrompt={editablePrompt}
-            promptEditDiff={promptEditDiff}
-            editablePromptRef={editablePromptRef}
-            onCopyEditable={onCopyEditable}
-            onUpdateEditablePrompt={onUpdateEditablePrompt}
-            linksSlot={
-              hasLinksContainer ? (
-                <ApprovedPromptLinks
-                  prompt={linksPrompt}
-                  disabled={linksDisabled}
-                  onStartNewConversation={onStartNewConversation}
-                  onFinalBack={onFinalBack}
-                  showBack={Boolean(editablePrompt && onFinalBack)}
-                  showActions={false}
-                />
-              ) : null
-            }
-            onLike={onLike}
-            onDislike={onDislike}
-            likeState={likeState}
-          />
-        )}
-
-        {editablePrompt !== null && hasLinksContainer && Boolean(onStartNewConversation || onFinalBack) && (
-          <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
-            {onFinalBack && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onFinalBack()
-                }}
-                className={`${primaryActionButtonClass} h-[52px] min-w-[150px] px-4 text-[15px] gap-2 justify-center`}
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="h-5 w-5"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                >
-                  <path d="M15 18l-6-6 6-6" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-                Back
-              </button>
-            )}
-            {onStartNewConversation && (
+          )}
+          {onStartNewConversation && activity?.status === 'error' && activity?.message === 'Task unclear' && (
+            <div className="mt-2">
               <button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation()
                   onStartNewConversation()
                 }}
-                className={`${primaryActionButtonClass} h-[52px] min-w-[150px] px-4 text-[15px] gap-2 justify-center`}
+                className={`${primaryActionButtonClass} w-full justify-center h-[44px]`}
               >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="h-5 w-5"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                >
-                  <path d="M12 5v14M5 12h14" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-                New
+                Start new conversation
               </button>
-            )}
-          </div>
-        )}
+            </div>
+          )}
 
-        {!editablePrompt && <div className="min-h-50" aria-hidden />}
+          {lines.length > 0 && (
+            <div className="space-y-2" aria-label="Conversation history">
+              {lines.map((line, idx) => {
+                const roleClass =
+                  line.role === ROLE.USER
+                    ? 'text-sky-200'
+                    : line.role === ROLE.APP
+                    ? 'text-slate-200'
+                    : 'text-slate-400'
+                return (
+                  <div
+                    key={`${line.id}-${idx}`}
+                    className={`whitespace-pre-wrap text-[14px] leading-relaxed ${roleClass}`}
+                  >
+                    {line.text}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {showStarter && onModeChange && (
+            <div className="w-full max-w-2xl space-y-5 py-4">
+              <div className="text-center">
+                <h1 className="text-2xl font-semibold text-slate-100 mb-2">What would you like to create?</h1>
+                <p className="text-[15px] text-slate-400">Choose a mode to get started</p>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2" role="group" aria-label="Select mode for this prompt">
+                <button
+                  type="button"
+                  onClick={() => onModeChange?.('quick', { silent: true })}
+                  onKeyDown={(e) => handleModeKeyDown(e, 'quick')}
+                  autoFocus={generationMode === 'quick'}
+                  data-mode-index="0"
+                  className={`flex w-full cursor-pointer items-start gap-3 rounded-lg border px-3 py-3 text-left shadow-[0_12px_32px_rgba(0,0,0,0.35)] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-1 focus-visible:ring-offset-slate-950 ${
+                    generationMode === 'quick'
+                      ? 'border-slate-600 bg-slate-900 text-slate-50'
+                      : 'border-slate-800 bg-slate-950/50 text-slate-100 hover:border-slate-600 hover:bg-slate-900'
+                  }`}
+                >
+                  <div className="mt-0.5 flex h-9 w-9 items-center justify-center text-slate-100">
+                    <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+                      <path d="M10 3l-4 10h5l-2 8 9-12h-6l2-6z" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="text-[14px] font-semibold text-slate-100">Quick Start</div>
+                    <div className="text-[13px] text-slate-300">
+                      Fastest. Generates the prompt immediately without clarifying or preference questions.
+                    </div>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => onModeChange?.('guided', { silent: true })}
+                  onKeyDown={(e) => handleModeKeyDown(e, 'guided')}
+                  autoFocus={generationMode === 'guided'}
+                  data-mode-index="1"
+                  className={`flex w-full cursor-pointer items-start gap-3 rounded-lg border px-3 py-3 text-left shadow-[0_12px_32px_rgba(0,0,0,0.35)] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-1 focus-visible:ring-offset-slate-950 ${
+                    generationMode === 'guided'
+                      ? 'border-slate-600 bg-slate-900 text-slate-50'
+                      : 'border-slate-800 bg-slate-950/50 text-slate-100 hover:border-slate-600 hover:bg-slate-900'
+                  }`}
+                >
+                  <div className="mt-0.5 flex h-9 w-9 items-center justify-center text-slate-100">
+                    <svg
+                      className="h-5 w-5"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth={1.7}
+                      aria-hidden="true"
+                    >
+                      <path d="M9 18h6" strokeLinecap="round" />
+                      <path d="M10.5 20.5h3" strokeLinecap="round" />
+                      <path
+                        d="M12 3.5c-3 0-5.5 2.3-5.5 5.2 0 1.7.8 3.2 2.1 4.2.6.5 1 .9 1 1.6V16h4.8v-.5c0-.7.4-1.1 1-1.6 1.3-1 2.1-2.5 2.1-4.2 0-2.9-2.5-5.2-5.5-5.2Z"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <path d="M10.5 14h3" strokeLinecap="round" />
+                    </svg>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="text-[14px] font-semibold text-slate-100">Guided Build</div>
+                    <div className="text-[13px] text-slate-300">
+                      Asks brief clarifying and preference questions first for higher-quality prompts.
+                    </div>
+                  </div>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {awaitingQuestionConsent && (
+            <ConsentButtons consentSelectedIndex={consentSelectedIndex} onConsentOptionClick={onConsentOptionClick} />
+          )}
+
+          {answeringQuestions && currentClarifyingQuestion && currentClarifyingQuestion.options.length === 0 && (
+            <div>
+              <ClarifyingQuestionPrompt
+                question={currentClarifyingQuestion}
+                currentIndex={currentClarifyingQuestionIndex ?? 0}
+                totalCount={clarifyingTotalCount}
+                selectedOptionIndex={clarifyingSelectedOptionIndex}
+                canSubmit={clarifyingCanSubmit}
+                lastAnsweredValue={clarifyingLastAnswer}
+                onUndoAnswer={onUndoAnswer}
+                onFocusInput={onFocusInput}
+                onFocusInputSelectFree={onFocusInputSelectFree}
+                onSkip={onClarifyingSkip}
+              />
+            </div>
+          )}
+
+          {answeringQuestions && currentClarifyingQuestion && currentClarifyingQuestion.options.length > 0 && (
+            <div>
+              <ClarifyingOptions
+                question={currentClarifyingQuestion}
+                currentIndex={currentClarifyingQuestionIndex ?? 0}
+                selectedOptionIndex={clarifyingSelectedOptionIndex}
+                onOptionClick={onClarifyingOptionClick}
+                onUndoAnswer={onUndoAnswer}
+                onFocusInput={onFocusInput}
+                onFocusInputSelectFree={onFocusInputSelectFree}
+                onSkip={onClarifyingSkip}
+                lastAnsweredValue={clarifyingLastAnswer}
+              />
+            </div>
+          )}
+
+          {isAskingPreferenceQuestions &&
+            currentPreferenceQuestionKey &&
+            getPreferenceOptions &&
+            getPreferenceQuestionText &&
+            getPreferencesToAsk &&
+            onPreferenceOptionClick &&
+            (() => {
+              const options = getPreferenceOptions(currentPreferenceQuestionKey)
+              return (
+                <div>
+                  <PreferenceOptions
+                    questionText={getPreferenceQuestionText(currentPreferenceQuestionKey)}
+                    options={options}
+                    selectedOptionIndex={preferenceSelectedOptionIndex ?? null}
+                    onOptionClick={onPreferenceOptionClick}
+                    onFocusInput={onPreferenceYourAnswer ?? onFocusInput}
+                    onFocusInputSelectFree={onPreferenceFocusInputSelectFree ?? onPreferenceYourAnswer ?? onFocusInput}
+                    onUndoAnswer={onPreferenceBack ?? (() => {})}
+                    onSkip={onPreferenceSkip}
+                    lastAnsweredValue={preferenceLastAnswer}
+                  />
+                </div>
+              )
+            })()}
+
+          {editablePrompt !== null && (
+            <EditablePromptSection
+              editablePrompt={editablePrompt}
+              promptEditDiff={promptEditDiff}
+              editablePromptRef={editablePromptRef}
+              onCopyEditable={onCopyEditable}
+              onUpdateEditablePrompt={onUpdateEditablePrompt}
+              linksSlot={
+                hasLinksContainer ? (
+                  <ApprovedPromptLinks
+                    prompt={linksPrompt}
+                    disabled={linksDisabled}
+                    onStartNewConversation={onStartNewConversation}
+                    onFinalBack={onFinalBack}
+                    showBack={Boolean(editablePrompt && onFinalBack)}
+                    showActions={false}
+                  />
+                ) : null
+              }
+              onLike={onLike}
+              likeState={likeState}
+            />
+          )}
+
+          {editablePrompt !== null && hasLinksContainer && Boolean(onStartNewConversation || onFinalBack) && (
+            <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+              {onFinalBack && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onFinalBack()
+                  }}
+                  className={`${primaryActionButtonClass} h-[52px] min-w-[150px] px-4 text-[15px] gap-2 justify-center`}
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-5 w-5"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                  >
+                    <path d="M15 18l-6-6 6-6" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                  Back
+                </button>
+              )}
+              {onStartNewConversation && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onStartNewConversation()
+                  }}
+                  className={`${primaryActionButtonClass} h-[52px] min-w-[150px] px-4 text-[15px] gap-2 justify-center`}
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-5 w-5"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                  >
+                    <path d="M12 5v14M5 12h14" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                  New
+                </button>
+              )}
+            </div>
+          )}
+
+          {!editablePrompt && <div className="min-h-50" aria-hidden />}
+        </div>
+        {/* Close content container */}
       </div>
     </div>
   )

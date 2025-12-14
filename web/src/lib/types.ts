@@ -75,6 +75,11 @@ export type Preferences = {
      */
     askPreferencesInGuided?: boolean
     /**
+     * Voice input language (BCP 47 tag like 'en-US', 'uk-UA').
+     * 'auto' means use browser's navigator.language.
+     */
+    voiceLanguage?: string
+    /**
      * Legacy flags retained for backwards compatibility with stored data.
      * They are ignored by the current UI.
      */

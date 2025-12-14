@@ -42,7 +42,6 @@ describe('TerminalOutputArea', () => {
         onClarifyingSkip={() => {}}
         likeState="none"
         onLike={() => {}}
-        onDislike={() => {}}
         isAskingPreferenceQuestions={false}
         currentPreferenceQuestionKey={null}
         preferenceSelectedOptionIndex={null}
@@ -95,7 +94,6 @@ describe('TerminalOutputArea', () => {
         onStartNewConversation={() => {}}
         likeState="none"
         onLike={() => {}}
-        onDislike={() => {}}
         isAskingPreferenceQuestions={false}
         currentPreferenceQuestionKey={null}
         preferenceSelectedOptionIndex={null}

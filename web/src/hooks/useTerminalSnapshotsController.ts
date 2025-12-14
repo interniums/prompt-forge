@@ -8,10 +8,10 @@ import type {
   GenerationMode,
   TerminalLine,
   Preferences,
-  TerminalStatus,
   TaskActivity,
 } from '@/lib/types'
 import type { PreferenceKey, SessionSnapshot } from '@/features/terminal/terminalState'
+import type { HistoryItem } from '@/lib/types'
 
 export type TerminalSnapshotState = {
   lines: TerminalLine[]
@@ -37,10 +37,10 @@ export type TerminalSnapshotState = {
   preferenceSelectedOptionIndex: number | null
   pendingPreferenceUpdates: Partial<Preferences>
   lastSnapshot: SessionSnapshot | null
+  lastHistory?: HistoryItem[] | null
 }
 
 export type TerminalSnapshotActions = {
-  appendLine: (role: 'system' | 'user' | 'app', text: string | TerminalStatus) => void
   setLines: (next: TerminalLine[] | ((prev: TerminalLine[]) => TerminalLine[])) => void
   setActivity: (value: TaskActivity | null) => void
   setEditablePrompt: (value: string | null) => void
@@ -67,7 +67,7 @@ export type TerminalSnapshotActions = {
     value: Array<{ id: string; task: string; label: string; body: string; created_at: string }> | null
   ) => void
   setLastSnapshot: (value: SessionSnapshot | null) => void
-  setLikeState: (value: 'none' | 'liked' | 'disliked') => void
+  setLikeState: (value: 'none' | 'liked') => void
   setValue: (next: string) => void
   clearDraft: () => void
   resetClarifyingFlowState: () => void

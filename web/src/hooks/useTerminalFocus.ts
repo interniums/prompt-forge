@@ -17,6 +17,12 @@ export function useTerminalFocus({ editablePrompt, inputRef, copyEditablePrompt 
     el.setSelectionRange(len, len)
   }, [inputRef])
 
+  const blurInput = useCallback(() => {
+    if (inputRef.current) {
+      inputRef.current.blur()
+    }
+  }, [inputRef])
+
   useEffect(() => {
     if (!editablePrompt) return
     function handleGlobalCopy(e: KeyboardEvent) {
@@ -29,5 +35,5 @@ export function useTerminalFocus({ editablePrompt, inputRef, copyEditablePrompt 
     return () => window.removeEventListener('keydown', handleGlobalCopy)
   }, [copyEditablePrompt, editablePrompt])
 
-  return { focusInputToEnd }
+  return { focusInputToEnd, blurInput }
 }

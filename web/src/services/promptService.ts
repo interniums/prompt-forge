@@ -18,7 +18,6 @@ const aiApiEnabled = (() => {
 
 export type PreferencesInput = Preferences
 
-const MIN_TASK_LENGTH = 4
 const MAX_TASK_LENGTH = 4000
 const CONTROL_CHARS_REGEX = /[\u0000-\u001F\u007F]/g
 const MAX_MODEL_TEXT_LENGTH = 12000
@@ -255,10 +254,11 @@ function assertUnderstandableTask(task: string) {
 
 function assertValidTask(task: string) {
   const trimmed = task.trim()
-  if (!trimmed || trimmed.length < MIN_TASK_LENGTH) {
+  // Only reject empty tasks - short tasks are handled heuristically
+  if (!trimmed) {
     const err = new Error('INVALID_INPUT')
     ;(err as { code?: string; reason?: string }).code = 'INVALID_INPUT'
-    ;(err as { reason?: string }).reason = 'too_short'
+    ;(err as { reason?: string }).reason = 'empty'
     throw err
   }
   if (trimmed.length > MAX_TASK_LENGTH) {
@@ -352,7 +352,7 @@ export async function generateClarifyingQuestions(input: {
     'You are PromptForge, an AI that designs short clarifying questions to improve prompts.',
     "Given a user's task, generate up to 3 short questions that will make the final prompt much more accurate.",
     'Each question should be tailored to the domain (coding, education, marketing, etc.).',
-    'You may include 0-5 multiple-choice options per question.',
+    'You may include 0-4 multiple-choice options per question.',
     'If task details conflict with preferences, treat the task text as the source of truth; otherwise resolve conflicts using your best judgment to maximize prompt quality.',
     'Return ONLY JSON with `questions` (array of items with `id`, `question`, and `options`), plus `needsClarification` (boolean) and optional `reason`.',
     'If the task is nonsense or too unclear to generate useful questions, set `needsClarification` to true with a short `reason` and leave `questions` empty. For clear tasks, set `needsClarification` to false.',

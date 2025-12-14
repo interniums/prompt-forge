@@ -11,6 +11,7 @@ import type {
   Preferences,
 } from '@/lib/types'
 import type { TerminalRole } from '@/lib/constants'
+import type { PreferenceKey } from '@/features/terminal/terminalState'
 
 type RestoreDeps = {
   sessionId: string | null
@@ -33,9 +34,9 @@ type RestoreDeps = {
   setPromptFinalized: (value: boolean) => void
   setHeaderHelpShown: (value: boolean) => void
   setLastApprovedPrompt: (value: string | null) => void
-  setLikeState: (value: 'none' | 'liked' | 'disliked') => void
+  setLikeState: (value: 'none' | 'liked') => void
   setIsAskingPreferenceQuestions: (value: boolean) => void
-  setCurrentPreferenceQuestionKey: (value: string | null) => void
+  setCurrentPreferenceQuestionKey: (value: PreferenceKey | null) => void
   setPreferenceSelectedOptionIndex: (value: number | null) => void
   setPendingPreferenceUpdates: (value: Partial<Preferences>) => void
   replaceLines: (lines: TerminalLine[]) => void
@@ -65,10 +66,9 @@ type PersistenceDeps = {
   isPromptFinalized: boolean
   headerHelpShown: boolean
   lastApprovedPrompt: string | null
-  likeState: 'none' | 'liked' | 'disliked'
-  isGenerating: boolean
+  likeState: 'none' | 'liked'
   isAskingPreferenceQuestions: boolean
-  currentPreferenceQuestionKey: string | null
+  currentPreferenceQuestionKey: PreferenceKey | null
   preferenceSelectedOptionIndex: number | null
   pendingPreferenceUpdates: Partial<Preferences>
   isPreferencesOpen: boolean
@@ -98,7 +98,6 @@ export function useTerminalPersistence({
   headerHelpShown,
   lastApprovedPrompt,
   likeState,
-  isGenerating,
   isAskingPreferenceQuestions,
   currentPreferenceQuestionKey,
   preferenceSelectedOptionIndex,

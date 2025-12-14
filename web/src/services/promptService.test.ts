@@ -68,16 +68,7 @@ describe('promptService auth guards', () => {
     ).rejects.toThrow(/UNAUTHENTICATED/)
   })
 
-  it('rejects overly short tasks with INVALID_INPUT', async () => {
-    requireAuthenticatedUserMock.mockResolvedValue({ id: 'user-1', email: 'a@b.com' })
-    await expect(
-      generateFinalPrompt({
-        task: 'Hi',
-        preferences: {},
-        answers: [],
-      })
-    ).rejects.toThrow(/INVALID_INPUT/)
-  })
+  // Short tasks are now handled heuristically, not rejected
 
   it('rejects overly long tasks with INVALID_INPUT', async () => {
     requireAuthenticatedUserMock.mockResolvedValue({ id: 'user-1', email: 'a@b.com' })
