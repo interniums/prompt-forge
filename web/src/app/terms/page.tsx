@@ -2,33 +2,48 @@ import type { Metadata } from 'next'
 import { ContentPageLayout, ContentSection } from '@/components/ContentPageLayout'
 
 export const metadata: Metadata = {
-  title: 'Terms of Service | PromptForge',
-  description: 'The rules for using PromptForge and how billing is handled.',
+  title: 'Terms & Conditions | PromptForge',
+  description: 'The rules for using PromptForge, billing, refunds, and acceptable use.',
 }
 
 const supportEmail = 'support@promptforge.app'
+const legalName = '{LEGAL_NAME_OR_COMPANY_NAME}'
+const country = '{COUNTRY}'
+const businessAddress = '{BUSINESS_ADDRESS}'
 const effectiveDate = 'December 15, 2025'
 
 export default function TermsPage() {
   return (
     <ContentPageLayout
-      title="Terms of Service"
-      intro="These terms explain how you can use PromptForge, how billing works, and what to expect from us."
+      title="Terms & Conditions"
+      intro="These terms explain how you may use PromptForge, how billing and refunds work, and how to reach us."
       tag={`Effective ${effectiveDate}`}
+      actionHref="/docs"
+      actionLabel="Back to docs"
     >
       <ContentSection title="Quick summary" kicker="Read this first">
         <ul className="space-y-2">
-          <li>PromptForge lets you draft prompts with clarifying questions, edits, and history.</li>
-          <li>Paddle is our merchant of record. Subscriptions renew monthly until you cancel.</li>
-          <li>You must use the product lawfully and avoid sensitive or harmful content.</li>
-          <li>We provide the service as-is; liability is capped to the fees you paid in the last 3 months.</li>
-          <li>Contact us anytime at {supportEmail} for billing or account help.</li>
+          <li>PromptForge lets you create prompts with clarifying questions, edits, and history.</li>
+          <li>Paddle is our merchant of record; subscriptions renew monthly until you cancel.</li>
+          <li>Use the product lawfully and avoid harmful, abusive, or sensitive content.</li>
+          <li>Liability is limited to the fees paid in the last 3 months, to the extent allowed by law.</li>
+          <li>Contact {supportEmail} for billing, account, or legal questions.</li>
+        </ul>
+      </ContentSection>
+
+      <ContentSection title="Who we are" kicker="Provider details">
+        <ul className="space-y-2">
+          <li>Service: PromptForge (prompt builder web app).</li>
+          <li>Provider legal name: {legalName}.</li>
+          <li>Registered country: {country}.</li>
+          <li>Business address: {businessAddress}.</li>
+          <li>Primary contact: {supportEmail}.</li>
         </ul>
       </ContentSection>
 
       <ContentSection title="Accounts and access">
         <ul className="space-y-2">
-          <li>You need a valid email account to sign in. Keep your login secure and let us know about any breach.</li>
+          <li>You need a valid email account to sign in. Keep your login secure and tell us about any breach.</li>
           <li>You are responsible for all activity under your account, including guests using your device.</li>
           <li>Do not share access or try to bypass authentication, quotas, or rate limits.</li>
         </ul>
@@ -37,11 +52,21 @@ export default function TermsPage() {
       <ContentSection title="Subscriptions and payment">
         <ul className="space-y-2">
           <li>Paddle bills you in USD as the merchant of record. Taxes are calculated at checkout.</li>
+          <li>Plans renew monthly until you cancel. Cancelling stops future renewals; current-period access continues.</li>
           <li>
-            Plans renew monthly until you cancel. Cancellation stops future renewals; current-period access continues.
+            Usage resets every 30 days. Free trial: 50 generations / 15 edits / 50 clarifying calls for 3 days. Basic:
+            800 / 200 / 800. Advanced: 1,800 / 400 / 1,800 plus 200 premium finals on supported models.
           </li>
           <li>Upgrades start immediately with a prorated charge. Downgrades take effect on the next cycle.</li>
           <li>We may suspend or downgrade the service for non-payment, fraud, or abuse.</li>
+        </ul>
+      </ContentSection>
+
+      <ContentSection title="Refunds and cancellations">
+        <ul className="space-y-2">
+          <li>Refunds follow our Refund Policy at /refund-policy.</li>
+          <li>You can cancel anytime via the Paddle portal link in your receipt or by emailing us.</li>
+          <li>After cancellation you keep access until the end of the paid period.</li>
         </ul>
       </ContentSection>
 
@@ -57,14 +82,8 @@ export default function TermsPage() {
 
       <ContentSection title="Content and intellectual property">
         <ul className="space-y-2">
-          <li>
-            You own the prompts and content you input. You grant us the rights needed to operate and improve the
-            service.
-          </li>
-          <li>
-            We own PromptForge’s code, design, and branding. You cannot copy, resell, or host a competing service using
-            our assets.
-          </li>
+          <li>You own the prompts and content you input. You grant us the rights needed to operate the service.</li>
+          <li>We own PromptForge’s code, design, and branding. Do not copy, resell, or host a competing service.</li>
           <li>Feedback is optional; if provided, we may use it without obligation or attribution.</li>
         </ul>
       </ContentSection>
@@ -73,7 +92,7 @@ export default function TermsPage() {
         <ul className="space-y-2">
           <li>We aim for reliable uptime but do not guarantee uninterrupted service.</li>
           <li>We may update features, interfaces, or limits to improve stability and security.</li>
-          <li>Material changes to these terms will be notified in-app or by email where practical.</li>
+          <li>Material changes to these terms will be notified in-app and, when possible, by email.</li>
         </ul>
       </ContentSection>
 
@@ -84,10 +103,7 @@ export default function TermsPage() {
             To the maximum extent allowed by law, our total liability is limited to the fees you paid in the 3 months
             before a claim (or $50, whichever is higher).
           </li>
-          <li>
-            We are not liable for indirect, incidental, special, or consequential damages, or for loss of data or
-            profits.
-          </li>
+          <li>We are not liable for indirect, incidental, special, or consequential damages, or for loss of data or profits.</li>
         </ul>
       </ContentSection>
 
@@ -101,23 +117,21 @@ export default function TermsPage() {
 
       <ContentSection title="Governing law and disputes">
         <ul className="space-y-2">
-          <li>
-            These terms are governed by the laws of the State of Delaware, USA, without regard to conflict of law rules.
-          </li>
-          <li>
-            Disputes will be resolved in the state or federal courts located in Delaware, unless otherwise required by
-            applicable law.
-          </li>
+          <li>These terms are governed by the laws of {country}, unless a different mandatory law applies to you.</li>
+          <li>Disputes will be handled in the courts of {country}, unless applicable law requires otherwise.</li>
         </ul>
       </ContentSection>
 
       <ContentSection title="Contact">
         <p>
           Questions or issues? Email{' '}
-          <a href={`mailto:${supportEmail}`} className="underline">
+          <a
+            href={`mailto:${supportEmail}`}
+            className="underline underline-offset-2 transition hover:text-[color-mix(in_srgb,var(--pf-foreground)_90%,transparent)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color-mix(in_srgb,var(--pf-foreground)_70%,transparent)] cursor-pointer"
+          >
             {supportEmail}
           </a>
-          . We usually respond within 2 business days.
+          . We usually respond within 1–2 business days.
         </p>
       </ContentSection>
     </ContentPageLayout>

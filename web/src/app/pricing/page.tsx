@@ -36,7 +36,7 @@ const plans: Plan[] = [
     price: '$12.99 / month',
     summary: 'For heavy daily use and premium final prompts.',
     bullets: [
-      '1,800 generations (includes premium finals on gpt-4.1)',
+      '1,800 generations (includes 200 premium with improved quality)',
       '400 edits',
       '1,800 clarifying calls',
       'Best for teams and power users',
@@ -114,14 +114,40 @@ export default function PricingPage() {
           <li>Charges recur monthly until you cancel. You keep access through the paid period.</li>
           <li>Cancel anytime via the Paddle customer portal link in your receipt or by emailing {supportEmail}.</li>
           <li>Usage counters reset every 30 days starting from your billing date.</li>
-          <li>Advanced plan routes premium finals through gpt-4.1 and consumes the premium quota noted above.</li>
+          <li>Advanced plan routes premium finals and consumes the premium quota noted above.</li>
+        </ul>
+      </ContentSection>
+
+      <ContentSection title="FAQ" kicker="Common questions">
+        <ul className="space-y-2">
+          <li>
+            <strong>Is there a free trial?</strong> Yes, 3 days with generous quotas. No card required until you upgrade.
+          </li>
+          <li>
+            <strong>Can I cancel anytime?</strong> Yes. Cancelling stops future renewals and you keep access for the
+            current paid period.
+          </li>
+          <li>
+            <strong>Do prices include tax?</strong> Taxes are calculated by Paddle at checkout and shown before payment.
+          </li>
+          <li>
+            <strong>How do upgrades/downgrades work?</strong> Upgrades are prorated immediately; downgrades take effect
+            on the next billing cycle.
+          </li>
+          <li>
+            <strong>Need a receipt update?</strong> Reply to your Paddle receipt or email {supportEmail} with your order
+            ID.
+          </li>
         </ul>
       </ContentSection>
 
       <ContentSection title="Need a hand?" kicker="Support">
         <p>
           Email us at{' '}
-          <a href={`mailto:${supportEmail}`} className="underline">
+          <a
+            href={`mailto:${supportEmail}`}
+            className="underline underline-offset-2 transition hover:text-[color-mix(in_srgb,var(--pf-foreground)_90%,transparent)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color-mix(in_srgb,var(--pf-foreground)_70%,transparent)] cursor-pointer"
+          >
             {supportEmail}
           </a>{' '}
           if you have billing questions or need a receipt update. We respond within 2 business days.

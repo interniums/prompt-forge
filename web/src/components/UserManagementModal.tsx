@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import type { UserIdentity } from '@/lib/types'
 import { modalBackdropClass, modalCardClass } from '@/features/preferences/styles'
 import {
@@ -169,6 +170,22 @@ export function UserManagementModal({
               <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 5l5 5-5 5" />
             </svg>
           </button>
+
+          <Link href="/legal" onClick={onClose} className={`${actionButtonClass} inline-flex items-center gap-2`}>
+            <div>
+              <div className="text-sm text-slate-100">Legal & policies</div>
+              <div className="text-xs text-slate-500">Terms, privacy, refunds, pricing</div>
+            </div>
+            <svg
+              className="h-4 w-4 text-slate-500"
+              viewBox="0 0 20 20"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={1.5}
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 5l5 5-5 5" />
+            </svg>
+          </Link>
 
           {user ? (
             <AlertDialog open={signOutDialogOpen} onOpenChange={setSignOutDialogOpen}>

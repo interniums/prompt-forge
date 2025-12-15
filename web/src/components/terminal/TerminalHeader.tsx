@@ -1,7 +1,8 @@
 'use client'
 
+import Link from 'next/link'
 import type { ThemeName } from '@/lib/types'
-import { Sun, Moon, CloudSun } from 'lucide-react'
+import { Sun, Moon, CloudSun, FileText } from 'lucide-react'
 
 export type TerminalHeaderProps = {
   onProfileClick: () => void
@@ -76,6 +77,16 @@ export function TerminalHeader({
             </svg>
           </button>
         )}
+
+        {/* Legal */}
+        <Link
+          href="/legal"
+          className={headerButtonClass}
+          title="Legal & policies"
+          aria-label="Open legal and policy links"
+        >
+          <FileText className="h-5 w-5" />
+        </Link>
 
         {/* Settings */}
         <button type="button" onClick={onSettingsClick} className={headerButtonClass} title="Preferences">

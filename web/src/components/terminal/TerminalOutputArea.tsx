@@ -2,7 +2,7 @@
 
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Image from 'next/image'
-import { Pencil1Icon, CopyIcon, CheckIcon, HeartIcon, HeartFilledIcon } from '@radix-ui/react-icons'
+import { Check, Copy, Heart, Pencil } from 'lucide-react'
 import type { TerminalLine, ClarifyingQuestion, Preferences, GenerationMode, TaskActivity } from '@/lib/types'
 import { ROLE } from '@/lib/constants'
 
@@ -658,7 +658,7 @@ const EditablePromptSection = memo(function EditablePromptSection({
             title={editButtonTitle}
             disabled={editDisabled}
           >
-            {isEditing ? <CheckIcon className="h-5 w-5" /> : <Pencil1Icon className="h-5 w-5" />}
+            {isEditing ? <Check className="h-5 w-5" /> : <Pencil className="h-5 w-5" />}
           </button>
           <button
             type="button"
@@ -670,7 +670,7 @@ const EditablePromptSection = memo(function EditablePromptSection({
             aria-label="Copy prompt"
             title={copyState === 'copied' ? 'Copied' : 'Copy prompt'}
           >
-            {copyState === 'copied' ? <CheckIcon className="h-5 w-5" /> : <CopyIcon className="h-5 w-5" />}
+            {copyState === 'copied' ? <Check className="h-5 w-5" /> : <Copy className="h-5 w-5" />}
           </button>
         </div>
       </div>
@@ -705,7 +705,7 @@ const EditablePromptSection = memo(function EditablePromptSection({
             }}
             disabled={likeState === 'liked'}
           >
-            {likeState === 'liked' ? <HeartFilledIcon className="h-5 w-5" /> : <HeartIcon className="h-5 w-5" />}
+            {likeState === 'liked' ? <Heart className="h-5 w-5 fill-current" /> : <Heart className="h-5 w-5" />}
           </button>
         </div>
       )}
