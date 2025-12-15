@@ -7,64 +7,12 @@ import type { TerminalLine, ClarifyingQuestion, Preferences, GenerationMode, Tas
 import { ROLE } from '@/lib/constants'
 
 type PromptEditDiff = { previous: string; current: string }
-type DiffLine = { type: 'added' | 'removed' | 'unchanged'; content: string }
 
 const providerIcons: Record<string, { src: string; alt: string }> = {
   chatgpt: { src: 'https://cdn.simpleicons.org/openai', alt: 'OpenAI logo' },
   claude: { src: 'https://cdn.simpleicons.org/claude', alt: 'Claude logo' },
   perplexity: { src: 'https://cdn.simpleicons.org/perplexity', alt: 'Perplexity logo' },
   gemini: { src: 'https://cdn.simpleicons.org/googlegemini', alt: 'Google Gemini logo' },
-}
-
-function computeLineDiff(previous: string, current: string): DiffLine[] {
-  const prevLines = previous.split(/\r?\n/)
-  const currLines = current.split(/\r?\n/)
-  const m = prevLines.length
-  const n = currLines.length
-  const lcs: number[][] = Array.from({ length: m + 1 }, () => Array.from({ length: n + 1 }, () => 0))
-
-  for (let i = m - 1; i >= 0; i -= 1) {
-    for (let j = n - 1; j >= 0; j -= 1) {
-      if (prevLines[i] === currLines[j]) {
-        lcs[i][j] = lcs[i + 1][j + 1] + 1
-      } else {
-        lcs[i][j] = Math.max(lcs[i + 1][j], lcs[i][j + 1])
-      }
-    }
-  }
-
-  const result: DiffLine[] = []
-  let i = 0
-  let j = 0
-
-  while (i < m && j < n) {
-    if (prevLines[i] === currLines[j]) {
-      result.push({ type: 'unchanged', content: prevLines[i] })
-      i += 1
-      j += 1
-      continue
-    }
-
-    if (lcs[i + 1][j] >= lcs[i][j + 1]) {
-      result.push({ type: 'removed', content: prevLines[i] })
-      i += 1
-    } else {
-      result.push({ type: 'added', content: currLines[j] })
-      j += 1
-    }
-  }
-
-  while (i < m) {
-    result.push({ type: 'removed', content: prevLines[i] })
-    i += 1
-  }
-
-  while (j < n) {
-    result.push({ type: 'added', content: currLines[j] })
-    j += 1
-  }
-
-  return result
 }
 
 const elevationShadowClass = 'shadow-[0_4px_12px_rgba(0,0,0,0.18)]'
@@ -557,7 +505,7 @@ const ClarifyingOptions = memo(function ClarifyingOptions({
  */
 const EditablePromptSection = memo(function EditablePromptSection({
   editablePrompt,
-  promptEditDiff = null,
+  promptEditDiff: _promptEditDiff = null,
   editablePromptRef,
   onCopyEditable,
   onUpdateEditablePrompt,
@@ -574,11 +522,11 @@ const EditablePromptSection = memo(function EditablePromptSection({
   onLike?: () => void
   likeState?: 'none' | 'liked'
 }) {
+  void _promptEditDiff
   const [copyState, setCopyState] = useState<'idle' | 'copied'>('idle')
   const [isEditing, setIsEditing] = useState(false)
   const [isEditLayerVisible, setIsEditLayerVisible] = useState(false)
   const [draftPrompt, setDraftPrompt] = useState(editablePrompt)
-  const firstChangeRef = useRef<HTMLDivElement | null>(null)
   const editTextAreaRef = useRef<HTMLTextAreaElement | null>(null)
   const sentimentButtonClass = `inline-flex h-[42px] w-[42px] cursor-pointer items-center justify-center rounded-md border border-slate-700/80 bg-slate-950 text-slate-200 ${elevationShadowClass} transition hover:border-slate-500 hover:text-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-1 focus-visible:ring-offset-slate-950 disabled:opacity-50 disabled:cursor-not-allowed`
   const copyIconButtonClass = `inline-flex h-[42px] w-[42px] cursor-pointer items-center justify-center rounded-md border border-slate-700/80 bg-slate-950 text-slate-200 ${elevationShadowClass} transition hover:border-slate-500 hover:text-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-1 focus-visible:ring-offset-slate-950 disabled:opacity-60 disabled:cursor-not-allowed`
@@ -595,9 +543,6 @@ const EditablePromptSection = memo(function EditablePromptSection({
     },
     [onCopyEditable]
   )
-
-  const diffLines = promptEditDiff ? computeLineDiff(promptEditDiff.previous, promptEditDiff.current) : null
-  const hasDiff = Boolean(diffLines && diffLines.length > 0)
 
   const handleStartEdit = useCallback(() => {
     setCopyState('idle')
@@ -649,8 +594,8 @@ const EditablePromptSection = memo(function EditablePromptSection({
 
   const editDisabled = isEditing && !(draftPrompt ?? '').trim()
   const editButtonTitle = isEditing ? 'Confirm changes' : 'Edit prompt'
-  const showDiff = hasDiff && !isEditing
-  const cardLabel = isEditing ? 'Editing prompt' : showDiff ? 'Updated prompt shown with changes' : 'Current prompt'
+  const showDiff = false
+  const cardLabel = isEditing ? 'Editing prompt' : 'Current prompt'
   const handleCardClick = useCallback(() => {
     if (isEditing) return
     handleCopyClick()
@@ -686,42 +631,7 @@ const EditablePromptSection = memo(function EditablePromptSection({
     ? 'translate-y-[-8px] scale-[1.02] shadow-[0_26px_72px_rgba(0,0,0,0.55)] border-slate-700 bg-slate-950/70'
     : 'shadow-[0_14px_42px_rgba(0,0,0,0.35)]'
 
-  const renderDiffLines = useMemo(() => {
-    if (!diffLines) return null
-    let changeRefAttached = false
-    return diffLines.map((line, index) => {
-      const isAdded = line.type === 'added'
-      const isRemoved = line.type === 'removed'
-      const attachRef = !changeRefAttached && (isAdded || isRemoved)
-      if (attachRef) changeRefAttached = true
-      const prefix = isAdded ? '+' : isRemoved ? '-' : ' '
-      const lineClass = isAdded
-        ? 'bg-emerald-500/10 text-emerald-100 border-emerald-700/60'
-        : isRemoved
-        ? 'bg-rose-500/10 text-rose-100 border-rose-700/60'
-        : 'text-slate-100'
-      const markerClass = isAdded ? 'text-emerald-300' : isRemoved ? 'text-rose-300' : 'text-slate-500'
-      return (
-        <div
-          key={`${line.type}-${index}-${line.content.slice(0, 12)}`}
-          ref={attachRef ? firstChangeRef : undefined}
-          className={`flex gap-2 whitespace-pre-wrap wrap-break-word text-[14px] leading-relaxed font-mono px-3 py-1.5 ${lineClass}`}
-        >
-          <span className={`w-4 shrink-0 text-right ${markerClass}`} aria-hidden="true">
-            {prefix}
-          </span>
-          <span className="flex-1">{line.content || ' '}</span>
-        </div>
-      )
-    })
-  }, [diffLines])
-
-  useEffect(() => {
-    const node = firstChangeRef.current
-    if (showDiff && node && typeof node.scrollIntoView === 'function') {
-      node.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    }
-  }, [promptEditDiff, showDiff])
+  const renderDiffLines = null
 
   const promptCard = (
     <div

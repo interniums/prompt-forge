@@ -18,7 +18,11 @@ type StartClarifyingQuestionsDeps = {
 
 export function createStartClarifyingQuestions(deps: StartClarifyingQuestionsDeps) {
   return async (task: string, options?: { allowUnclear?: boolean }) => {
-    if (!options?.allowUnclear) {
+    // Default to allowing unclear tasks in the clarifying stage so the model can
+    // still return best-effort questions instead of hard failing.
+    const allowUnclear = options?.allowUnclear ?? true
+
+    if (!allowUnclear) {
       const unclear = detectUnclearTaskClient(task)
       if (unclear) {
         if (typeof deps.onUnclearTask === 'function') {
@@ -45,7 +49,7 @@ export function createStartClarifyingQuestions(deps: StartClarifyingQuestionsDep
       const questions = await generateClarifyingQuestions({
         task,
         preferences: deps.preferences,
-        allowUnclear: options?.allowUnclear,
+        allowUnclear,
       })
 
       if (runId !== deps.generationRunIdRef.current) return

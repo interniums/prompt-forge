@@ -133,7 +133,9 @@ export function createTaskFlowHandlers({ state, actions }: TaskFlowDeps) {
     actions.setAwaitingQuestionConsent(false)
     actions.setConsentSelectedIndex(null)
 
-    const allowUnclear = options?.allowUnclear ?? actions.shouldAllowUnclearForTask?.(task)
+    // Default to allowing unclear tasks so we can surface clarifying questions
+    // instead of hard-failing on vague inputs. Users can still override to false.
+    const allowUnclear = options?.allowUnclear ?? actions.shouldAllowUnclearForTask?.(task) ?? true
 
     if (!isGuided) {
       await actions.guardedGenerateFinalPromptForTask(task, [], { skipConsentCheck: true, allowUnclear })

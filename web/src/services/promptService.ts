@@ -304,9 +304,11 @@ export async function generateClarifyingQuestions(input: {
   allowUnclear?: boolean
 }): Promise<ClarifyingQuestion[]> {
   const task = input.task.trim()
+  // Default to allowing unclear tasks so we can surface questions instead of hard errors.
+  const allowUnclear = input.allowUnclear !== false
   if (!task) return []
   assertValidTask(task)
-  if (!input.allowUnclear) {
+  if (!allowUnclear) {
     assertUnderstandableTask(task)
   }
 
@@ -354,9 +356,12 @@ export async function generateClarifyingQuestions(input: {
     'Each question should be tailored to the domain (coding, education, marketing, etc.).',
     'You may include 0-4 multiple-choice options per question.',
     'If task details conflict with preferences, treat the task text as the source of truth; otherwise resolve conflicts using your best judgment to maximize prompt quality.',
-    'Return ONLY JSON with `questions` (array of items with `id`, `question`, and `options`), plus `needsClarification` (boolean) and optional `reason`.',
-    'If the task is nonsense or too unclear to generate useful questions, set `needsClarification` to true with a short `reason` and leave `questions` empty. For clear tasks, set `needsClarification` to false.',
-  ].join(' ')
+    'Return ONLY JSON: { "questions": [{ "id": string, "question": string, "options": [{ "id": string, "label": string }] }] }.',
+    'Always return at least 1 question with non-empty text. Each option must have non-empty text; if unsure, use meaningful defaults like "Option A/B/C/D".',
+    'Never return empty questions or blank options. Provide best-effort questions; avoid refusals.',
+  ]
+
+  const systemMessage = system.join(' ')
 
   const userMessage = [`Task: ${task}`, `Preferences: ${styleLine}`].join('\n\n')
 
@@ -364,7 +369,7 @@ export async function generateClarifyingQuestions(input: {
     const completion = await client.chat.completions.create({
       model: 'gpt-4.1-mini',
       messages: [
-        { role: 'system', content: system },
+        { role: 'system', content: systemMessage },
         { role: 'user', content: userMessage },
       ],
       response_format: { type: 'json_object' },
@@ -411,15 +416,10 @@ export async function generateClarifyingQuestions(input: {
       }))
     }
 
-    const needsClarification = parsed.needsClarification === true
-    const clarityReason =
-      typeof parsed.reason === 'string' ? parsed.reason : 'Task is unclear. Please restate what you want to accomplish.'
-
-    if (needsClarification) {
-      createUnclearTaskError(clarityReason)
-    }
-
     const rawQuestions = Array.isArray(parsed.questions) ? parsed.questions : []
+    if (isLocalDev) {
+      console.debug('Clarifying questions raw from OpenAI', rawQuestions)
+    }
 
     const questions = rawQuestions
       .slice(0, 3)
@@ -430,9 +430,11 @@ export async function generateClarifyingQuestions(input: {
         const rawOptions = Array.isArray(q.options) ? q.options : []
         const options: ClarifyingOption[] = rawOptions.map((opt, optIndex) => {
           const defaultId = String.fromCharCode('a'.charCodeAt(0) + optIndex)
+          const rawLabel = cleanModelString(opt.label, 200) ?? String(opt.label ?? '').trim()
+          const label = rawLabel || `Option ${defaultId.toUpperCase()}`
           return {
             id: cleanModelString(opt.id, 16) ?? defaultId,
-            label: cleanModelString(opt.label, 200) ?? String(opt.label ?? '').trim(),
+            label,
           }
         })
 
@@ -441,11 +443,7 @@ export async function generateClarifyingQuestions(input: {
       .filter((q) => q.question)
 
     if (questions.length === 0) {
-      if (!isLocalDev) {
-        const err = new Error('SERVICE_UNAVAILABLE')
-        ;(err as { code?: string }).code = 'SERVICE_UNAVAILABLE'
-        throw err
-      }
+      // Fallback to canned questions so the user always sees options.
       return GENERIC_QUESTION_TEMPLATES.map((q) => ({
         id: q.id,
         question: q.question,
@@ -484,9 +482,11 @@ export async function generateFinalPrompt(input: {
   allowUnclear?: boolean
 }): Promise<string> {
   const task = input.task.trim()
+  // Default to allowing unclear tasks to produce best-effort prompts.
+  const allowUnclear = input.allowUnclear !== false
   if (!task) return ''
   assertValidTask(task)
-  if (!input.allowUnclear) {
+  if (!allowUnclear) {
     assertUnderstandableTask(task)
   }
 
@@ -563,17 +563,14 @@ export async function generateFinalPrompt(input: {
     'The result should be ready to paste into another AI chat or API directly.',
     'Return ONLY JSON with this shape:',
     '{',
-    '  "status": "ok" | "error",',
-    '  "prompt"?: string,',
-    '  "needsClarification"?: boolean,',
-    '  "error_type"?: "unclear_task" | "other",',
-    '  "message"?: string,',
-    '  "reason"?: string',
+    '  "prompt": string',
     '}',
     'Rules:',
-    '- If the task is nonsense or too unclear to produce a useful prompt, set status="error", error_type="unclear_task", and include a short message. Do NOT invent a task. Leave prompt empty.',
-    '- Otherwise set status="ok", needsClarification=false, and include the final prompt string.',
-  ].join(' ')
+    '- Always include a non-empty prompt string. If details are missing, make minimal, reasonable assumptions and state them briefly inside the prompt so the user can adjust.',
+    '- Never return errors, refusals, or empty prompts.',
+  ]
+
+  const systemMessage = system.join(' ')
 
   const parts: string[] = [`Task: ${task}`, `Preferences: ${styleLine}`, ...preferenceLines]
 
@@ -590,7 +587,7 @@ export async function generateFinalPrompt(input: {
     const completion = await client.chat.completions.create({
       model,
       messages: [
-        { role: 'system', content: system },
+        { role: 'system', content: systemMessage },
         { role: 'user', content: userMessage },
       ],
       response_format: { type: 'json_object' },
@@ -613,23 +610,6 @@ export async function generateFinalPrompt(input: {
       parsed = JSON.parse(raw) as PromptJson
     } catch {
       return task
-    }
-
-    const status = typeof parsed.status === 'string' ? parsed.status : 'ok'
-    const needsClarification = parsed.needsClarification === true
-    const clarityReason =
-      typeof parsed.reason === 'string'
-        ? parsed.reason
-        : typeof parsed.message === 'string'
-        ? parsed.message
-        : 'Task is too unclear to turn into a final prompt. Please restate your goal.'
-
-    if (status === 'error' && parsed.error_type === 'unclear_task') {
-      createUnclearTaskError(clarityReason)
-    }
-
-    if (needsClarification) {
-      createUnclearTaskError(clarityReason)
     }
 
     const prompt = cleanModelString(parsed.prompt, MAX_MODEL_TEXT_LENGTH) ?? task
