@@ -7,6 +7,7 @@
   --pf-foreground: #e5e7eb;
   --pf-foreground-muted: #9ca3af;
   --pf-accent: #7ee787;
+  --pf-background-image: url('/backgrounds/promptforge-bg-set-1765809442-dark-2560x1440-eab6108f-f6e2-45db-b8ec-fae2c4b5d49b.png');
   --background: var(--pf-background);
   --background-elevated: var(--pf-background-elevated);
   --foreground: var(--pf-foreground);
@@ -67,6 +68,7 @@
   --pf-foreground: #e8ecf3;
   --pf-foreground-muted: #b4bcc9;
   --pf-accent: #7ee787;
+  --pf-background-image: url('/backgrounds/promptforge-bg-set-1765809442-dim-2560x1440-a815e130-39e8-484b-812a-655e54571d79.png');
   --background: var(--pf-background);
   --background-elevated: var(--pf-background-elevated);
   --foreground: var(--pf-foreground);
@@ -113,6 +115,7 @@
   --pf-foreground: #0f172a;
   --pf-foreground-muted: #475569;
   --pf-accent: #2563eb;
+  --pf-background-image: url('/backgrounds/promptforge-bg-set-1765809442-light-2560x1440-8b293cdf-ec88-4fa9-8ad9-ac66ca26ffdc.png');
   --background: var(--pf-background);
   --background-elevated: var(--pf-background-elevated);
   --foreground: var(--pf-foreground);
@@ -160,15 +163,42 @@
 }
 
 body {
-  background: var(--pf-background);
+  background-color: var(--pf-background);
+  background-image: var(--pf-background-image);
+  background-position: center center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  background-attachment: fixed;
   color: var(--pf-foreground);
   font-family: system-ui, -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
 }
 
-/* Light theme background image */
-:root[data-theme='light'] body {
-  background: url('/bg-light.png') center center / cover no-repeat fixed;
-  background-color: #f8fafc;
+@media (min-width: 2000px) {
+  :root {
+    --pf-background-image: url('/backgrounds/promptforge-bg-set-1765809442-dark-3840x2160-a3386a2a-b73c-4492-b689-08bb378a74a7.png');
+  }
+
+  :root[data-theme='dim'] {
+    --pf-background-image: url('/backgrounds/promptforge-bg-set-1765809442-dim-3840x2160-10cbf390-3690-4b52-9a1f-118d0ea47791.png');
+  }
+
+  :root[data-theme='light'] {
+    --pf-background-image: url('/backgrounds/promptforge-bg-set-1765809442-light-3840x2160-214ded26-b096-45a9-8c5d-5835ae667290.png');
+  }
+}
+
+@media (max-width: 960px), (orientation: portrait) {
+  :root {
+    --pf-background-image: url('/backgrounds/promptforge-bg-set-1765809442-dark-1440x2560-7688cc26-be1d-4a61-989e-36749e8caa5a.png');
+  }
+
+  :root[data-theme='dim'] {
+    --pf-background-image: url('/backgrounds/promptforge-bg-set-1765809442-dim-1440x2560-6f922e04-2f63-4220-b9e5-c4d4633afe0d.png');
+  }
+
+  :root[data-theme='light'] {
+    --pf-background-image: url('/backgrounds/promptforge-bg-set-1765809442-light-1440x2560-cfe5365a-7099-4627-8cba-3a5c26a08cdd.png');
+  }
 }
 
 /* Input bar gradient - theme aware fade to hide content below */

@@ -64,19 +64,33 @@ export async function recordGeneration(input: { task: string; prompt: GeneratedP
  * List recent prompt generations for the current session.
  * Returns empty array if session doesn't exist yet (first-time user).
  */
-export async function listHistory(limit = 10): Promise<HistoryItem[]> {
+type ListHistoryParams = {
+  limit?: number
+  offset?: number
+}
+
+/**
+ * List recent prompt generations for the current session within the last 30 days.
+ * Returns empty array if session doesn't exist yet (first-time user).
+ */
+export async function listHistory({ limit = 20, offset = 0 }: ListHistoryParams = {}): Promise<HistoryItem[]> {
   const sessionId = await getOrCreateActionSessionId()
   const supabase = createServiceSupabaseClient()
 
   // Note: We don't need to ensure session exists for read operations
   // If session doesn't exist, the query will simply return empty results
 
+  const thirtyDaysAgo = new Date()
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+  const createdAfter = thirtyDaysAgo.toISOString()
+
   const { data, error } = await supabase
     .from('pf_generations')
     .select('id, task, label, body, created_at')
     .eq('session_id', sessionId)
+    .gte('created_at', createdAfter)
     .order('created_at', { ascending: false })
-    .limit(limit)
+    .range(offset, offset + limit - 1)
 
   if (error) {
     // Don't log as error if it's just an empty result for new session

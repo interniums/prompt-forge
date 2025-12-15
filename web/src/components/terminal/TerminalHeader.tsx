@@ -6,6 +6,8 @@ import { Sun, Moon, CloudSun } from 'lucide-react'
 export type TerminalHeaderProps = {
   onProfileClick: () => void
   onSettingsClick: () => void
+  onHistoryClick?: () => void
+  historyOpen?: boolean
   theme: ThemeName
   onThemeChange: (theme: ThemeName) => void
 }
@@ -15,7 +17,14 @@ const headerButtonClass =
 
 const themeOrder: ThemeName[] = ['light', 'dim', 'dark']
 
-export function TerminalHeader({ onProfileClick, onSettingsClick, theme, onThemeChange }: TerminalHeaderProps) {
+export function TerminalHeader({
+  onProfileClick,
+  onSettingsClick,
+  onHistoryClick,
+  historyOpen = false,
+  theme,
+  onThemeChange,
+}: TerminalHeaderProps) {
   return (
     <header className="flex items-center justify-between px-4 py-3 sm:px-6">
       {/* Logo / Brand */}
@@ -52,6 +61,21 @@ export function TerminalHeader({ onProfileClick, onSettingsClick, theme, onTheme
             )
           })}
         </div>
+
+        {onHistoryClick && (
+          <button
+            type="button"
+            onClick={onHistoryClick}
+            className={`${headerButtonClass} ${historyOpen ? 'bg-slate-800/70 text-slate-100' : ''}`}
+            aria-pressed={historyOpen}
+            title="Prompt history"
+          >
+            <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6}>
+              <path d="M12 6v6l3 3" strokeLinecap="round" strokeLinejoin="round" />
+              <circle cx="12" cy="12" r="9" />
+            </svg>
+          </button>
+        )}
 
         {/* Settings */}
         <button type="button" onClick={onSettingsClick} className={headerButtonClass} title="Preferences">

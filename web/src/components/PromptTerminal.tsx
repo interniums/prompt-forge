@@ -26,6 +26,8 @@ import { useTerminalChrome } from '@/features/terminal/hooks/useTerminalChrome'
 import { useTerminalLayout } from '@/features/terminal/hooks/useTerminalLayout'
 import { useTerminalHistory } from '@/features/terminal/hooks/useTerminalHistory'
 import { useTerminalOutputProps } from '@/features/terminal/hooks/useTerminalOutputProps'
+import { usePromptHistoryPanel } from '@/features/terminal/hooks/usePromptHistoryPanel'
+import { PromptHistoryPanel } from '@/features/terminal/PromptHistoryPanel'
 import {
   TerminalStateProvider,
   useTerminalState,
@@ -165,6 +167,8 @@ function PromptTerminalInner({
     questionId: string | null
     answer: string | null
   }>({ questionId: null, answer: null })
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false)
+  const [restoredFromHistory, setRestoredFromHistory] = useState(false)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const editablePromptRef = useRef<HTMLDivElement | null>(null)
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
@@ -588,7 +592,7 @@ function PromptTerminalInner({
     setPreferenceSelectedOptionIndex,
   ])
 
-  const { handleDiscard, handleStartNewConversation } = useTerminalHistory(
+  const { handleDiscard, handleStartNewConversation, handleHistory, handleUseFromHistory } = useTerminalHistory(
     {
       lines,
       activity,
@@ -647,14 +651,14 @@ function PromptTerminalInner({
     }
   )
 
-  function scrollToBottom() {
+  const scrollToBottom = useCallback(() => {
     if (!scrollRef.current) return
     const el = scrollRef.current
     // Wait for React to paint new lines before scrolling.
     requestAnimationFrame(() => {
       el.scrollTop = el.scrollHeight
     })
-  }
+  }, [])
 
   useEffect(() => {
     if (editablePrompt !== null && scrollRef.current) {
@@ -665,7 +669,7 @@ function PromptTerminalInner({
 
   useEffect(() => {
     scrollToBottom()
-  }, [lines])
+  }, [lines, scrollToBottom])
 
   useLayoutEffect(() => {
     if (awaitingQuestionConsent && !isGenerating) {
@@ -1019,6 +1023,7 @@ function PromptTerminalInner({
   }, [skipClarifyingQuestion])
 
   const handleStartNewConversationAndClear = useCallback(() => {
+    setRestoredFromHistory(false)
     setValue('')
     resetAllowUnclear()
     handleStartNewConversation()
@@ -1443,6 +1448,30 @@ function PromptTerminalInner({
 
   const isFreshSession = !hasRunInitialTask
 
+  const {
+    items: historyItems,
+    status: historyStatus,
+    error: historyError,
+    isLoading: historyLoading,
+    loadingMore: historyLoadingMore,
+    hasMore: historyHasMore,
+    refresh: refreshHistory,
+    loadMore: loadMoreHistory,
+  } = usePromptHistoryPanel({
+    open: isHistoryOpen,
+    onItems: handleHistory,
+  })
+
+  const handleHistorySelect = useCallback(
+    (index: number) => {
+      setRestoredFromHistory(true)
+      handleUseFromHistory(index, historyItems)
+      setIsHistoryOpen(false)
+      scrollToBottom()
+    },
+    [handleUseFromHistory, historyItems, scrollToBottom, setRestoredFromHistory]
+  )
+
   const inputPlaceholder = answeringQuestions
     ? 'Type an answer or pick an option • Enter/Next to continue'
     : awaitingQuestionConsent
@@ -1474,6 +1503,8 @@ function PromptTerminalInner({
     updatePreferencesLocally,
     user,
     theme: (preferences.uiDefaults?.theme as ThemeName | undefined) ?? DEFAULT_THEME,
+    onHistoryClick: () => setIsHistoryOpen((prev) => !prev),
+    historyOpen: isHistoryOpen,
   })
 
   const focusInput = useCallback(() => {
@@ -1546,10 +1577,11 @@ function PromptTerminalInner({
       focusInput()
       handleModeChange(mode, opts ?? { silent: isFreshSession })
     },
-    onFinalBack: editablePrompt ? handleGlobalBack : undefined,
+    onFinalBack: editablePrompt && !restoredFromHistory ? handleGlobalBack : undefined,
   })
 
   const handleSubmitWithFocus = useCallback(() => {
+    setRestoredFromHistory(false)
     submitCurrent()
     if (inputRef.current) {
       inputRef.current.focus()
@@ -1574,12 +1606,35 @@ function PromptTerminalInner({
     setPreferenceSelectedOptionIndex,
   ])
 
+  const historyPanelNode = (
+    <PromptHistoryPanel
+      open={isHistoryOpen}
+      items={historyItems}
+      status={historyStatus}
+      error={historyError}
+      isLoading={historyLoading}
+      loadingMore={historyLoadingMore}
+      hasMore={historyHasMore}
+      onClose={() => setIsHistoryOpen(false)}
+      onSelect={handleHistorySelect}
+      onRefresh={refreshHistory}
+      onLoadMore={loadMoreHistory}
+    />
+  )
+
+  const panelsWithHistory = (
+    <>
+      {historyPanelNode}
+      {panelsNode}
+    </>
+  )
+
   const layoutNode = useTerminalLayout({
     toastMessage,
     toastType,
     onToastClose: hideToast,
     header: headerNode,
-    panels: panelsNode,
+    panels: panelsWithHistory,
     outputProps: outputPropsWithRefs,
     inputProps: {
       value,

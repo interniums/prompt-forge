@@ -21,6 +21,8 @@ type UseTerminalChromeDeps = {
   updatePreferencesLocally: (prefs: Preferences) => void
   user: UserIdentity | null
   theme: ThemeName
+  onHistoryClick?: () => void
+  historyOpen?: boolean
 }
 
 export function useTerminalChrome(deps: UseTerminalChromeDeps) {
@@ -28,6 +30,8 @@ export function useTerminalChrome(deps: UseTerminalChromeDeps) {
     <TerminalHeader
       onProfileClick={() => deps.setUserManagementOpen(true)}
       onSettingsClick={() => deps.setPreferencesOpen(true)}
+      onHistoryClick={deps.onHistoryClick}
+      historyOpen={deps.historyOpen}
       theme={deps.theme}
       onThemeChange={(nextTheme) => {
         const updated = {
