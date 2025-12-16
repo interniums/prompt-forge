@@ -1,12 +1,28 @@
 'use client'
 
-import { useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react'
 import type { ClarifyingAnswer } from '@/lib/types'
 
 export function useClarifyingHistory(clarifyingAnswers: ClarifyingAnswer[]) {
   const clarifyingAnswerHistoryRef = useRef<Record<string, string>>({})
   const persistentHistoryRef = useRef<Record<string, string>>({})
   const previousAnswersLengthRef = useRef<number>(0)
+  const subscribersRef = useRef(new Set<() => void>())
+
+  const emit = useCallback(() => {
+    subscribersRef.current.forEach((callback) => callback())
+  }, [])
+
+  const subscribe = useCallback((callback: () => void) => {
+    subscribersRef.current.add(callback)
+    return () => subscribersRef.current.delete(callback)
+  }, [])
+
+  const clarifyingAnswerHistory = useSyncExternalStore(
+    subscribe,
+    () => clarifyingAnswerHistoryRef.current,
+    () => clarifyingAnswerHistoryRef.current
+  )
 
   // Accumulate answers into persistent history - preserve answers even after removal
   useEffect(() => {
@@ -15,6 +31,7 @@ export function useClarifyingHistory(clarifyingAnswers: ClarifyingAnswer[]) {
       persistentHistoryRef.current = {}
       clarifyingAnswerHistoryRef.current = {}
       previousAnswersLengthRef.current = 0
+      emit()
       return
     }
 
@@ -34,17 +51,10 @@ export function useClarifyingHistory(clarifyingAnswers: ClarifyingAnswer[]) {
         persistentHistoryRef.current[ans.questionId] = ans.answer
       }
     })
-  }, [clarifyingAnswers])
 
-  // Return persistent history that includes all answers ever given (even if later removed)
-  const clarifyingAnswerHistory = useMemo(() => {
-    return { ...persistentHistoryRef.current }
-  }, [clarifyingAnswers])
-
-  // Sync ref after render (for external consumers that need the ref)
-  useEffect(() => {
-    clarifyingAnswerHistoryRef.current = clarifyingAnswerHistory
-  }, [clarifyingAnswerHistory])
+    clarifyingAnswerHistoryRef.current = { ...persistentHistoryRef.current }
+    emit()
+  }, [clarifyingAnswers, emit])
 
   return { clarifyingAnswerHistoryRef, clarifyingAnswerHistory }
 }

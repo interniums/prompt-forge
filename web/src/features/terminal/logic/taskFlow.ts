@@ -5,6 +5,7 @@ import type { ClarifyingAnswer, ClarifyingQuestion, GenerationMode, PreferencesS
 import type { TaskActivity } from '@/lib/types'
 import type { PreferenceKey } from '@/features/terminal/terminalState'
 import { recordEvent } from '@/services/eventsService'
+import { captureEvent } from '@/lib/analytics'
 
 type TaskFlowState = {
   isGenerating: boolean
@@ -75,6 +76,10 @@ export function createTaskFlowHandlers({ state, actions }: TaskFlowDeps) {
     if (!task) return
     actions.ensureAllowUnclearForTask?.(task)
 
+    captureEvent('feature_used', {
+      feature_name: 'task_submitted',
+      generation_mode: state.generationMode,
+    })
     void recordEvent('task_submitted', { task })
     actions.setActivity({
       task,

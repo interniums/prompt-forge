@@ -6,6 +6,7 @@ import { recordGeneration } from '@/services/historyService'
 import { recordEvent } from '@/services/eventsService'
 import { MESSAGE } from '@/lib/constants'
 import type { ClarifyingAnswer, Preferences, TaskActivity } from '@/lib/types'
+import { captureEvent } from '@/lib/analytics'
 
 type GenDeps = {
   preferences: Preferences
@@ -77,6 +78,7 @@ export function useGenerationController({
       const hasAnyEffectivePreference = Object.values(effectivePreferences ?? {}).some(Boolean)
       setIsGenerating(true)
       setAnsweringQuestions(false)
+      let autoCopied = false
       const hasAnswers = answers.length > 0
       const description = hasAnswers
         ? 'Drafting your prompt with your answers and preferences...'
@@ -115,6 +117,7 @@ export function useGenerationController({
             typeof document !== 'undefined' && typeof document.hasFocus === 'function' && document.hasFocus()
           if (canCopy && navigator?.clipboard?.writeText) {
             await navigator.clipboard.writeText(finalPrompt)
+            autoCopied = true
             showToast('Prompt copied')
           }
         } catch (err) {
@@ -139,6 +142,13 @@ export function useGenerationController({
           message: 'Prompt ready',
           detail: readyDescription,
         })
+        captureEvent('project_created', {
+          has_answers: hasAnswers,
+          has_preferences: hasAnyEffectivePreference,
+        })
+        if (autoCopied) {
+          captureEvent('project_published', { destination: 'clipboard', auto: true })
+        }
         setIsGenerating(false)
 
         // Do not auto-prompt for preferences here to keep the flow minimal.

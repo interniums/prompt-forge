@@ -2,22 +2,38 @@
 
 'use client'
 
-declare global {
-  interface Window {
-    Paddle: any
+type PaddleEnv = 'sandbox' | 'production'
+
+type PaddleCheckoutOptions = {
+  items: Array<{ priceId: string; quantity: number }>
+  customer?: { email?: string | null }
+  settings?: {
+    displayMode?: 'overlay'
+    successUrl?: string
+    cancelUrl?: string
   }
 }
 
-type PaddleEnv = 'sandbox' | 'production'
+type PaddleClient = {
+  Environment: { set: (env: PaddleEnv) => void }
+  Setup: (options: { token: string }) => void
+  Checkout: { open: (options: PaddleCheckoutOptions) => void }
+}
+
+declare global {
+  interface Window {
+    Paddle?: PaddleClient
+  }
+}
 
 const PADDLE_SRC = 'https://cdn.paddle.com/paddle/v2/paddle.js'
-let paddleLoader: Promise<typeof window.Paddle> | null = null
+let paddleLoader: Promise<PaddleClient> | null = null
 
 function resolveEnv(): PaddleEnv {
   return process.env.NEXT_PUBLIC_PADDLE_ENV === 'sandbox' ? 'sandbox' : 'production'
 }
 
-async function loadPaddle(token: string, environment: PaddleEnv): Promise<typeof window.Paddle> {
+async function loadPaddle(token: string, environment: PaddleEnv): Promise<PaddleClient> {
   if (paddleLoader) return paddleLoader
 
   paddleLoader = new Promise((resolve, reject) => {
@@ -91,4 +107,3 @@ export async function openPaddleCheckout({
     },
   })
 }
-

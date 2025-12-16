@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { cookies } from 'next/headers'
 import { Geist, Geist_Mono } from 'next/font/google'
 import { AuthSessionSync } from '@/components/AuthSessionSync'
+import { AnalyticsProvider } from '@/components/AnalyticsProvider'
 import type { ThemeName } from '@/lib/types'
 import './globals.css'
 
@@ -94,9 +95,11 @@ export default async function RootLayout({
         />
       </head>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased app-bg text-zinc-50`}>
-        <AuthSessionSync />
-        {/* Pages control their own layout - no wrapper constraints */}
-        {children}
+        <AnalyticsProvider>
+          <AuthSessionSync />
+          {/* Pages control their own layout - no wrapper constraints */}
+          {children}
+        </AnalyticsProvider>
       </body>
     </html>
   )

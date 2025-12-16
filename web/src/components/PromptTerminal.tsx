@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback, useLayoutEffect, useMemo } from 'react'
 import { recordEvent } from '@/services/eventsService'
+import { captureEvent } from '@/lib/analytics'
 import { useToast } from '@/hooks/useToast'
 import { useVoiceRecognition } from '@/hooks/useVoiceRecognition'
 import { clearDraft } from '@/hooks/useDraftPersistence'
@@ -165,6 +166,7 @@ function PromptTerminalInner({
   const toastType = toast?.type
   // Initialize clarifying answers from saved draft if available
   const clarifyingAnswersRef = useRef<ClarifyingAnswer[]>([])
+  const signupCompleteTrackedRef = useRef(false)
   // Track the last removed answer for display when backing to a question
   const [lastRemovedClarifyingAnswer, setLastRemovedClarifyingAnswer] = useState<{
     questionId: string | null
@@ -299,6 +301,12 @@ function PromptTerminalInner({
       setPreferencesOpen(true)
     }
   }, [isFirstLogin, setPreferencesOpen])
+
+  useEffect(() => {
+    if (!isFirstLogin || signupCompleteTrackedRef.current) return
+    captureEvent('signup_complete', { method: user ? 'authenticated' : 'guest' })
+    signupCompleteTrackedRef.current = true
+  }, [isFirstLogin, user])
 
   // Keep generation mode in sync with preferences for all users (guests included) without thrashing.
   useEffect(() => {
@@ -580,6 +588,8 @@ function PromptTerminalInner({
         if (navigator?.clipboard?.writeText) {
           await navigator.clipboard.writeText(promptToCopy)
           showToast(MESSAGE.PROMPT_COPIED)
+          captureEvent('project_published', { destination: 'clipboard', auto: false })
+          captureEvent('feature_used', { feature_name: 'prompt_copied' })
           void recordEvent('prompt_copied', { prompt: promptToCopy })
         }
       } catch (err) {
@@ -871,6 +881,7 @@ function PromptTerminalInner({
     if (!editablePrompt) {
       return
     }
+    captureEvent('feature_used', { feature_name: 'prompt_liked' })
     void recordEvent('prompt_vote', { vote: 'like', prompt: editablePrompt })
     setLikeState('liked')
     showToast('Thanks for the feedback!')

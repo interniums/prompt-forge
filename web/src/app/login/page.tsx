@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { getSupabaseBrowserClient } from '@/lib/supabase/client'
+import { captureEvent } from '@/lib/analytics'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -81,6 +82,7 @@ export default function LoginPage() {
     setSuccess(null)
 
     try {
+      captureEvent('signup_start', { method: 'email' })
       const supabase = getSupabaseBrowserClient()
       const origin = typeof window !== 'undefined' ? window.location.origin : ''
 
@@ -113,6 +115,7 @@ export default function LoginPage() {
     setSuccess(null)
 
     try {
+      captureEvent('signup_start', { method: 'google' })
       const supabase = getSupabaseBrowserClient()
       const origin = typeof window !== 'undefined' ? window.location.origin : ''
 
