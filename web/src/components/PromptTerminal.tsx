@@ -178,6 +178,17 @@ function PromptTerminalInner({
   const [subscriptionError, setSubscriptionError] = useState<string | null>(null)
   const SUB_MODAL_KEY = 'pf:subscription-required-open'
   const [isSubscriptionModalOpen, setSubscriptionModalOpen] = useState<boolean>(false)
+  // Fallback guard to ensure login modal appears when server signals LOGIN_REQUIRED/UNAUTHENTICATED
+  useEffect(() => {
+    const needsLogin =
+      !user &&
+      activity?.status === 'error' &&
+      typeof activity.message === 'string' &&
+      activity.message.toLowerCase().includes('sign in')
+    if (needsLogin && !isLoginRequiredOpen) {
+      setLoginRequiredOpen(true)
+    }
+  }, [activity, isLoginRequiredOpen, setLoginRequiredOpen, user])
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const editablePromptRef = useRef<HTMLDivElement | null>(null)
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
