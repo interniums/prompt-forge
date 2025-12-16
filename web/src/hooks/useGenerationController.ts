@@ -58,6 +58,23 @@ export function useGenerationController({
 }: GenDeps) {
   const generationRunIdRef = useRef(0)
   const resumeRunTaskRef = useRef<string | null>(null)
+  const markGuestAllowanceExhausted = useCallback(() => {
+    if (typeof window === 'undefined') return
+    try {
+      window.localStorage.setItem('pf:guest-allowance-exhausted', '1')
+    } catch {
+      // ignore storage failures
+    }
+  }, [])
+
+  const isGuestAllowanceExhausted = useCallback((): boolean => {
+    if (typeof window === 'undefined') return false
+    try {
+      return window.localStorage.getItem('pf:guest-allowance-exhausted') === '1'
+    } catch {
+      return false
+    }
+  }, [])
 
   const generateFinalPromptForTask = useCallback(
     async (
@@ -66,6 +83,20 @@ export function useGenerationController({
       options?: { skipConsentCheck?: boolean; preferencesOverride?: Preferences; allowUnclear?: boolean }
     ) => {
       if (!options?.skipConsentCheck && consentRequired && awaitingQuestionConsent) {
+        return
+      }
+      if (!user && isGuestAllowanceExhausted()) {
+        setIsGenerating(false)
+        setAnsweringQuestions(false)
+        setPendingTask(task)
+        setLoginRequiredOpen(true)
+        setActivity({
+          task,
+          stage: 'error',
+          status: 'error',
+          message: 'Sign in to continue generating',
+          detail: 'Free guest allowance is exhausted. Please sign in to keep going.',
+        })
         return
       }
       if (!user) {
@@ -159,6 +190,7 @@ export function useGenerationController({
 
         const code = (err as { code?: string })?.code || (err as Error)?.message
         if (code === 'UNAUTHENTICATED') {
+          markGuestAllowanceExhausted()
           setIsGenerating(false)
           resumeRunTaskRef.current = task
           setPendingTask(task)
@@ -176,6 +208,7 @@ export function useGenerationController({
         }
 
         if (code === 'LOGIN_REQUIRED') {
+          markGuestAllowanceExhausted()
           setIsGenerating(false)
           resumeRunTaskRef.current = task
           setPendingTask(task)
