@@ -175,25 +175,43 @@ export function UserManagementModal({
             </svg>
           </button>
 
-          <Link
-            href="/subscription"
-            onClick={onClose}
-            className={`${actionButtonClass} inline-flex items-center gap-2`}
-          >
-            <div>
-              <div className="text-sm text-foreground">Subscription & billing</div>
-              <div className="text-xs text-(--pf-foreground-muted)">Manage plan, receipts, cancellations</div>
-            </div>
-            <svg
-              className="h-4 w-4 text-(--pf-foreground-muted)"
-              viewBox="0 0 20 20"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={1.5}
+          {user ? (
+            <Link
+              href="/subscription"
+              onClick={onClose}
+              className={`${actionButtonClass} inline-flex items-center gap-2`}
             >
-              <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 5l5 5-5 5" />
-            </svg>
-          </Link>
+              <div>
+                <div className="text-sm text-foreground">Subscription & billing</div>
+                <div className="text-xs text-(--pf-foreground-muted)">Manage plan, receipts, cancellations</div>
+              </div>
+              <svg
+                className="h-4 w-4 text-(--pf-foreground-muted)"
+                viewBox="0 0 20 20"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={1.5}
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 5l5 5-5 5" />
+              </svg>
+            </Link>
+          ) : (
+            <div className={`${actionButtonClass} cursor-not-allowed opacity-60`} aria-disabled>
+              <div>
+                <div className="text-sm text-foreground">Subscription & billing</div>
+                <div className="text-xs text-(--pf-foreground-muted)">Sign in to manage your plan</div>
+              </div>
+              <svg
+                className="h-4 w-4 text-(--pf-foreground-muted)"
+                viewBox="0 0 20 20"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={1.5}
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 5l5 5-5 5" />
+              </svg>
+            </div>
+          )}
 
           <Link href="/legal" onClick={onClose} className={`${actionButtonClass} inline-flex items-center gap-2`}>
             <div>

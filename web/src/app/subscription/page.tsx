@@ -146,13 +146,13 @@ export default function SubscriptionPage() {
                       ]
                 const badgeTone =
                   plan.id === 'basic'
-                    ? 'bg-sky-500/20 text-sky-100 ring-1 ring-sky-300/60'
-                    : 'bg-violet-500/20 text-violet-100 ring-1 ring-violet-300/60'
+                    ? 'border border-sky-300/60 bg-sky-500/15 text-sky-50 ring-1 ring-sky-300/50'
+                    : 'border border-violet-300/60 bg-violet-600/15 text-violet-50 ring-1 ring-violet-300/50'
 
                 return (
                   <div
                     key={plan.id}
-                    className={`flex h-full flex-col justify-between rounded-2xl border border-slate-800/80 bg-slate-900/40 p-5 shadow-[0_16px_55px_rgba(0,0,0,0.4)] transition-all duration-150 ${
+                    className={`flex h-full flex-col justify-between rounded-2xl border border-slate-800/80 bg-slate-900/70 p-5 shadow-[0_16px_55px_rgba(0,0,0,0.35)] transition-all duration-150 ${
                       isSelected ? 'ring-2 ring-emerald-300/60 shadow-lg shadow-emerald-900/30' : ''
                     }`}
                   >
@@ -246,11 +246,11 @@ function TrialCard({
   status: SubscriptionRecord | null
 }) {
   return (
-    <div className="flex h-full flex-col justify-between rounded-2xl border border-slate-800/80 bg-slate-900/50 p-5 shadow-[0_16px_55px_rgba(0,0,0,0.4)]">
+    <div className="flex h-full flex-col justify-between rounded-2xl border border-slate-800/80 bg-slate-900/70 p-5 shadow-[0_16px_55px_rgba(0,0,0,0.35)]">
       <div className="flex items-center justify-between">
         <div>
           <p className="text-lg font-semibold text-white">Free trial</p>
-          <p className="mt-1 inline-flex rounded-full bg-emerald-500/20 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-emerald-100 ring-1 ring-emerald-300/60">
+          <p className="mt-1 inline-flex rounded-full border border-emerald-200/50 bg-emerald-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-emerald-100 ring-1 ring-emerald-300/50">
             Start fast
           </p>
         </div>
