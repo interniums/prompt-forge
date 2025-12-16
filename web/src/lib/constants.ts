@@ -30,6 +30,7 @@ export const DEFAULT_TEMPERATURE = 0.4
 export const DEFAULT_THEME: ThemeName = 'dim'
 export const MIN_TASK_LENGTH = 4
 export const MAX_TASK_LENGTH = 4000
+export const MAX_EDITABLE_PROMPT_LENGTH = 6000
 
 export const THEME_OPTIONS: ReadonlyArray<{ value: ThemeName; label: string }> = [
   { value: 'light', label: 'White (Light)' },

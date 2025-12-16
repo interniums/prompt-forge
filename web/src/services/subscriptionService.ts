@@ -1,6 +1,7 @@
 'use server'
 
 import { createServiceSupabaseClient } from '@/lib/supabase/server'
+import { requireAuthenticatedUser } from '@/services/sessionService'
 import type { SubscriptionRecord, SubscriptionTier } from '@/lib/types'
 
 const BILLING_CYCLE_DAYS = 30
@@ -160,18 +161,22 @@ async function ensureSubscriptionRow(
   }
 
   if (!data) {
-    const base = TIER_DEFAULTS.free_trial
-    const trialEnds = addDays(new Date(), FREE_TRIAL_DAYS).toISOString()
+    const base = TIER_DEFAULTS.expired
+    const now = nowIso()
     const { data: inserted, error: insertError } = await supabase
       .from('user_subscriptions')
       .insert({
         user_id: userId,
-        subscription_tier: 'free_trial',
-        trial_expires_at: trialEnds,
+        subscription_tier: 'expired',
+        trial_expires_at: null,
         quota_generations: base.quotaGenerations,
         quota_edits: base.quotaEdits,
         quota_clarifying: base.quotaClarifying,
         premium_finals_remaining: base.premiumFinals ?? 0,
+        usage_generations: 0,
+        usage_edits: 0,
+        usage_clarifying: 0,
+        period_start: now,
       })
       .select('*')
       .maybeSingle()
@@ -197,6 +202,58 @@ export async function loadSubscription(
   record = await expireTrialIfNeeded(supabase, record)
   record = await resetCycleIfNeeded(supabase, record)
   return record
+}
+
+export async function startFreeTrial(userId?: string): Promise<SubscriptionRecord> {
+  const { id: authUserId } = await requireAuthenticatedUser()
+  const targetUserId = userId ?? authUserId
+  if (targetUserId !== authUserId) {
+    const err = new Error('UNAUTHENTICATED')
+    ;(err as { code?: string }).code = 'UNAUTHENTICATED'
+    throw err
+  }
+
+  const supabase = createServiceSupabaseClient()
+  const base = TIER_DEFAULTS.free_trial
+  const trialEnds = addDays(new Date(), FREE_TRIAL_DAYS).toISOString()
+
+  const { data, error } = await supabase
+    .from('user_subscriptions')
+    .upsert(
+      {
+        user_id: userId,
+        subscription_tier: 'free_trial',
+        trial_expires_at: trialEnds,
+        quota_generations: base.quotaGenerations,
+        quota_edits: base.quotaEdits,
+        quota_clarifying: base.quotaClarifying,
+        premium_finals_remaining: base.premiumFinals ?? 0,
+        usage_generations: 0,
+        usage_edits: 0,
+        usage_clarifying: 0,
+        period_start: nowIso(),
+      },
+      { onConflict: 'user_id' }
+    )
+    .select('*')
+    .maybeSingle()
+
+  if (error || !data) {
+    console.error('Failed to start free trial', error)
+    throw error ?? new Error('FREE_TRIAL_START_FAILED')
+  }
+
+  return applyTierDefaults(toRecord(data))
+}
+
+export async function getSubscriptionStatus(): Promise<SubscriptionRecord | null> {
+  try {
+    const user = await requireAuthenticatedUser()
+    return await loadSubscription(user.id)
+  } catch (err) {
+    console.error('Failed to read subscription status', err)
+    return null
+  }
 }
 
 type QuotaKind = 'clarifying' | 'generation' | 'edit'

@@ -18,7 +18,7 @@ const SelectTrigger = React.forwardRef<
   <SelectPrimitive.Trigger
     ref={ref}
     className={cn(
-      'flex h-[46px] w-full items-center rounded-md border border-slate-700 bg-slate-900 px-3 py-2.5 text-base font-mono text-slate-100 placeholder:text-slate-600 focus:border-slate-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer',
+      'flex h-[46px] w-full items-center rounded-md border border-(--pf-border-strong) bg-(--pf-surface-strong) px-3 py-2.5 text-base font-mono text-[color:var(--pf-foreground)] placeholder:text-[color:var(--pf-foreground-muted)] focus:border-(--pf-border-strong) focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer shadow-[0_8px_22px_color-mix(in_oklab,#000_14%,transparent)]',
       className
     )}
     {...props}
@@ -39,7 +39,7 @@ const SelectContent = React.forwardRef<
     <SelectPrimitive.Content
       ref={ref}
       className={cn(
-        'relative z-110 min-w-32 overflow-hidden rounded-md border border-slate-700 bg-slate-900 text-slate-100 [box-shadow:var(--pf-shadow-popover)]',
+      'relative z-110 min-w-32 overflow-hidden rounded-md border border-(--pf-border-strong) bg-(--pf-surface-strong) text-[color:var(--pf-foreground)] shadow-[0_18px_46px_color-mix(in_oklab,#000_20%,transparent),0_0_0_1px_color-mix(in_oklab,var(--pf-border-strong)_60%,transparent)]',
         className
       )}
       position={position}
@@ -64,7 +64,7 @@ const SelectLabel = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <SelectPrimitive.Label
     ref={ref}
-    className={cn('py-1.5 pl-8 pr-2 text-base font-semibold font-mono text-slate-400', className)}
+    className={cn('py-1.5 pl-8 pr-2 text-base font-semibold font-mono text-[color:var(--pf-foreground-muted)]', className)}
     {...props}
   />
 ))
@@ -77,7 +77,7 @@ const SelectItem = React.forwardRef<
   <SelectPrimitive.Item
     ref={ref}
     className={cn(
-      'relative flex w-full cursor-pointer select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-base font-mono outline-none focus:bg-slate-800 focus:text-slate-100 data-disabled:pointer-events-none data-disabled:opacity-50',
+      'relative flex w/full cursor-pointer select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-base font-mono outline-none transition-colors data-disabled:pointer-events-none data-disabled:opacity-50 focus:bg-[color-mix(in_oklab,var(--pf-foreground)_16%,var(--pf-surface-strong))] focus:text-[color:var(--pf-foreground)] hover:bg-[color-mix(in_oklab,var(--pf-foreground)_10%,var(--pf-surface-strong))]',
       className
     )}
     {...props}
@@ -97,7 +97,11 @@ const SelectSeparator = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Separator>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Separator>
 >(({ className, ...props }, ref) => (
-  <SelectPrimitive.Separator ref={ref} className={cn('-mx-1 my-1 h-px bg-slate-800', className)} {...props} />
+  <SelectPrimitive.Separator
+    ref={ref}
+    className={cn('-mx-1 my-1 h-px bg-[color-mix(in_oklab,var(--pf-foreground)_12%,transparent)]', className)}
+    {...props}
+  />
 ))
 SelectSeparator.displayName = SelectPrimitive.Separator.displayName
 

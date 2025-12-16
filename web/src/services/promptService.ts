@@ -3,9 +3,15 @@
 import OpenAI from 'openai'
 import { GENERIC_QUESTION_TEMPLATES } from '@/app/terminalFallbacks'
 import { clampTemperature, resolveTemperature } from '@/services/preferencesService'
+import { consumeFreePromptAllowance } from '@/services/freeUsageService'
 import { requireAuthenticatedUser } from '@/services/sessionService'
 import { recordEvent } from '@/services/eventsService'
-import { assertAndConsumeQuota, consumePremiumFinalSlot } from '@/services/subscriptionService'
+import {
+  assertAndConsumeQuota,
+  consumePremiumFinalSlot,
+  loadSubscription,
+} from '@/services/subscriptionService'
+import { hasActiveSubscription } from '@/services/subscriptionHelpers'
 import { headers } from 'next/headers'
 import type { Preferences, ClarifyingQuestion, ClarifyingAnswer, ClarifyingOption } from '@/lib/types'
 
@@ -325,16 +331,18 @@ export async function generateClarifyingQuestions(input: {
       : fallbackOrThrow(aiApiEnabled ? 'missing_api_key' : 'api_disabled')
   }
 
-  // Guests can still explore the flow, but we avoid hitting OpenAI for unauthenticated users.
+  // Guests and expired accounts see canned questions to keep the flow moving without hitting OpenAI.
   let authUser
+  let hasSubscription = false
   try {
     authUser = await requireAuthenticatedUser()
+    const subscription = await loadSubscription(authUser.id)
+    hasSubscription = hasActiveSubscription(subscription)
   } catch {
-    if (!isLocalDev) {
-      const err = new Error('UNAUTHENTICATED')
-      ;(err as { code?: string }).code = 'UNAUTHENTICATED'
-      throw err
-    }
+    authUser = null
+  }
+
+  if (!authUser || !hasSubscription) {
     return GENERIC_QUESTION_TEMPLATES.map((q) => ({
       id: q.id,
       question: q.question,
@@ -490,10 +498,15 @@ export async function generateFinalPrompt(input: {
     assertUnderstandableTask(task)
   }
 
-  // Enforce authentication at the server boundary to prevent anonymous OpenAI usage.
-  const authUser = await requireAuthenticatedUser()
   const ip = await getClientIp()
-  assertRateLimit([`u:${authUser.id}:generation`, `ip:${ip}:generation`], 'generation')
+  let authUser: { id: string; email?: string | null } | null = null
+  try {
+    authUser = await requireAuthenticatedUser()
+  } catch {
+    authUser = null
+  }
+
+  const rateLimitKeys = authUser ? [`u:${authUser.id}:generation`, `ip:${ip}:generation`] : [`ip:${ip}:generation`]
 
   const apiKey = aiApiEnabled ? process.env.OPENAI_API_KEY : undefined
   const preferences = sanitizePreferencesInput(input.preferences ?? {})
@@ -545,11 +558,44 @@ export async function generateFinalPrompt(input: {
     return prompt
   }
 
-  const subscription = await assertAndConsumeQuota(authUser.id, 'generation')
-  const usePremiumFinal = subscription.subscriptionTier === 'advanced' && (subscription.premiumFinalsRemaining ?? 0) > 0
+  let subscription = authUser ? await loadSubscription(authUser.id) : null
+  const activeSubscription = subscription ? hasActiveSubscription(subscription) : false
+
+  let usingFreeAllowance = false
+
+  if (!authUser) {
+    const allowance = await consumeFreePromptAllowance()
+    if (!allowance.allowed) {
+      const err = new Error('LOGIN_REQUIRED')
+      ;(err as { code?: string; reason?: string }).code = 'LOGIN_REQUIRED'
+      ;(err as { reason?: string }).reason = 'free_allowance_exhausted'
+      throw err
+    }
+    usingFreeAllowance = true
+    assertRateLimit(rateLimitKeys, 'generation')
+  } else if (!activeSubscription) {
+    const allowance = await consumeFreePromptAllowance(authUser.id)
+    if (!allowance.allowed) {
+      const err = new Error('SUBSCRIPTION_REQUIRED')
+      ;(err as { code?: string; reason?: string }).code = 'SUBSCRIPTION_REQUIRED'
+      ;(err as { reason?: string }).reason = 'no_active_plan'
+      throw err
+    }
+    usingFreeAllowance = true
+    assertRateLimit(rateLimitKeys, 'generation')
+  } else {
+    assertRateLimit(rateLimitKeys, 'generation')
+    subscription = await assertAndConsumeQuota(authUser.id, 'generation')
+  }
+
+  const usePremiumFinal =
+    !usingFreeAllowance &&
+    subscription !== null &&
+    subscription.subscriptionTier === 'advanced' &&
+    (subscription.premiumFinalsRemaining ?? 0) > 0
   const model = usePremiumFinal ? 'gpt-4.1' : 'gpt-4.1-mini'
   // Consume a premium final unit only if we actually route to the premium model.
-  if (usePremiumFinal) {
+  if (usePremiumFinal && authUser) {
     await consumePremiumFinalSlot(authUser.id)
   }
   const client = new OpenAI({ apiKey })
@@ -625,7 +671,15 @@ export async function generateFinalPrompt(input: {
     return prompt
   } catch (err) {
     const code = (err as { code?: string }).code
-    if (code === 'QUOTA_EXCEEDED' || code === 'RATE_LIMITED' || code === 'UNCLEAR_TASK') throw err
+    if (
+      code === 'QUOTA_EXCEEDED' ||
+      code === 'RATE_LIMITED' ||
+      code === 'UNCLEAR_TASK' ||
+      code === 'LOGIN_REQUIRED' ||
+      code === 'SUBSCRIPTION_REQUIRED' ||
+      code === 'UNAUTHENTICATED'
+    )
+      throw err
     console.error('OpenAI final prompt generation failed', err)
     return task
   }

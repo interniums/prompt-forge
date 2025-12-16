@@ -181,6 +181,15 @@ export function usePreferencesController({
     }
   }, [])
 
+  const handleEmailSignIn = useCallback(() => {
+    const next = typeof window !== 'undefined' ? window.location.href : '/'
+    const origin = typeof window !== 'undefined' ? window.location.origin : ''
+    const url = origin ? `${origin}/login?redirect=${encodeURIComponent(next)}` : '/login'
+    if (typeof window !== 'undefined') {
+      window.location.href = url
+    }
+  }, [])
+
   const handleSignOut = useCallback(async () => {
     try {
       const supabase = getSupabaseBrowserClient()
@@ -202,6 +211,7 @@ export function usePreferencesController({
     refreshUserPreferences,
     handleSavePreferences,
     handleSignIn,
+    handleEmailSignIn,
     handleSignOut,
     setPreferenceSource,
     setPreferences,

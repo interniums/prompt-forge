@@ -5,8 +5,7 @@ import { recordEvent } from '@/services/eventsService'
 import { useToast } from '@/hooks/useToast'
 import { useVoiceRecognition } from '@/hooks/useVoiceRecognition'
 import { clearDraft } from '@/hooks/useDraftPersistence'
-import { MESSAGE } from '@/lib/constants'
-import { DEFAULT_THEME } from '@/lib/constants'
+import { DEFAULT_THEME, MAX_EDITABLE_PROMPT_LENGTH, MESSAGE } from '@/lib/constants'
 
 import { usePreferencesController } from '@/hooks/usePreferencesController'
 import { useTerminalPersistence } from '@/hooks/useTerminalPersistence'
@@ -79,9 +78,13 @@ import type {
   UserIdentity,
   GenerationMode,
   TaskActivity,
+  SubscriptionRecord,
   ThemeName,
 } from '@/lib/types'
 import { createModeController } from '@/features/terminal/modeController'
+import { SubscriptionRequiredModal } from '@/components/SubscriptionRequiredModal'
+import { startFreeTrial, getSubscriptionStatus } from '@/services/subscriptionService'
+import { openPaddleCheckout } from '@/services/paddleClient'
 
 // Re-export types for external consumers
 export type { TerminalLine, Preferences }
@@ -169,6 +172,9 @@ function PromptTerminalInner({
   }>({ questionId: null, answer: null })
   const [isHistoryOpen, setIsHistoryOpen] = useState(false)
   const [restoredFromHistory, setRestoredFromHistory] = useState(false)
+  const [subscription, setSubscription] = useState<SubscriptionRecord | null>(null)
+  const [subscriptionError, setSubscriptionError] = useState<string | null>(null)
+  const [isSubscriptionModalOpen, setSubscriptionModalOpen] = useState(false)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const editablePromptRef = useRef<HTMLDivElement | null>(null)
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
@@ -191,6 +197,7 @@ function PromptTerminalInner({
     updatePreferencesLocally,
     handleSavePreferences,
     handleSignIn,
+    handleEmailSignIn,
     handleSignOut,
   } = usePreferencesController({
     initialPreferences,
@@ -203,6 +210,30 @@ function PromptTerminalInner({
   const { clarifyingAnswerHistory } = useClarifyingHistory(clarifyingAnswers)
   const activeSessionId = initialSessionId ?? null
   const activeUserId = user?.id ?? null
+  const paddleBasePriceId = process.env.NEXT_PUBLIC_PADDLE_PRICE_ID_BASE ?? process.env.NEXT_PUBLIC_PADDLE_PRICE_ID
+  const paddleAdvancedPriceId = process.env.NEXT_PUBLIC_PADDLE_PRICE_ID_ADVANCED
+  const paddleTrialPriceId = process.env.NEXT_PUBLIC_PADDLE_TRIAL_PRICE_ID
+  const subscriptionPlans = useMemo(
+    () => [
+      {
+        id: 'basic' as const,
+        label: 'Base',
+        description: 'Generous limits for regular usage.',
+        quota: '800 generations / 200 edits monthly',
+        trialSupported: true,
+        disabled: !paddleBasePriceId,
+      },
+      {
+        id: 'advanced' as const,
+        label: 'Advanced',
+        description: 'Higher limits plus premium finals.',
+        quota: '1,800 generations / 400 edits monthly',
+        trialSupported: false,
+        disabled: !paddleAdvancedPriceId,
+      },
+    ],
+    [paddleAdvancedPriceId, paddleBasePriceId]
+  )
   const setIsAskingPreferenceQuestions = useCallback(
     (value: boolean) => dispatch(setIsAskingPreferencesAction(value)),
     [dispatch]
@@ -246,6 +277,7 @@ function PromptTerminalInner({
     }
   }, [isFirstLogin, setPreferencesOpen])
 
+  // Keep generation mode in sync with preferences for all users (guests included) without thrashing.
   useEffect(() => {
     const nextMode = resolveGenerationMode(preferences)
     if (nextMode !== generationMode) {
@@ -256,6 +288,36 @@ function PromptTerminalInner({
   useEffect(() => {
     clarifyingAnswersRef.current = clarifyingAnswers
   }, [clarifyingAnswers])
+
+  const refreshSubscription = useCallback(async () => {
+    if (!user) {
+      setSubscription(null)
+      return
+    }
+    try {
+      const result = await getSubscriptionStatus()
+      setSubscription(result)
+    } catch (err) {
+      console.error('Failed to load subscription status', err)
+    }
+  }, [user])
+
+  useEffect(() => {
+    // Defer to next tick to avoid synchronous state updates in the effect body.
+    const timeout = setTimeout(() => {
+      void refreshSubscription()
+    }, 0)
+    return () => clearTimeout(timeout)
+  }, [refreshSubscription])
+
+  useEffect(() => {
+    if (subscription && subscription.subscriptionTier !== 'expired') {
+      // Close modal asynchronously to satisfy lint about sync state in effects.
+      const id = setTimeout(() => setSubscriptionModalOpen(false), 0)
+      return () => clearTimeout(id)
+    }
+    return undefined
+  }, [subscription])
 
   const setValue = useCallback((next: string) => dispatch(setInput(next)), [dispatch])
 
@@ -506,7 +568,12 @@ function PromptTerminalInner({
 
   const handleManualPromptUpdate = useCallback(
     (nextPrompt: string, previousPrompt: string) => {
+      const length = nextPrompt.length
       const trimmed = nextPrompt.trim()
+      if (length > MAX_EDITABLE_PROMPT_LENGTH) {
+        showToast(`Prompt is too long (max ${MAX_EDITABLE_PROMPT_LENGTH.toLocaleString('en-US')} chars).`)
+        return
+      }
       const finalPrompt = trimmed.length > 0 ? nextPrompt : previousPrompt
       setEditablePrompt(finalPrompt)
       setPromptEditDiff(null)
@@ -786,6 +853,59 @@ function PromptTerminalInner({
     showToast('Thanks for the feedback!')
   }, [editablePrompt, setLikeState, showToast])
 
+  const handleSubscriptionRequired = useCallback(() => {
+    setSubscriptionModalOpen(true)
+  }, [])
+
+  const handleStartTrial = useCallback(async () => {
+    if (!user) {
+      setLoginRequiredOpen(true)
+      return
+    }
+    setSubscriptionError(null)
+    try {
+      await startFreeTrial(user.id)
+      await refreshSubscription()
+      setSubscriptionModalOpen(false)
+      showToast('Trial started')
+    } catch (err) {
+      console.error('Failed to start trial', err)
+      setSubscriptionError('Could not start your trial. Please try again.')
+    }
+  }, [refreshSubscription, setLoginRequiredOpen, showToast, user])
+
+  const handleSubscribe = useCallback(
+    async (plan: 'basic' | 'advanced') => {
+      if (!user) {
+        setLoginRequiredOpen(true)
+        return
+      }
+
+      const selectedPriceId = plan === 'advanced' ? paddleAdvancedPriceId : paddleBasePriceId
+      const trialForPlan = plan === 'basic' ? paddleTrialPriceId : undefined
+
+      if (!selectedPriceId) {
+        setSubscriptionError('Selected plan is not configured.')
+        return
+      }
+
+      setSubscriptionError(null)
+      try {
+        await openPaddleCheckout({
+          priceId: selectedPriceId,
+          trialPriceId: trialForPlan,
+          customerEmail: user.email ?? undefined,
+          successUrl: typeof window !== 'undefined' ? window.location.href : undefined,
+          cancelUrl: typeof window !== 'undefined' ? window.location.href : undefined,
+        })
+      } catch (err) {
+        console.error('Checkout failed', err)
+        setSubscriptionError('Checkout could not be opened. Please try again.')
+      }
+    },
+    [paddleAdvancedPriceId, paddleBasePriceId, paddleTrialPriceId, setLoginRequiredOpen, user]
+  )
+
   const { generateFinalPromptForTask, handleEditPrompt, handleStop } = useGenerationController({
     preferences,
     pendingTask,
@@ -805,6 +925,7 @@ function PromptTerminalInner({
     awaitingQuestionConsent,
     consentRequired: true,
     onUnclearTask: handleGeneratingUnclear,
+    onSubscriptionRequired: handleSubscriptionRequired,
   })
 
   const guardedGenerateFinalPromptForTask = useCallback(
@@ -1499,6 +1620,7 @@ function PromptTerminalInner({
     handlePreferencesChange,
     handleSavePreferences,
     handleSignIn,
+    handleEmailSignIn,
     handleSignOut,
     updatePreferencesLocally,
     user,
@@ -1672,6 +1794,14 @@ function PromptTerminalInner({
         open={isVoiceLanguageModalOpen}
         onConfirm={handleVoiceLanguageConfirm}
         onDismiss={handleVoiceLanguageDismiss}
+      />
+      <SubscriptionRequiredModal
+        open={isSubscriptionModalOpen}
+        onClose={() => setSubscriptionModalOpen(false)}
+        onStartTrial={handleStartTrial}
+        onSubscribe={handleSubscribe}
+        plans={subscriptionPlans}
+        error={subscriptionError}
       />
     </>
   )

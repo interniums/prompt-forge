@@ -4,7 +4,7 @@ import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from '
 import Image from 'next/image'
 import { Check, Copy, Heart, Pencil } from 'lucide-react'
 import type { TerminalLine, ClarifyingQuestion, Preferences, GenerationMode, TaskActivity } from '@/lib/types'
-import { ROLE } from '@/lib/constants'
+import { ROLE, MAX_EDITABLE_PROMPT_LENGTH } from '@/lib/constants'
 
 type PromptEditDiff = { previous: string; current: string }
 
@@ -229,16 +229,14 @@ const PreferenceOptions = memo(function PreferenceOptions({
               type="button"
               onClick={() => onOptionClick(index)}
               aria-pressed={isSelected}
-              className={`group flex w-full cursor-pointer items-start gap-3 rounded-lg border px-3 py-2 text-left text-[14px] transition ${
-                isSelected
-                  ? 'border-slate-500 bg-slate-900 text-slate-50'
-                  : isLast
-                  ? 'border-slate-600 bg-slate-950 text-slate-50/90 ring-1 ring-slate-600/70'
-                  : 'border-slate-800 bg-slate-950 text-slate-100 hover:border-slate-600 hover:bg-slate-900'
-              }`}
+              data-selected={isSelected || undefined}
+              data-last={isLast || undefined}
+              className="group flex w-full cursor-pointer items-start gap-3 rounded-lg px-3 py-2 text-left text-[14px] question-option"
             >
-              <span className="mt-0.5 text-[13px] text-slate-500">{opt.id})</span>
-              <span className={`font-mono text-[14px] ${isSelected ? 'text-slate-50' : 'text-slate-100'}`}>
+              <span className="mt-0.5 text-[13px]" style={{ color: 'var(--pf-foreground-muted)' }}>
+                {opt.id})
+              </span>
+              <span className="font-mono text-[14px]" style={{ color: 'var(--pf-foreground)' }}>
                 {opt.label}
               </span>
             </button>
@@ -251,14 +249,15 @@ const PreferenceOptions = memo(function PreferenceOptions({
             onOptionClick(-2)
           }}
           aria-pressed={myOwnSelected}
-          className={`group flex w-full cursor-pointer items-start gap-3 rounded-lg border px-3 py-2 text-left text-[14px] transition ${
-            myOwnSelected
-              ? 'border-slate-500 bg-slate-900 text-slate-50'
-              : 'border-slate-800 bg-slate-950 text-slate-100 hover:border-slate-600 hover:bg-slate-900'
-          }`}
+          data-selected={myOwnSelected || undefined}
+          className="group flex w-full cursor-pointer items-start gap-3 rounded-lg px-3 py-2 text-left text-[14px] question-option"
         >
-          <span className="mt-0.5 text-[13px] text-slate-500">•</span>
-          <span className="font-mono text-[14px]">My own answer</span>
+          <span className="mt-0.5 text-[13px]" style={{ color: 'var(--pf-foreground-muted)' }}>
+            •
+          </span>
+          <span className="font-mono text-[14px]" style={{ color: 'var(--pf-foreground)' }}>
+            My own answer
+          </span>
         </button>
         <div className="mt-4 flex flex-wrap gap-2">
           <button
@@ -429,16 +428,14 @@ const ClarifyingOptions = memo(function ClarifyingOptions({
               type="button"
               onClick={() => onOptionClick(index)}
               aria-pressed={isSelected}
-              className={`group flex w-full cursor-pointer items-start gap-3 rounded-lg border px-3 py-2 text-left text-[14px] transition ${
-                isSelected
-                  ? 'border-slate-500 bg-slate-900 text-slate-50'
-                  : isLast
-                  ? 'border-slate-600 bg-slate-950 text-slate-50/90 ring-1 ring-slate-600/70'
-                  : 'border-slate-800 bg-slate-950 text-slate-100 hover:border-slate-600 hover:bg-slate-900'
-              }`}
+              data-selected={isSelected || undefined}
+              data-last={isLast || undefined}
+              className="group flex w-full cursor-pointer items-start gap-3 rounded-lg px-3 py-2 text-left text-[14px] question-option"
             >
-              <span className="mt-0.5 text-[13px] text-slate-500">{opt.id})</span>
-              <span className={`font-mono text-[14px] ${isSelected ? 'text-slate-50' : 'text-slate-100'}`}>
+              <span className="mt-0.5 text-[13px]" style={{ color: 'var(--pf-foreground-muted)' }}>
+                {opt.id})
+              </span>
+              <span className="font-mono text-[14px]" style={{ color: 'var(--pf-foreground)' }}>
                 {opt.label}
               </span>
             </button>
@@ -451,14 +448,15 @@ const ClarifyingOptions = memo(function ClarifyingOptions({
             onOptionClick(-2)
           }}
           aria-pressed={myOwnSelected}
-          className={`group flex w-full cursor-pointer items-start gap-3 rounded-lg border px-3 py-2 text-left text-[14px] transition ${
-            myOwnSelected
-              ? 'border-slate-500 bg-slate-900 text-slate-50'
-              : 'border-slate-800 bg-slate-950 text-slate-100 hover:border-slate-600 hover:bg-slate-900'
-          }`}
+          data-selected={myOwnSelected || undefined}
+          className="group flex w-full cursor-pointer items-start gap-3 rounded-lg px-3 py-2 text-left text-[14px] question-option"
         >
-          <span className="mt-0.5 text-[13px] text-slate-500">•</span>
-          <span className="font-mono text-[14px]">My own answer</span>
+          <span className="mt-0.5 text-[13px]" style={{ color: 'var(--pf-foreground-muted)' }}>
+            •
+          </span>
+          <span className="font-mono text-[14px]" style={{ color: 'var(--pf-foreground)' }}>
+            My own answer
+          </span>
         </button>
       </div>
       <div className="mt-4 flex flex-wrap gap-2">
@@ -527,6 +525,9 @@ const EditablePromptSection = memo(function EditablePromptSection({
   const [isEditing, setIsEditing] = useState(false)
   const [isEditLayerVisible, setIsEditLayerVisible] = useState(false)
   const [draftPrompt, setDraftPrompt] = useState(editablePrompt)
+  const promptLength = draftPrompt?.length ?? 0
+  const isOverMaxLength = promptLength > MAX_EDITABLE_PROMPT_LENGTH
+  const excessCharacters = Math.max(0, promptLength - MAX_EDITABLE_PROMPT_LENGTH)
   const editTextAreaRef = useRef<HTMLTextAreaElement | null>(null)
   const sentimentButtonClass = `inline-flex h-[42px] w-[42px] cursor-pointer items-center justify-center rounded-md border border-slate-700/80 bg-slate-950 text-slate-200 ${elevationShadowClass} transition hover:border-slate-500 hover:text-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-1 focus-visible:ring-offset-slate-950 disabled:opacity-50 disabled:cursor-not-allowed`
   const copyIconButtonClass = `inline-flex h-[42px] w-[42px] cursor-pointer items-center justify-center rounded-md border border-slate-700/80 bg-slate-950 text-slate-200 ${elevationShadowClass} transition hover:border-slate-500 hover:text-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-1 focus-visible:ring-offset-slate-950 disabled:opacity-60 disabled:cursor-not-allowed`
@@ -555,6 +556,9 @@ const EditablePromptSection = memo(function EditablePromptSection({
     if (!nextPrompt.trim()) {
       setIsEditing(false)
       setDraftPrompt(editablePrompt)
+      return
+    }
+    if (nextPrompt.length > MAX_EDITABLE_PROMPT_LENGTH) {
       return
     }
     onUpdateEditablePrompt(nextPrompt, editablePrompt)
@@ -592,7 +596,7 @@ const EditablePromptSection = memo(function EditablePromptSection({
     }
   }, [draftPrompt, isEditing])
 
-  const editDisabled = isEditing && !(draftPrompt ?? '').trim()
+  const editDisabled = isEditing && (isOverMaxLength || !(draftPrompt ?? '').trim())
   const editButtonTitle = isEditing ? 'Confirm changes' : 'Edit prompt'
   const showDiff = false
   const cardLabel = isEditing ? 'Editing prompt' : 'Current prompt'
@@ -622,13 +626,16 @@ const EditablePromptSection = memo(function EditablePromptSection({
   useEffect(() => {
     if (!isEditing || !editTextAreaRef.current) return
     const el = editTextAreaRef.current
-    // Auto-size to content to avoid scrollbars and layout jumps.
+    // Auto-size to content while keeping the modal within the viewport.
     el.style.height = 'auto'
-    el.style.height = `${Math.max(el.scrollHeight, 180)}px`
+    const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : null
+    const maxHeight = viewportHeight ? Math.floor(viewportHeight * 0.6) : null
+    const nextHeight = Math.max(180, maxHeight ? Math.min(el.scrollHeight, maxHeight) : el.scrollHeight)
+    el.style.height = `${nextHeight}px`
   }, [draftPrompt, isEditing])
 
   const cardMotionClass = isEditing
-    ? 'translate-y-[-8px] scale-[1.02] shadow-[0_26px_72px_rgba(0,0,0,0.55)] border-slate-700 bg-slate-950/70'
+    ? 'translate-y-[-4px] scale-[1.005] shadow-[0_18px_48px_rgba(0,0,0,0.42)] border-slate-700 bg-slate-950/85'
     : 'shadow-[0_14px_42px_rgba(0,0,0,0.35)]'
 
   const renderDiffLines = null
@@ -644,7 +651,7 @@ const EditablePromptSection = memo(function EditablePromptSection({
       onKeyDown={handleCardKeyDown}
       aria-label={isEditing ? 'Editable prompt' : 'Copy prompt'}
     >
-      <div className="flex items-start justify-between gap-2">
+      <div className="flex items-start justify-between gap-3 mb-3">
         <div className="text-[13px] text-slate-400">{cardLabel}</div>
         <div className="flex items-center gap-2">
           <button
@@ -678,16 +685,38 @@ const EditablePromptSection = memo(function EditablePromptSection({
         {showDiff ? (
           <div className="rounded-lg">{renderDiffLines}</div>
         ) : isEditing ? (
-          <textarea
-            ref={editTextAreaRef}
-            value={draftPrompt}
-            onChange={(e) => setDraftPrompt(e.target.value)}
-            onKeyDown={handleEditAreaKeyDown}
-            aria-label="Edit prompt text"
-            className="w-full min-h-[180px] resize-none overflow-hidden bg-transparent border-0 px-0 text-[15px] leading-relaxed text-slate-50 font-mono focus-visible:outline-none focus-visible:ring-0"
-          />
+          <div className="space-y-2">
+            <textarea
+              ref={editTextAreaRef}
+              value={draftPrompt}
+              onChange={(e) => setDraftPrompt(e.target.value)}
+              onKeyDown={handleEditAreaKeyDown}
+              aria-label="Edit prompt text"
+              className="w-full min-h-[180px] max-h-[60vh] resize-none overflow-y-auto overflow-x-hidden bg-transparent border-0 px-0 pt-2 pr-2 text-[15px] leading-relaxed font-mono focus-visible:outline-none focus-visible:ring-0 scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent"
+              style={{
+                color: 'var(--pf-foreground)',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+                overflowWrap: 'anywhere',
+              }}
+            />
+            <div className="flex items-center justify-between text-[12px] text-slate-400">
+              <span>Max {MAX_EDITABLE_PROMPT_LENGTH.toLocaleString('en-US')} characters</span>
+              <span aria-live="polite" className={isOverMaxLength ? 'text-amber-300' : undefined}>
+                {promptLength.toLocaleString('en-US')} / {MAX_EDITABLE_PROMPT_LENGTH.toLocaleString('en-US')}
+              </span>
+            </div>
+            {isOverMaxLength && (
+              <div className="text-[12px] text-amber-300" role="status" aria-live="polite">
+                Remove {excessCharacters.toLocaleString('en-US')} characters to save changes.
+              </div>
+            )}
+          </div>
         ) : (
-          <pre className="whitespace-pre-wrap wrap-break-word text-[15px] leading-relaxed text-slate-50 font-mono">
+          <pre
+            className="whitespace-pre-wrap wrap-break-word text-[15px] leading-relaxed font-mono"
+            style={{ color: 'var(--pf-foreground)', wordBreak: 'break-word' }}
+          >
             {editablePrompt}
           </pre>
         )}
@@ -719,7 +748,7 @@ const EditablePromptSection = memo(function EditablePromptSection({
       {!isEditing && promptCard}
       {isEditing && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 py-10 backdrop-blur-sm transition-opacity duration-200"
+          className="fixed inset-0 z-50 flex min-h-screen items-center justify-center overflow-y-auto overflow-x-hidden bg-black/60 px-4 py-8 sm:py-12 safe-px safe-pt safe-pb backdrop-blur-sm transition-opacity duration-200"
           role="dialog"
           aria-modal="true"
           aria-label="Edit prompt"
@@ -732,9 +761,15 @@ const EditablePromptSection = memo(function EditablePromptSection({
           <div
             className={`w-full max-w-4xl transform-gpu transition-all duration-200 ease-out ${
               isEditLayerVisible ? 'opacity-100 scale-100 translate-y-0' : 'opacity-0 scale-[0.96] translate-y-2'
-            }`}
+            } max-h-[calc(100vh-96px)] px-3 sm:px-4 py-5 sm:py-6 safe-px safe-pt safe-pb`}
           >
-            {promptCard}
+            <div
+              className="w-full overflow-y-auto overflow-x-hidden p-2
+              style={{ maxHeight: 'calc(100vh - 140px)' }}
+            "
+            >
+              {promptCard}
+            </div>
           </div>
         </div>
       )}
@@ -925,6 +960,14 @@ export const TerminalOutputArea = memo(function TerminalOutputArea({
   const lines = _lines
   void _inputRef
   void _onHelpCommandClick
+  const selectMode = useCallback(
+    (mode: GenerationMode) => {
+      onModeChange?.(mode, { silent: true })
+      onFocusInput?.()
+    },
+    [onFocusInput, onModeChange]
+  )
+
   const handleModeKeyDown = useCallback(
     (e: React.KeyboardEvent, targetMode: GenerationMode) => {
       const key = e.key.toLowerCase()
@@ -954,10 +997,10 @@ export const TerminalOutputArea = memo(function TerminalOutputArea({
 
       if (key === 'enter') {
         e.preventDefault()
-        onModeChange?.(targetMode, { silent: true })
+        selectMode(targetMode)
       }
     },
-    [onModeChange]
+    [selectMode]
   )
   // Memoize the rendered lines to prevent recalculation on every render
   // Legacy log hidden — we rely on structured cards instead.
@@ -972,12 +1015,13 @@ export const TerminalOutputArea = memo(function TerminalOutputArea({
   return (
     <div ref={scrollRef} className="relative h-full">
       <div
-        className={`terminal-scroll h-full overflow-y-auto overflow-x-hidden px-4 pt-16 pb-32 text-[15px] leading-relaxed text-slate-200 font-mono ${
+        className={`terminal-scroll h-full overflow-y-auto overflow-x-hidden safe-px pt-12 sm:pt-16 text-[15px] leading-relaxed text-slate-200 font-mono ${
           isCenteredLayout ? 'flex flex-col justify-center items-center' : ''
         }`}
+        style={{ paddingBottom: 'calc(7.5rem + var(--pf-safe-bottom))' }}
       >
         {/* Content container - same max-width as input bar */}
-        <div className="mx-auto w-full max-w-2xl space-y-3">
+        <div className="w-full responsive-container-narrow space-y-3">
           {activity && (
             <div className={`bg-slate-950/80 backdrop-blur-sm ${elevationShadowClass} rounded-xl`}>
               <ActivityBlock activity={activity} />
@@ -1020,75 +1064,81 @@ export const TerminalOutputArea = memo(function TerminalOutputArea({
           )}
 
           {showStarter && onModeChange && (
-            <div className="w-full max-w-2xl space-y-5 py-4">
-              <div className="text-center">
-                <h1 className="text-2xl font-semibold text-slate-100 mb-2">What would you like to create?</h1>
-                <p className="text-[15px] text-slate-400">Choose a mode to get started</p>
-              </div>
-              <div className="grid gap-3 md:grid-cols-2" role="group" aria-label="Select mode for this prompt">
-                <button
-                  type="button"
-                  onClick={() => onModeChange?.('quick', { silent: true })}
-                  onKeyDown={(e) => handleModeKeyDown(e, 'quick')}
-                  autoFocus={generationMode === 'quick'}
-                  data-mode-index="0"
-                  className={`flex w-full cursor-pointer items-start gap-3 rounded-lg border px-3 py-3 text-left shadow-[0_12px_32px_rgba(0,0,0,0.35)] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-1 focus-visible:ring-offset-slate-950 ${
-                    generationMode === 'quick'
-                      ? 'border-slate-600 bg-slate-900 text-slate-50'
-                      : 'border-slate-800 bg-slate-950/50 text-slate-100 hover:border-slate-600 hover:bg-slate-900'
-                  }`}
-                >
-                  <div className="mt-0.5 flex h-9 w-9 items-center justify-center text-slate-100">
-                    <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
-                      <path d="M10 3l-4 10h5l-2 8 9-12h-6l2-6z" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  </div>
-                  <div className="space-y-1">
-                    <div className="text-[14px] font-semibold text-slate-100">Quick Start</div>
-                    <div className="text-[13px] text-slate-300">
-                      Fastest. Generates the prompt immediately without clarifying or preference questions.
+            <div className="relative w-full responsive-container-narrow">
+              <div className="relative space-y-5 py-5">
+                <div className="text-center space-y-2">
+                  <h1 className="text-2xl font-semibold text-foreground drop-shadow-[0_8px_24px_rgba(0,0,0,0.35)]">
+                    What would you like to create?
+                  </h1>
+                  <p className="text-[15px] text-subtle-boost">Choose a mode to get started</p>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2" role="group" aria-label="Select mode for this prompt">
+                  <button
+                    type="button"
+                    onClick={() => selectMode('quick')}
+                    onKeyDown={(e) => handleModeKeyDown(e, 'quick')}
+                    autoFocus={generationMode === 'quick'}
+                    data-mode-index="0"
+                    data-selected={generationMode === 'quick' || undefined}
+                    aria-pressed={generationMode === 'quick'}
+                    className="mode-card group relative flex w-full cursor-pointer items-start gap-3 rounded-xl px-4 py-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--pf-border-strong) focus-visible:ring-offset-1 focus-visible:ring-offset-background"
+                  >
+                    {generationMode === 'quick' && (
+                      <span className="mode-card-check" aria-hidden="true">
+                        <Check className="h-4 w-4" />
+                      </span>
+                    )}
+                    <div className="mt-0.5 flex h-9 w-9 items-center justify-center text-foreground">
+                      <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+                        <path d="M10 3l-4 10h5l-2 8 9-12h-6l2-6z" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
                     </div>
-                  </div>
-                </button>
+                    <div className="space-y-1 pr-8">
+                      <div className="text-[14px] font-semibold text-foreground">Quick Start</div>
+                      <div className="text-[13px] text-subtle-boost">Generate instantly (no questions).</div>
+                    </div>
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={() => onModeChange?.('guided', { silent: true })}
-                  onKeyDown={(e) => handleModeKeyDown(e, 'guided')}
-                  autoFocus={generationMode === 'guided'}
-                  data-mode-index="1"
-                  className={`flex w-full cursor-pointer items-start gap-3 rounded-lg border px-3 py-3 text-left shadow-[0_12px_32px_rgba(0,0,0,0.35)] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-1 focus-visible:ring-offset-slate-950 ${
-                    generationMode === 'guided'
-                      ? 'border-slate-600 bg-slate-900 text-slate-50'
-                      : 'border-slate-800 bg-slate-950/50 text-slate-100 hover:border-slate-600 hover:bg-slate-900'
-                  }`}
-                >
-                  <div className="mt-0.5 flex h-9 w-9 items-center justify-center text-slate-100">
-                    <svg
-                      className="h-5 w-5"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth={1.7}
-                      aria-hidden="true"
-                    >
-                      <path d="M9 18h6" strokeLinecap="round" />
-                      <path d="M10.5 20.5h3" strokeLinecap="round" />
-                      <path
-                        d="M12 3.5c-3 0-5.5 2.3-5.5 5.2 0 1.7.8 3.2 2.1 4.2.6.5 1 .9 1 1.6V16h4.8v-.5c0-.7.4-1.1 1-1.6 1.3-1 2.1-2.5 2.1-4.2 0-2.9-2.5-5.2-5.5-5.2Z"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                      <path d="M10.5 14h3" strokeLinecap="round" />
-                    </svg>
-                  </div>
-                  <div className="space-y-1">
-                    <div className="text-[14px] font-semibold text-slate-100">Guided Build</div>
-                    <div className="text-[13px] text-slate-300">
-                      Asks brief clarifying and preference questions first for higher-quality prompts.
+                  <button
+                    type="button"
+                    onClick={() => selectMode('guided')}
+                    onKeyDown={(e) => handleModeKeyDown(e, 'guided')}
+                    autoFocus={generationMode === 'guided'}
+                    data-mode-index="1"
+                    data-selected={generationMode === 'guided' || undefined}
+                    aria-pressed={generationMode === 'guided'}
+                    className="mode-card group relative flex w-full cursor-pointer items-start gap-3 rounded-xl px-4 py-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--pf-border-strong) focus-visible:ring-offset-1 focus-visible:ring-offset-background"
+                  >
+                    {generationMode === 'guided' && (
+                      <span className="mode-card-check" aria-hidden="true">
+                        <Check className="h-4 w-4" />
+                      </span>
+                    )}
+                    <div className="mt-0.5 flex h-9 w-9 items-center justify-center text-foreground">
+                      <svg
+                        className="h-5 w-5"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth={1.7}
+                        aria-hidden="true"
+                      >
+                        <path d="M9 18h6" strokeLinecap="round" />
+                        <path d="M10.5 20.5h3" strokeLinecap="round" />
+                        <path
+                          d="M12 3.5c-3 0-5.5 2.3-5.5 5.2 0 1.7.8 3.2 2.1 4.2.6.5 1 .9 1 1.6V16h4.8v-.5c0-.7.4-1.1 1-1.6 1.3-1 2.1-2.5 2.1-4.2 0-2.9-2.5-5.2-5.5-5.2Z"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                        <path d="M10.5 14h3" strokeLinecap="round" />
+                      </svg>
                     </div>
-                  </div>
-                </button>
+                    <div className="space-y-1 pr-8">
+                      <div className="text-[14px] font-semibold text-foreground">Guided Build</div>
+                      <div className="text-[13px] text-subtle-boost">Answer a few questions for a better result.</div>
+                    </div>
+                  </button>
+                </div>
               </div>
             </div>
           )}

@@ -93,7 +93,7 @@ export default async function RootLayout({
           }}
         />
       </head>
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased bg-zinc-950 text-zinc-50`}>
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased app-bg text-zinc-50`}>
         <AuthSessionSync />
         {/* Pages control their own layout - no wrapper constraints */}
         {children}

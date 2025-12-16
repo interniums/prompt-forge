@@ -14,7 +14,7 @@ export type TerminalHeaderProps = {
 }
 
 const headerButtonClass =
-  'group inline-flex h-9 w-9 items-center justify-center cursor-pointer rounded-full text-slate-400 transition hover:bg-slate-800/50 hover:text-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950'
+  'group inline-flex h-9 w-9 items-center justify-center cursor-pointer rounded-full text-[color:var(--pf-foreground-muted)] transition hover:bg-[color-mix(in_oklab,var(--pf-background)_85%,var(--pf-foreground)_15%)] hover:text-[color:var(--pf-foreground)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--pf-border-strong)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--pf-background)]'
 
 const themeOrder: ThemeName[] = ['light', 'dim', 'dark']
 
@@ -30,18 +30,23 @@ export function TerminalHeader({
     <header className="flex items-center justify-between px-4 py-3 sm:px-6">
       {/* Logo / Brand */}
       <div className="flex items-center gap-2">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-linear-to-br from-emerald-500 to-cyan-500">
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-linear-to-br from-emerald-500 to-cyan-500 shadow-[0_12px_30px_rgba(0,0,0,0.25)]">
           <svg className="h-4 w-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
           </svg>
         </div>
-        <span className="text-lg font-semibold text-slate-100 hidden sm:block">PromptForge</span>
+        <span className="text-lg font-semibold hidden sm:block text-[color:var(--pf-foreground)]">PromptForge</span>
       </div>
 
       {/* Controls */}
       <div className="flex items-center gap-1">
         {/* Theme switcher */}
-        <div className="flex items-center gap-0.5 rounded-full bg-slate-800/40 p-1">
+        <div
+          className="flex items-center gap-0.5 rounded-full border border-[color:var(--pf-border)] px-1 py-1"
+          style={{
+            background: 'color-mix(in oklab, var(--pf-background) 90%, var(--pf-foreground) 10%)',
+          }}
+        >
           {themeOrder.map((option) => {
             const isActive = option === theme
             const label = option === 'light' ? 'Light' : option === 'dim' ? 'Dim' : 'Dark'
@@ -50,9 +55,14 @@ export function TerminalHeader({
                 key={option}
                 type="button"
                 onClick={() => onThemeChange(option)}
-                className={`flex h-7 w-7 items-center justify-center rounded-full transition cursor-pointer ${
-                  isActive ? 'bg-slate-700 text-slate-100 shadow-sm' : 'text-slate-500 hover:text-slate-300'
-                }`}
+                className={`flex h-7 w-7 items-center justify-center rounded-full transition cursor-pointer shadow-sm`}
+                style={{
+                  color: isActive ? 'var(--pf-foreground)' : 'var(--pf-foreground-muted)',
+                  backgroundColor: isActive
+                    ? 'color-mix(in oklab, var(--accent) 18%, var(--pf-surface-strong))'
+                    : 'transparent',
+                  border: isActive ? '1px solid var(--pf-border-strong)' : '1px solid transparent',
+                }}
                 aria-label={`Switch to ${label} theme`}
               >
                 {option === 'light' && <Sun className="h-3.5 w-3.5" />}
@@ -67,7 +77,7 @@ export function TerminalHeader({
           <button
             type="button"
             onClick={onHistoryClick}
-            className={`${headerButtonClass} ${historyOpen ? 'bg-slate-800/70 text-slate-100' : ''}`}
+            className={`${headerButtonClass} ${historyOpen ? 'bg-[color-mix(in_oklab,var(--pf-background)_80%,var(--pf-foreground)_20%)] text-[color:var(--pf-foreground)] shadow-[0_6px_16px_color-mix(in_oklab,#000_18%,transparent)]' : ''}`}
             aria-pressed={historyOpen}
             title="Prompt history"
           >

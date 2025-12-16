@@ -4,6 +4,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { GENERIC_QUESTION_TEMPLATES } from '@/app/terminalFallbacks'
 import { generateClarifyingQuestions, generateFinalPrompt } from '@/services/promptService'
 import { requireAuthenticatedUser } from '@/services/sessionService'
+import { consumeFreePromptAllowance } from '@/services/freeUsageService'
 
 vi.mock('@/services/sessionService', () => ({
   requireAuthenticatedUser: vi.fn(),
@@ -15,6 +16,16 @@ vi.mock('@/services/eventsService', () => ({
 
 vi.mock('@/services/subscriptionService', () => ({
   assertAndConsumeQuota: vi.fn(),
+  consumePremiumFinalSlot: vi.fn(),
+  loadSubscription: vi.fn().mockResolvedValue({ subscriptionTier: 'expired' }),
+}))
+
+vi.mock('@/services/subscriptionHelpers', () => ({
+  hasActiveSubscription: vi.fn().mockReturnValue(false),
+}))
+
+vi.mock('@/services/freeUsageService', () => ({
+  consumeFreePromptAllowance: vi.fn(async () => ({ allowed: true, remaining: 0, used: 0, scope: 'guest' })),
 }))
 
 // OpenAI is mocked to prevent any network calls during tests.
@@ -31,6 +42,7 @@ vi.mock('openai', () => {
 })
 
 const requireAuthenticatedUserMock = vi.mocked(requireAuthenticatedUser)
+const consumeFreePromptAllowanceMock = vi.mocked(consumeFreePromptAllowance)
 
 describe('promptService auth guards', () => {
   beforeEach(() => {
@@ -54,10 +66,20 @@ describe('promptService auth guards', () => {
     })
   })
 
-  it('rejects final prompt generation when user is unauthenticated', async () => {
-    const error = new Error('UNAUTHENTICATED') as Error & { code?: string }
-    error.code = 'UNAUTHENTICATED'
-    requireAuthenticatedUserMock.mockRejectedValue(error)
+  it('allows one guest final prompt when free allowance is available', async () => {
+    requireAuthenticatedUserMock.mockRejectedValue(new Error('UNAUTHENTICATED'))
+    const prompt = await generateFinalPrompt({
+      task: 'Generate a concise product brief',
+      preferences: {},
+      answers: [],
+    })
+
+    expect(prompt).toBeTruthy()
+  })
+
+  it('requires login when guest allowance is exhausted', async () => {
+    requireAuthenticatedUserMock.mockRejectedValue(new Error('UNAUTHENTICATED'))
+    consumeFreePromptAllowanceMock.mockResolvedValueOnce({ allowed: false, remaining: 0, used: 1, scope: 'guest' })
 
     await expect(
       generateFinalPrompt({
@@ -65,7 +87,7 @@ describe('promptService auth guards', () => {
         preferences: {},
         answers: [],
       })
-    ).rejects.toThrow(/UNAUTHENTICATED/)
+    ).rejects.toThrow(/LOGIN_REQUIRED/)
   })
 
   // Short tasks are now handled heuristically, not rejected

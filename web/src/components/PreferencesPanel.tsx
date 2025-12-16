@@ -277,7 +277,7 @@ export function PreferencesPanel({
       return current as LanguageOption
     }
     if (current) return 'custom'
-    return 'auto'
+    return 'en'
   }, [languageOptionsSet, localValues.language, uiDefaults.languageSelection])
   const languageCustomValue = useMemo(
     () => uiDefaults.languageCustom ?? (languageSelection === 'custom' ? localValues.language ?? '' : ''),
@@ -308,7 +308,7 @@ export function PreferencesPanel({
   return (
     <div className={modalBackdropClass} onClick={handleBackdropClick}>
       <div className={`${modalCardClass} space-y-8`} onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-start justify-between gap-4">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="space-y-2">
             <div className="font-mono text-lg font-semibold text-slate-50">Preferences</div>
             <div className="font-mono text-sm text-slate-400 max-w-2xl leading-relaxed">
@@ -318,7 +318,7 @@ export function PreferencesPanel({
               {!user && 'Sign in to sync across devices'}
             </div>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center gap-3 sm:gap-4 sm:justify-end sm:self-start">
             <span
               className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-mono ${
                 status === 'saved'
@@ -347,7 +347,7 @@ export function PreferencesPanel({
                 await handleBlurSave()
                 onClose()
               }}
-              className="cursor-pointer bg-transparent p-1 text-slate-400 hover:text-slate-100 hover:underline hover:underline-offset-4"
+              className="cursor-pointer bg-transparent p-1 text-(--pf-foreground-muted) transition hover:text-foreground hover:bg-[color-mix(in_oklab,var(--pf-foreground)_10%,var(--pf-background))] hover:underline hover:underline-offset-4 focus:outline-none focus:ring-2 focus:ring-(--pf-border-strong) focus:ring-offset-2 focus:ring-offset-background"
               aria-label="Close preferences"
             >
               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -465,7 +465,7 @@ export function PreferencesPanel({
                   />
                 )}
 
-                <label className="flex items-center gap-3 rounded-lg border border-slate-800/70 bg-slate-950/60 px-3 py-2">
+                <label className="flex items-center gap-3 rounded-lg px-3 py-2 surface-button shadow-(--pf-shadow-soft) cursor-pointer transition hover:bg-(--pf-surface-strong) hover:border-(--pf-border-strong)">
                   <Checkbox
                     checked={allowMixedLanguage}
                     onCheckedChange={(checked: CheckedState) =>
@@ -524,7 +524,7 @@ export function PreferencesPanel({
           <Accordion type="multiple" className="space-y-3">
             <AccordionItem
               value="model"
-              className="rounded-xl border border-slate-800 bg-slate-950/70 px-4 py-4 shadow-[0_8px_24px_rgba(0,0,0,0.25)]"
+              className="rounded-xl border border-(--pf-border) bg-(--pf-surface) px-4 py-4 shadow-(--pf-shadow-soft) overflow-visible"
             >
               <AccordionTrigger className="cursor-pointer px-2 py-4 hover:no-underline">
                 <span className="flex flex-col flex-1 text-center">
@@ -532,8 +532,8 @@ export function PreferencesPanel({
                   <span className="font-mono text-sm text-slate-500">Target model + creativity level</span>
                 </span>
               </AccordionTrigger>
-              <AccordionContent className="px-2 pb-5 pt-2">
-                <div className="h-px w-full bg-slate-800 mb-4" />
+              <AccordionContent className="px-4 pb-6 pt-3">
+                <div className="h-px w-full bg-slate-800/70 mb-4" />
                 <div className="grid grid-cols-1 gap-x-5 gap-y-6 xl:grid-cols-2">
                   <div className="space-y-4">
                     <PreferenceSelectField
@@ -657,21 +657,21 @@ export function PreferencesPanel({
                     <div className="flex flex-wrap items-center gap-3 text-[12px] font-mono text-slate-400">
                       <button
                         type="button"
-                        className="cursor-pointer rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-slate-200 hover:border-slate-500 hover:text-slate-50"
+                        className="cursor-pointer rounded-md border border-(--pf-border) bg-(--pf-surface) px-2 py-1 text-(--pf-foreground)/90 hover:border-(--pf-border-strong) hover:bg-(--pf-surface-strong) hover:text-foreground"
                         onClick={() => setTemperature(0.2)}
                       >
                         Focused (~0.20)
                       </button>
                       <button
                         type="button"
-                        className="cursor-pointer rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-slate-200 hover:border-slate-500 hover:text-slate-50"
+                        className="cursor-pointer rounded-md border border-(--pf-border) bg-(--pf-surface) px-2 py-1 text-(--pf-foreground)/90 hover:border-(--pf-border-strong) hover:bg-(--pf-surface-strong) hover:text-foreground"
                         onClick={() => setTemperature(0.55)}
                       >
                         Balanced (~0.55)
                       </button>
                       <button
                         type="button"
-                        className="cursor-pointer rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-slate-200 hover:border-slate-500 hover:text-slate-50"
+                        className="cursor-pointer rounded-md border border-(--pf-border) bg-(--pf-surface) px-2 py-1 text-(--pf-foreground)/90 hover:border-(--pf-border-strong) hover:bg-(--pf-surface-strong) hover:text-foreground"
                         onClick={() => setTemperature(0.85)}
                       >
                         Creative (~0.85)
@@ -684,7 +684,7 @@ export function PreferencesPanel({
 
             <AccordionItem
               value="output"
-              className="rounded-xl border border-slate-800 bg-slate-950/70 px-4 py-4 shadow-[0_8px_24px_rgba(0,0,0,0.25)]"
+              className="rounded-xl border border-(--pf-border) bg-(--pf-surface) px-4 py-4 shadow-(--pf-shadow-soft) overflow-visible"
             >
               <AccordionTrigger className="cursor-pointer px-2 py-4 hover:no-underline">
                 <span className="flex flex-col flex-1 text-center">
@@ -692,8 +692,8 @@ export function PreferencesPanel({
                   <span className="font-mono text-sm text-slate-500">Structure, depth, and sourcing</span>
                 </span>
               </AccordionTrigger>
-              <AccordionContent className="px-2 pb-5 pt-2">
-                <div className="h-px w-full bg-slate-800 mb-4" />
+              <AccordionContent className="px-4 pb-6 pt-3">
+                <div className="h-px w-full bg-slate-800/70 mb-4" />
                 <div className="grid grid-cols-1 gap-x-5 gap-y-4 xl:grid-cols-2">
                   <PreferenceSelectField
                     label="Output format"
@@ -759,7 +759,7 @@ export function PreferencesPanel({
 
             <AccordionItem
               value="behavior"
-              className="rounded-xl border border-slate-800 bg-slate-950/70 px-4 py-4 shadow-[0_8px_24px_rgba(0,0,0,0.25)]"
+              className="rounded-xl border border-(--pf-border) bg-(--pf-surface) px-4 py-4 shadow-(--pf-shadow-soft) overflow-visible"
             >
               <AccordionTrigger className="cursor-pointer px-2 py-4 hover:no-underline">
                 <span className="flex flex-col flex-1 text-center">
@@ -767,8 +767,8 @@ export function PreferencesPanel({
                   <span className="font-mono text-sm text-slate-500">Theme, modes, and sharing defaults</span>
                 </span>
               </AccordionTrigger>
-              <AccordionContent className="px-2 pb-5 pt-2">
-                <div className="h-px w-full bg-slate-800 mb-4" />
+              <AccordionContent className="px-4 pb-6 pt-3">
+                <div className="h-px w-full bg-slate-800/70 mb-4" />
                 <div className="grid grid-cols-1 gap-x-5 gap-y-4 xl:grid-cols-2 items-start">
                   <div className="xl:col-span-1">
                     <PreferenceSelectField
@@ -810,8 +810,8 @@ export function PreferencesPanel({
                               onClick={() => handleModeChange(option.id)}
                               className={`flex w-full cursor-pointer flex-col items-start rounded-lg border px-3 py-2 text-left shadow-[0_8px_24px_rgba(0,0,0,0.25)] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-1 focus-visible:ring-offset-slate-950 ${
                                 isActive
-                                  ? 'border-slate-500 bg-slate-900 text-slate-50'
-                                  : 'border-slate-800 bg-slate-950 text-slate-200 hover:border-slate-600 hover:text-slate-50'
+                                  ? 'border-(--pf-border-strong) bg-(--pf-surface-strong) text-foreground shadow-[0_12px_30px_color-mix(in_oklab,#000_32%,transparent)]'
+                                  : 'border-(--pf-border) bg-(--pf-surface) text-(--pf-foreground)/90 hover:border-(--pf-border-strong) hover:bg-(--pf-surface-strong) hover:text-foreground'
                               }`}
                               aria-pressed={isActive}
                             >
@@ -871,7 +871,7 @@ export function PreferencesPanel({
 
             <AccordionItem
               value="advanced"
-              className="rounded-xl border border-slate-800 bg-slate-950/70 px-4 py-4 shadow-[0_8px_24px_rgba(0,0,0,0.25)]"
+              className="rounded-xl border border-(--pf-border) bg-(--pf-surface) px-4 py-4 shadow-(--pf-shadow-soft) overflow-visible"
             >
               <AccordionTrigger className="cursor-pointer px-2 py-4 hover:no-underline">
                 <span className="flex flex-col flex-1 text-center">
@@ -879,8 +879,8 @@ export function PreferencesPanel({
                   <span className="font-mono text-sm text-slate-500">Optional style notes and ask-overrides</span>
                 </span>
               </AccordionTrigger>
-              <AccordionContent className="px-2 pb-5 pt-2">
-                <div className="h-px w-full bg-slate-800 mb-4" />
+              <AccordionContent className="px-4 pb-6 pt-3">
+                <div className="h-px w-full bg-slate-800/70 mb-4" />
                 <div className="space-y-4">
                   <div className="grid grid-cols-1 gap-4">
                     <PreferenceTextareaField
@@ -952,7 +952,7 @@ export function PreferencesPanel({
                 await handleBlurSave()
                 onClose()
               }}
-              className="cursor-pointer rounded-lg border border-slate-700 bg-slate-900 px-4 py-2 font-mono text-sm text-slate-100 transition hover:border-slate-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-1 focus-visible:ring-offset-slate-950"
+              className="cursor-pointer rounded-lg border border-(--pf-border) bg-(--pf-surface) px-4 py-2 text-sm font-semibold text-foreground shadow-(--pf-shadow-soft) transition hover:bg-(--pf-surface-strong) hover:border-(--pf-border-strong) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--pf-border-strong) focus-visible:ring-offset-1 focus-visible:ring-offset-background"
             >
               Done
             </button>

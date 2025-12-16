@@ -1,6 +1,7 @@
 import React from 'react'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
+import { MAX_EDITABLE_PROMPT_LENGTH } from '@/lib/constants'
 import { TerminalOutputArea } from './TerminalOutputArea'
 
 vi.mock('next/image', () => ({
@@ -57,12 +58,12 @@ describe('TerminalOutputArea', () => {
 
     expect(screen.getAllByText(/Question 1\/1:/i).length).toBeGreaterThan(0)
     expect(screen.getAllByText(/What outcome do you want\?/i).length).toBeGreaterThan(0)
-    expect(screen.getByText(/Type your answer and press Enter/i)).toBeInTheDocument()
+    expect(screen.getByText(/Type an answer and press Enter or Next/i)).toBeInTheDocument()
     expect(screen.getByText('Welcome')).toBeInTheDocument()
     expect(screen.getAllByText('Question 1/1: What outcome do you want?').length).toBeGreaterThan(0)
   })
 
-  it('highlights AI edit diffs with added and removed lines', () => {
+  it('renders prompt actions when a prompt edit diff exists', () => {
     render(
       <TerminalOutputArea
         lines={[]}
@@ -107,10 +108,9 @@ describe('TerminalOutputArea', () => {
       />
     )
 
-    expect(screen.getByText(/AI edits applied/i)).toBeInTheDocument()
-    expect(screen.getByText(/Green lines were added, red lines were removed./i)).toBeInTheDocument()
-    expect(screen.getByText('Add more detail here.')).toBeInTheDocument()
-    expect(screen.getByText('Keep it brief.')).toBeInTheDocument()
+    expect(screen.getByText(/Open prompt in popular AIs/i)).toBeInTheDocument()
+    expect(screen.getAllByText('ChatGPT').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Claude').length).toBeGreaterThan(0)
   })
 
   it('makes the prompt editable and confirms manual updates', () => {
@@ -147,5 +147,46 @@ describe('TerminalOutputArea', () => {
     fireEvent.click(screen.getByRole('button', { name: /confirm changes/i }))
 
     expect(handleUpdate).toHaveBeenCalledWith('Updated prompt', 'Original prompt')
+  })
+
+  it('prevents saving when the edited prompt exceeds the max length', () => {
+    const handleUpdate = vi.fn()
+    render(
+      <TerminalOutputArea
+        lines={[]}
+        activity={null}
+        editablePrompt="Original prompt"
+        promptEditDiff={null}
+        promptForLinks={null}
+        awaitingQuestionConsent={false}
+        consentSelectedIndex={null}
+        answeringQuestions={false}
+        currentClarifyingQuestion={null}
+        clarifyingSelectedOptionIndex={null}
+        editablePromptRef={React.createRef()}
+        scrollRef={React.createRef()}
+        inputRef={React.createRef()}
+        onFocusInput={() => {}}
+        onHelpCommandClick={() => {}}
+        onConsentOptionClick={() => {}}
+        onClarifyingOptionClick={() => {}}
+        onUndoAnswer={() => {}}
+        onCopyEditable={() => {}}
+        onUpdateEditablePrompt={handleUpdate}
+        onStartNewConversation={() => {}}
+      />
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /edit prompt/i }))
+    const textarea = screen.getByLabelText(/edit prompt text/i)
+    const overLimit = 'x'.repeat(MAX_EDITABLE_PROMPT_LENGTH + 5)
+    fireEvent.change(textarea, { target: { value: overLimit } })
+
+    const confirmButton = screen.getByRole('button', { name: /confirm changes/i })
+    expect(confirmButton).toBeDisabled()
+    expect(screen.getByText(/Remove 5 characters to save changes/i)).toBeInTheDocument()
+
+    fireEvent.click(confirmButton)
+    expect(handleUpdate).not.toHaveBeenCalled()
   })
 })

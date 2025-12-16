@@ -44,7 +44,7 @@ function HistoryItemRow({
   return (
     <button
       type="button"
-      className="w-full text-left rounded-lg border border-slate-800/80 bg-slate-900/70 p-3 transition hover:border-slate-600 hover:bg-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 cursor-pointer"
+      className="w-full text-left rounded-lg border border-[color:var(--pf-border)] bg-[color:var(--pf-surface)] p-3 transition hover:border-[color:var(--pf-border-strong)] hover:bg-[color:var(--pf-surface-strong)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 cursor-pointer text-[color:var(--pf-foreground)]"
       onClick={() => onSelect(index)}
     >
       <div className="flex items-start justify-between gap-2">
@@ -76,8 +76,8 @@ export function PromptHistoryPanel({
       }`}
       aria-hidden={!open}
     >
-      <div className="pointer-events-auto flex h-full w-full flex-col bg-slate-950/95 border-r border-slate-800/80 shadow-[0_12px_32px_rgba(0,0,0,0.45)] backdrop-blur-md">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800/70">
+      <div className="pointer-events-auto flex h-full w-full flex-col bg-[color:var(--pf-surface-strong)] border-r border-[color:var(--pf-border-strong)] shadow-[0_12px_28px_color-mix(in_oklab,#000_30%,transparent)] backdrop-blur-md text-[color:var(--pf-foreground)]">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-[color:var(--pf-border)]/70">
           <div>
             <div className="text-[13px] uppercase tracking-wide text-slate-500">History</div>
             <div className="text-sm text-slate-100">Past 30 days</div>
@@ -87,14 +87,14 @@ export function PromptHistoryPanel({
               type="button"
               onClick={onRefresh}
               disabled={isLoading}
-              className="inline-flex h-9 items-center justify-center rounded-md border border-slate-800 bg-slate-900 px-3 text-[13px] font-semibold text-slate-100 transition hover:border-slate-600 hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+              className="inline-flex h-9 items-center justify-center rounded-md border border-[color:var(--pf-border)] bg-[color:var(--pf-surface)] px-3 text-[13px] font-semibold text-[color:var(--pf-foreground)] transition hover:border-[color:var(--pf-border-strong)] hover:bg-[color:var(--pf-surface-strong)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
             >
               {isLoading ? 'Loading…' : 'Refresh'}
             </button>
             <button
               type="button"
               onClick={onClose}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-800 hover:text-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 cursor-pointer"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-full text-[color:var(--pf-foreground-muted)] transition hover:bg-[color:var(--pf-surface)] hover:text-[color:var(--pf-foreground)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 cursor-pointer"
               aria-label="Close history"
             >
               <svg className="h-5 w-5" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8} fill="none">
@@ -131,7 +131,7 @@ export function PromptHistoryPanel({
           )}
 
           {status === 'empty' && (
-            <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-3 text-[13px] text-slate-300">
+            <div className="rounded-lg border border-[color:var(--pf-border)] bg-[color:var(--pf-surface)] p-3 text-[13px] text-[color:var(--pf-foreground)]/85">
               No prompts yet. Your last 30 days of prompts will appear here.
             </div>
           )}
@@ -140,12 +140,12 @@ export function PromptHistoryPanel({
             items.map((item, idx) => <HistoryItemRow key={item.id} item={item} index={idx} onSelect={onSelect} />)}
         </div>
 
-        <div className="border-t border-slate-800/70 px-3 py-3">
+        <div className="border-t border-[color:var(--pf-border)]/80 px-3 py-3">
           <button
             type="button"
             onClick={onLoadMore}
             disabled={!hasMore || loadingMore || isLoading}
-            className="inline-flex w-full items-center justify-center rounded-md border border-slate-800 bg-slate-900 px-3 py-2 text-[13px] font-semibold text-slate-100 transition hover:border-slate-600 hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+            className="inline-flex w-full items-center justify-center rounded-md border border-(--pf-border) bg-(--pf-surface) px-3 py-2 text-[13px] font-semibold text-[color:var(--pf-foreground)] transition hover:border-(--pf-border-strong) hover:bg-(--pf-surface-strong) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
           >
             {loadingMore ? 'Loading…' : hasMore ? 'Load more' : 'No more history'}
           </button>

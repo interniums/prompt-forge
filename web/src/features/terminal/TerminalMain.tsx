@@ -59,12 +59,13 @@ export function TerminalMain({
       </div>
 
       {/* Input bar - fixed at bottom, centered, floating, content scrolls behind */}
-      <div className="fixed bottom-0 left-0 right-0 z-20 flex justify-center pointer-events-none">
-        {/* Fade gradient overlay to hide content below input */}
-        <div className="absolute bottom-0 left-0 right-0 h-32 input-bar-gradient pointer-events-none" />
+      <div className="fixed inset-x-0 bottom-0 z-20 flex justify-center pointer-events-none">
         {/* Bottom safe area - blocks scroll behind this zone */}
         <div className="absolute bottom-0 left-0 right-0 h-6 bg-transparent" />
-        <div className="pointer-events-auto w-full max-w-2xl pb-6 px-4 relative z-10">
+        <div
+          className="pointer-events-auto w-full max-w-2xl safe-px relative z-10"
+          style={{ paddingBottom: 'calc(1.5rem + var(--pf-safe-bottom))' }}
+        >
           <TerminalInputBar
             value={inputProps.value}
             onChange={inputProps.onChange}

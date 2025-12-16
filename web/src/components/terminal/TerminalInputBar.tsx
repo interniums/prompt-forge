@@ -30,14 +30,13 @@ export type TerminalInputBarProps = {
 
 // Base container styles (always applied)
 const baseContainerClass =
-  'input-bar-container relative flex items-center rounded-2xl px-4 border transition-all duration-250 ease-out origin-bottom'
+  'input-bar-container relative flex items-center rounded-2xl px-4 border transition-[background-color,border-color,box-shadow,filter] duration-200 ease-out'
 
 // Default (blurred) state styles - fixed height for 2-row placeholder
 const defaultContainerClass = 'h-[85px] shadow-[0_2px_8px_rgba(0,0,0,0.15)]'
 
-// Focused (floating island) state styles - dynamic height, larger appearance
-const focusedContainerClass =
-  'focused min-h-[85px] py-4 px-6 -mx-2 shadow-[0_20px_60px_rgba(0,0,0,0.4),0_8px_24px_rgba(0,0,0,0.25)] ring-2 ring-slate-400/40 scale-[1.08] -translate-y-2'
+// Focused state without resizing/shift; just a subtle ring.
+const focusedContainerClass = 'focused h-[85px] ring-2 ring-slate-400/40'
 
 export function TerminalInputBar({
   value,

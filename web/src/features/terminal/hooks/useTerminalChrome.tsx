@@ -17,6 +17,7 @@ type UseTerminalChromeDeps = {
   handlePreferencesChange: (next: Preferences) => void
   handleSavePreferences: () => void
   handleSignIn: () => Promise<void>
+  handleEmailSignIn: () => void
   handleSignOut: () => Promise<void>
   updatePreferencesLocally: (prefs: Preferences) => void
   user: UserIdentity | null
@@ -73,6 +74,7 @@ export function useTerminalChrome(deps: UseTerminalChromeDeps) {
         open: deps.isLoginRequiredOpen,
         onClose: () => deps.setLoginRequiredOpen(false),
         onSignIn: deps.handleSignIn,
+        onEmailSignIn: deps.handleEmailSignIn,
       }}
     />
   )

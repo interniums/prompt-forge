@@ -31,6 +31,7 @@ type GenDeps = {
     task: string
     pendingAnswers?: ClarifyingAnswer[]
   }) => void
+  onSubscriptionRequired?: () => void
 }
 
 export function useGenerationController({
@@ -52,6 +53,7 @@ export function useGenerationController({
   awaitingQuestionConsent,
   consentRequired,
   onUnclearTask,
+  onSubscriptionRequired,
 }: GenDeps) {
   const generationRunIdRef = useRef(0)
   const resumeRunTaskRef = useRef<string | null>(null)
@@ -66,12 +68,8 @@ export function useGenerationController({
         return
       }
       if (!user) {
-        setLoginRequiredOpen(true)
-        setPendingTask(task)
+        // Allow anonymous users to consume the guest allowance; server will block after the first free run.
         clarifyingAnswersRef.current = answers
-        setAnsweringQuestions(false)
-        resumeRunTaskRef.current = task
-        return
       }
 
       const runId = (generationRunIdRef.current += 1)
@@ -152,6 +150,10 @@ export function useGenerationController({
         const code = (err as { code?: string })?.code || (err as Error)?.message
         if (code === 'UNAUTHENTICATED') {
           setIsGenerating(false)
+          resumeRunTaskRef.current = task
+          setPendingTask(task)
+          clarifyingAnswersRef.current = answers
+          setAnsweringQuestions(false)
           setLoginRequiredOpen(true)
           setActivity({
             task,
@@ -159,6 +161,39 @@ export function useGenerationController({
             status: 'error',
             message: 'Sign-in required',
             detail: 'Sign in to generate prompts, then try again.',
+          })
+          return
+        }
+
+        if (code === 'LOGIN_REQUIRED') {
+          setIsGenerating(false)
+          resumeRunTaskRef.current = task
+          setPendingTask(task)
+          clarifyingAnswersRef.current = answers
+          setAnsweringQuestions(false)
+          setLoginRequiredOpen(true)
+          setActivity({
+            task,
+            stage: 'error',
+            status: 'error',
+            message: 'Sign in to continue generating',
+            detail: 'Create a free account to continue generating.',
+          })
+          return
+        }
+
+        if (code === 'SUBSCRIPTION_REQUIRED') {
+          setIsGenerating(false)
+          resumeRunTaskRef.current = task
+          setPendingTask(task)
+          setAnsweringQuestions(false)
+          onSubscriptionRequired?.()
+          setActivity({
+            task,
+            stage: 'error',
+            status: 'error',
+            message: 'You need a subscription to continue using the service',
+            detail: 'Start a trial or subscribe to keep generating prompts.',
           })
           return
         }
@@ -257,6 +292,7 @@ export function useGenerationController({
       setLastApprovedPrompt,
       showToast,
       onUnclearTask,
+      onSubscriptionRequired,
     ]
   )
 

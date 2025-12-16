@@ -34,10 +34,10 @@ export function ContentPageLayout({
       role="main"
       aria-labelledby={headingId}
       aria-describedby={introId}
-      className="relative min-h-screen px-6 py-12 sm:px-8 sm:py-16"
+      className="relative min-h-screen safe-px py-12 sm:py-16"
     >
       <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top,rgba(148,163,184,0.14),transparent_55%),radial-gradient(circle_at_bottom,rgba(37,99,235,0.12),transparent_55%)]" />
-      <div className="mx-auto flex max-w-5xl flex-col gap-8">
+      <div className="responsive-container flex flex-col gap-8 sm:gap-10">
         <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="space-y-2">
             {tag ? (
@@ -66,11 +66,7 @@ export function ContentPageLayout({
           {actionHref ? (
             <Link
               href={actionHref}
-              className="inline-flex h-10 items-center justify-center rounded-lg px-4 text-sm font-medium shadow-[0_10px_40px_rgba(0,0,0,0.25)] transition hover:-translate-y-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color-mix(in_srgb,var(--pf-foreground)_70%,transparent)] cursor-pointer"
-              style={{
-                backgroundColor: 'var(--pf-foreground)',
-                color: 'var(--pf-background)',
-              }}
+              className="inline-flex h-10 items-center justify-center rounded-lg border border-(--pf-border) bg-[color:var(--pf-foreground)] px-4 text-sm font-semibold text-[color:var(--pf-background)] shadow-[0_12px_32px_color-mix(in_oklab,#000_22%,transparent)] transition hover:brightness-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--pf-border-strong) focus-visible:ring-offset-2 focus-visible:ring-offset-background cursor-pointer"
             >
               {actionLabel}
             </Link>
@@ -97,7 +93,7 @@ export function ContentSection({ title, children, kicker, id }: ContentSectionPr
     <section
       id={sectionId}
       aria-labelledby={headingId}
-      className="rounded-2xl border px-6 py-6 shadow-[0_0_80px_rgba(0,0,0,0.35)] backdrop-blur"
+      className="rounded-2xl border px-5 py-5 sm:px-6 sm:py-6 shadow-[0_0_80px_rgba(0,0,0,0.35)] backdrop-blur"
       style={{
         backgroundColor: 'var(--pf-background)',
         color: 'var(--pf-foreground)',

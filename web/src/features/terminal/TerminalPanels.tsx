@@ -31,6 +31,7 @@ type LoginRequiredProps = {
   open: boolean
   onClose: () => void
   onSignIn: () => Promise<void>
+  onEmailSignIn: () => void
 }
 
 type TerminalPanelsProps = {

@@ -7,10 +7,12 @@ type LoginRequiredModalProps = {
   open: boolean
   onClose: () => void
   onSignIn: () => Promise<void>
+  onEmailSignIn: () => void
 }
 
-export function LoginRequiredModal({ open, onClose, onSignIn }: LoginRequiredModalProps) {
+export function LoginRequiredModal({ open, onClose, onSignIn, onEmailSignIn }: LoginRequiredModalProps) {
   const [isSigningIn, setIsSigningIn] = useState(false)
+  const [isEmailRedirecting, setIsEmailRedirecting] = useState(false)
 
   if (!open) return null
 
@@ -24,15 +26,24 @@ export function LoginRequiredModal({ open, onClose, onSignIn }: LoginRequiredMod
     }
   }
 
+  const handleEmail = () => {
+    if (isSigningIn || isEmailRedirecting) return
+    setIsEmailRedirecting(true)
+    try {
+      onEmailSignIn()
+    } catch (err) {
+      console.error('Email sign-in failed', err)
+      setIsEmailRedirecting(false)
+    }
+  }
+
   return (
-    <div className={modalBackdropClass}>
+    <div className={`${modalBackdropClass} min-h-screen items-center! justify-center!`}>
       <div className={`${modalCardClass} max-w-md`}>
         {/* Header */}
         <div className="mb-6">
-          <h2 className="text-lg font-semibold text-slate-100">Sign in to generate prompts</h2>
-          <p className="mt-2 text-sm text-slate-400">
-            You can explore the app freely, but you need to sign in to generate your first prompt.
-          </p>
+          <h2 className="text-lg font-semibold text-foreground">Sign in to continue generating</h2>
+          <p className="mt-2 text-sm text-(--pf-foreground-muted)">Sign in to keep going.</p>
         </div>
 
         {/* Google sign-in button */}
@@ -72,18 +83,28 @@ export function LoginRequiredModal({ open, onClose, onSignIn }: LoginRequiredMod
           )}
         </button>
 
+        {/* Email sign-in link */}
+        <button
+          type="button"
+          onClick={handleEmail}
+          disabled={isEmailRedirecting}
+          className="mt-3 w-full cursor-pointer rounded-lg border border-slate-700 px-4 py-2.5 text-sm font-medium text-slate-100 transition-colors hover:border-slate-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {isEmailRedirecting ? 'Opening email sign-in...' : 'Continue with email'}
+        </button>
+
         {/* Cancel button */}
         <button
           type="button"
           onClick={onClose}
           disabled={isSigningIn}
-          className="mt-3 w-full cursor-pointer rounded-lg px-4 py-2.5 text-sm text-slate-400 transition-colors hover:text-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+          className="mt-3 w-full cursor-pointer rounded-lg px-4 py-2.5 text-sm text-(--pf-foreground-muted) transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
         >
           Maybe later
         </button>
 
         {/* Footer note */}
-        <p className="mt-4 text-center text-xs text-slate-500">
+        <p className="mt-4 text-center text-xs text-(--pf-foreground-muted)">
           By continuing, you agree to our Terms and Privacy Policy
         </p>
       </div>
