@@ -103,8 +103,6 @@ export default function SubscriptionPage() {
     })
   }, [plans, selectedPlan])
 
-  const hasActivePlan = status ? status.subscriptionTier !== 'expired' : false
-
   return (
     <ContentPageLayout
       title="Upgrade your plan"
