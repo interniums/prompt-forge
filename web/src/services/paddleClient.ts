@@ -27,46 +27,115 @@ declare global {
 }
 
 const PADDLE_SRC = 'https://cdn.paddle.com/paddle/v2/paddle.js'
+const PADDLE_SRC_FALLBACK = 'https://cdn.paddle.com/paddle/paddle.js'
 let paddleLoader: Promise<PaddleClient> | null = null
 
 function resolveEnv(): PaddleEnv {
   return process.env.NEXT_PUBLIC_PADDLE_ENV === 'sandbox' ? 'sandbox' : 'production'
 }
 
+function loadScript(src: string) {
+  return new Promise<void>((resolve, reject) => {
+    const existing = document.querySelector<HTMLScriptElement>(`script[src="${src}"]`)
+    if (existing) {
+      if (existing.dataset.loaded === 'true') {
+        resolve()
+        return
+      }
+      existing.addEventListener('load', () => resolve(), { once: true })
+      existing.addEventListener('error', () => reject(new Error('PADDLE_SCRIPT_ERROR')), {
+        once: true,
+      })
+      return
+    }
+
+    const script = document.createElement('script')
+    script.src = src
+    script.async = true
+    script.onload = () => {
+      script.dataset.loaded = 'true'
+      resolve()
+    }
+    script.onerror = () => {
+      script.remove()
+      reject(new Error('PADDLE_SCRIPT_ERROR'))
+    }
+    document.head.appendChild(script)
+  })
+}
+
 async function loadPaddle(token: string, environment: PaddleEnv): Promise<PaddleClient> {
   if (paddleLoader) return paddleLoader
 
-  paddleLoader = new Promise((resolve, reject) => {
+  paddleLoader = (async () => {
     if (typeof window === 'undefined') {
-      reject(new Error('PADDLE_UNAVAILABLE'))
-      return
+      throw new Error('PADDLE_UNAVAILABLE')
     }
 
     const existing = window.Paddle
     if (existing) {
       existing.Environment.set(environment)
       existing.Setup({ token })
-      resolve(existing)
-      return
+      return existing
     }
 
-    const script = document.createElement('script')
-    script.src = PADDLE_SRC
-    script.async = true
-    script.onload = () => {
-      if (!window.Paddle) {
-        reject(new Error('PADDLE_LOAD_FAILED'))
-        return
+    const sources = [PADDLE_SRC, PADDLE_SRC_FALLBACK]
+    let lastError: Error | null = null
+
+    for (const src of sources) {
+      try {
+        await loadScript(src)
+        if (!window.Paddle) {
+          lastError = new Error('PADDLE_LOAD_FAILED')
+          continue
+        }
+        window.Paddle.Environment.set(environment)
+        window.Paddle.Setup({ token })
+        return window.Paddle
+      } catch (error) {
+        // Commonly triggered by network issues or aggressive content blockers.
+        lastError = error instanceof Error ? error : new Error('PADDLE_LOAD_FAILED')
       }
-      window.Paddle.Environment.set(environment)
-      window.Paddle.Setup({ token })
-      resolve(window.Paddle)
     }
-    script.onerror = () => reject(new Error('PADDLE_LOAD_FAILED'))
-    document.head.appendChild(script)
-  })
 
-  return paddleLoader
+    throw lastError ?? new Error('PADDLE_LOAD_FAILED')
+  })()
+
+  try {
+    return await paddleLoader
+  } catch (error) {
+    // Allow retries after a failure (e.g., user disables blocker and retries).
+    paddleLoader = null
+    throw error
+  }
+}
+
+function normalizeBaseUrl(url?: string) {
+  if (!url) return undefined
+  try {
+    const normalized = new URL(url)
+    normalized.hash = ''
+    normalized.search = ''
+    return normalized.toString().replace(/\/$/, '')
+  } catch {
+    return undefined
+  }
+}
+
+function resolveUrls(providedSuccess?: string, providedCancel?: string) {
+  const envBase = normalizeBaseUrl(process.env.NEXT_PUBLIC_APP_URL)
+  const runtimeBase = normalizeBaseUrl(typeof window !== 'undefined' ? window.location.origin : undefined)
+  const base = envBase || runtimeBase
+
+  // Paddle requires validated, non-empty URLs. If we cannot derive them, fail fast with a clear error.
+  const success = providedSuccess || (base ? `${base}/subscription/success` : undefined)
+  const cancel = providedCancel || (base ? `${base}/subscription/cancel` : undefined)
+
+  if (!success || !cancel) {
+    throw new Error('PADDLE_URLS_MISSING')
+  }
+
+  return { success, cancel }
 }
 
 export async function openPaddleCheckout({
@@ -89,6 +158,7 @@ export async function openPaddleCheckout({
 
   const env = resolveEnv()
   const paddle = await loadPaddle(token, env)
+  const { success, cancel } = resolveUrls(successUrl, cancelUrl)
 
   const items = [
     {
@@ -102,8 +172,8 @@ export async function openPaddleCheckout({
     customer: customerEmail ? { email: customerEmail } : undefined,
     settings: {
       displayMode: 'overlay',
-      successUrl,
-      cancelUrl,
+      successUrl: success,
+      cancelUrl: cancel,
     },
   })
 }

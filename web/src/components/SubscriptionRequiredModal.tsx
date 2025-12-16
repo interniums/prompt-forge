@@ -109,13 +109,13 @@ export function SubscriptionRequiredModal({
                 type="button"
                 onClick={() => setSelectedOption('trial')}
                 aria-pressed={selectedOption === 'trial'}
-                className={`flex h-full cursor-pointer flex-col justify-between rounded-2xl border border-slate-800/80 bg-slate-900/70 p-5 text-left transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/70 ${
+                className={`flex h-full cursor-pointer flex-col justify-between rounded-2xl border border-slate-800/80 bg-slate-900/70 p-5 text-left shadow-[0_16px_55px_rgba(0,0,0,0.4)] transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/70 ${
                   selectedOption === 'trial' ? 'ring-2 ring-emerald-300/60 shadow-lg shadow-emerald-900/30' : ''
                 }`}
               >
                 <div className="flex items-center justify-between">
                   <div className="text-lg font-semibold text-white">Free trial</div>
-                  <span className="rounded-full border border-indigo-200/50 bg-indigo-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-indigo-100 ring-1 ring-indigo-300/40">
+                  <span className="rounded-full border border-emerald-200/50 bg-emerald-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-emerald-100 ring-1 ring-emerald-300/50">
                     Start fast
                   </span>
                 </div>
@@ -134,10 +134,10 @@ export function SubscriptionRequiredModal({
                 const isSelected = selectedOption === plan.id
                 const isDisabled = !!plan.disabled
                 const badgeTone =
-                  plan.badge === 'Power'
-                    ? 'border border-indigo-300/60 bg-indigo-600/15 text-indigo-100 ring-1 ring-indigo-400/50'
-                    : 'border border-indigo-300/40 bg-indigo-500/12 text-indigo-100 ring-1 ring-indigo-300/40'
-                const badgeAccent = 'text-indigo-100'
+                  plan.id === 'basic'
+                    ? 'border border-sky-300/60 bg-sky-500/15 text-sky-50 ring-1 ring-sky-300/50'
+                    : 'border border-violet-300/60 bg-violet-600/15 text-violet-50 ring-1 ring-violet-300/50'
+                const badgeAccent = plan.id === 'basic' ? 'text-sky-200' : 'text-violet-200'
                 const badgeLabel =
                   plan.badge ??
                   (plan.id === 'basic' ? 'Best choice' : plan.id === 'advanced' ? 'Power users' : 'Popular')
@@ -172,7 +172,7 @@ export function SubscriptionRequiredModal({
                     }}
                     aria-pressed={isSelected}
                     disabled={isDisabled}
-                    className={`flex h-full cursor-pointer flex-col justify-between rounded-2xl border border-slate-800/80 bg-slate-900/70 p-5 text-left transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/70 ${
+                    className={`flex h-full cursor-pointer flex-col justify-between rounded-2xl border border-slate-800/80 bg-slate-900/70 p-5 text-left shadow-[0_16px_55px_rgba(0,0,0,0.4)] transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/70 ${
                       isSelected ? 'ring-2 ring-emerald-300/60 shadow-lg shadow-emerald-900/30' : ''
                     } ${isDisabled ? 'cursor-not-allowed opacity-60' : ''}`}
                   >

@@ -45,6 +45,12 @@ const plans: Plan[] = [
   },
 ]
 
+const badgeToneByPlan: Record<Plan['name'], string> = {
+  'Free trial': 'bg-emerald-500/20 text-emerald-100 ring-1 ring-emerald-300/60',
+  Basic: 'bg-sky-500/20 text-sky-100 ring-1 ring-sky-300/60',
+  Advanced: 'bg-violet-500/20 text-violet-100 ring-1 ring-violet-300/60',
+}
+
 export default function PricingPage() {
   return (
     <ContentPageLayout
@@ -57,7 +63,7 @@ export default function PricingPage() {
           {plans.map((plan) => (
             <article
               key={plan.name}
-              className="flex h-full flex-col justify-between rounded-xl border px-4 py-5 shadow-[0_0_50px_rgba(0,0,0,0.25)]"
+              className="flex h-full flex-col justify-between rounded-xl border px-4 py-5 shadow-[0_16px_55px_rgba(0,0,0,0.4)]"
               style={{
                 backgroundColor: 'var(--pf-background)',
                 color: 'var(--pf-foreground)',
@@ -69,8 +75,9 @@ export default function PricingPage() {
                   <h3 className="text-lg font-semibold">{plan.name}</h3>
                   {plan.badge ? (
                     <span
-                      className="rounded-full px-3 py-1 text-[11px] font-semibold"
-                      style={{ backgroundColor: 'rgba(148,163,184,0.12)' }}
+                      className={`rounded-full px-3 py-1 text-[11px] font-semibold uppercase ${
+                        badgeToneByPlan[plan.name]
+                      }`}
                     >
                       {plan.badge}
                     </span>
@@ -121,7 +128,8 @@ export default function PricingPage() {
       <ContentSection title="FAQ" kicker="Common questions">
         <ul className="space-y-2">
           <li>
-            <strong>Is there a free trial?</strong> Yes, 3 days with generous quotas. No card required until you upgrade.
+            <strong>Is there a free trial?</strong> Yes, 3 days with generous quotas. No card required until you
+            upgrade.
           </li>
           <li>
             <strong>Can I cancel anytime?</strong> Yes. Cancelling stops future renewals and you keep access for the
