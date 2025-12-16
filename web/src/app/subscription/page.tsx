@@ -29,7 +29,7 @@ export default function SubscriptionPage() {
         quota: '800 generations / 200 edits monthly',
         badge: 'Most picked',
         priceId: basePriceId,
-        trialSupported: true,
+        trialSupported: false,
       },
       {
         id: 'advanced' as const,
@@ -39,7 +39,7 @@ export default function SubscriptionPage() {
         quota: '1,800 generations (incl. 200 premium finals) / 400 edits monthly',
         badge: 'Power',
         priceId: advancedPriceId,
-        trialSupported: true,
+        trialSupported: false,
       },
     ],
     []
@@ -186,9 +186,6 @@ export default function SubscriptionPage() {
                         {isSelected ? 'Selected' : 'Choose plan'}
                       </button>
                     </div>
-                    <p className="mt-2 text-xs text-slate-400">
-                      {plan.trialSupported ? 'Includes 3-day trial through Paddle' : 'No trial'}
-                    </p>
                     {isDisabled ? <p className="mt-2 text-xs text-amber-300">Not configured</p> : null}
                   </div>
                 )

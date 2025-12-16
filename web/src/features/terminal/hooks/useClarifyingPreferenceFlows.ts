@@ -23,6 +23,7 @@ type UseClarifyingPreferenceFlowsDeps = {
   onBackToClarifying: () => void
   allowUnclearFlag: boolean
   handleClarifyingUnclear: (info: { reason: string; stage: 'clarifying'; task: string }) => void
+  handleSubscriptionRequired: () => void
 
   // Clarifying state
   clarifyingQuestions: ClarifyingQuestion[] | null
@@ -114,6 +115,7 @@ export function useClarifyingPreferenceFlows(deps: UseClarifyingPreferenceFlowsD
         allowUnclear: options?.allowUnclear ?? deps.allowUnclearFlag,
       }),
     onUnclearTask: deps.handleClarifyingUnclear,
+    onSubscriptionRequired: deps.handleSubscriptionRequired,
   })
 
   return {

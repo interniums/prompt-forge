@@ -14,6 +14,7 @@ type StartClarifyingQuestionsDeps = {
   beginQuestionFlow: (questions: ClarifyingQuestion[]) => void
   showToast: (msg: string) => void
   onUnclearTask?: (info: { reason: string; stage: 'clarifying'; task: string }) => void
+  onSubscriptionRequired?: () => void
 }
 
 export function createStartClarifyingQuestions(deps: StartClarifyingQuestionsDeps) {
@@ -78,6 +79,21 @@ export function createStartClarifyingQuestions(deps: StartClarifyingQuestionsDep
         deps.setIsGenerating(false)
         deps.setAwaitingQuestionConsent(false)
         deps.setAnsweringQuestions(false)
+        return
+      }
+
+      if (code === 'SUBSCRIPTION_REQUIRED') {
+        deps.setIsGenerating(false)
+        deps.setAwaitingQuestionConsent(false)
+        deps.setAnsweringQuestions(false)
+        deps.onSubscriptionRequired?.()
+        deps.setActivity({
+          task,
+          stage: 'clarifying',
+          status: 'error',
+          message: 'Subscription required',
+          detail: 'Start a trial or subscribe to continue.',
+        })
         return
       }
 

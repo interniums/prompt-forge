@@ -174,7 +174,8 @@ function PromptTerminalInner({
   const [restoredFromHistory, setRestoredFromHistory] = useState(false)
   const [subscription, setSubscription] = useState<SubscriptionRecord | null>(null)
   const [subscriptionError, setSubscriptionError] = useState<string | null>(null)
-  const [isSubscriptionModalOpen, setSubscriptionModalOpen] = useState(false)
+  const SUB_MODAL_KEY = 'pf:subscription-required-open'
+  const [isSubscriptionModalOpen, setSubscriptionModalOpen] = useState<boolean>(false)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const editablePromptRef = useRef<HTMLDivElement | null>(null)
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
@@ -210,9 +211,27 @@ function PromptTerminalInner({
   const { clarifyingAnswerHistory } = useClarifyingHistory(clarifyingAnswers)
   const activeSessionId = initialSessionId ?? null
   const activeUserId = user?.id ?? null
+  const setSubscriptionModal = useCallback((value: boolean) => {
+    setSubscriptionModalOpen(value)
+    if (typeof sessionStorage !== 'undefined') {
+      if (value) {
+        sessionStorage.setItem(SUB_MODAL_KEY, '1')
+      } else {
+        sessionStorage.removeItem(SUB_MODAL_KEY)
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const storedOpen = sessionStorage.getItem(SUB_MODAL_KEY) === '1'
+    if (storedOpen) {
+      window.requestAnimationFrame(() => setSubscriptionModal(true))
+    }
+  }, [setSubscriptionModal])
+
   const paddleBasePriceId = process.env.NEXT_PUBLIC_PADDLE_PRICE_ID_BASE ?? process.env.NEXT_PUBLIC_PADDLE_PRICE_ID
   const paddleAdvancedPriceId = process.env.NEXT_PUBLIC_PADDLE_PRICE_ID_ADVANCED
-  const paddleTrialPriceId = process.env.NEXT_PUBLIC_PADDLE_TRIAL_PRICE_ID
   const subscriptionPlans = useMemo(
     () => [
       {
@@ -220,8 +239,10 @@ function PromptTerminalInner({
         label: 'Base',
         description: 'Generous limits for regular usage.',
         quota: '800 generations / 200 edits monthly',
-        trialSupported: true,
+        trialSupported: false,
         disabled: !paddleBasePriceId,
+        price: '$7.99 / month',
+        badge: 'Best choice',
       },
       {
         id: 'advanced' as const,
@@ -230,6 +251,8 @@ function PromptTerminalInner({
         quota: '1,800 generations / 400 edits monthly',
         trialSupported: false,
         disabled: !paddleAdvancedPriceId,
+        price: '$12.99 / month',
+        badge: 'Power',
       },
     ],
     [paddleAdvancedPriceId, paddleBasePriceId]
@@ -854,8 +877,8 @@ function PromptTerminalInner({
   }, [editablePrompt, setLikeState, showToast])
 
   const handleSubscriptionRequired = useCallback(() => {
-    setSubscriptionModalOpen(true)
-  }, [])
+    setSubscriptionModal(true)
+  }, [setSubscriptionModal])
 
   const handleStartTrial = useCallback(async () => {
     if (!user) {
@@ -866,13 +889,13 @@ function PromptTerminalInner({
     try {
       await startFreeTrial(user.id)
       await refreshSubscription()
-      setSubscriptionModalOpen(false)
+      setSubscriptionModal(false)
       showToast('Trial started')
     } catch (err) {
       console.error('Failed to start trial', err)
       setSubscriptionError('Could not start your trial. Please try again.')
     }
-  }, [refreshSubscription, setLoginRequiredOpen, showToast, user])
+  }, [refreshSubscription, setLoginRequiredOpen, setSubscriptionModal, showToast, user])
 
   const handleSubscribe = useCallback(
     async (plan: 'basic' | 'advanced') => {
@@ -882,7 +905,6 @@ function PromptTerminalInner({
       }
 
       const selectedPriceId = plan === 'advanced' ? paddleAdvancedPriceId : paddleBasePriceId
-      const trialForPlan = plan === 'basic' ? paddleTrialPriceId : undefined
 
       if (!selectedPriceId) {
         setSubscriptionError('Selected plan is not configured.')
@@ -893,7 +915,7 @@ function PromptTerminalInner({
       try {
         await openPaddleCheckout({
           priceId: selectedPriceId,
-          trialPriceId: trialForPlan,
+          trialPriceId: undefined,
           customerEmail: user.email ?? undefined,
           successUrl: typeof window !== 'undefined' ? window.location.href : undefined,
           cancelUrl: typeof window !== 'undefined' ? window.location.href : undefined,
@@ -903,7 +925,7 @@ function PromptTerminalInner({
         setSubscriptionError('Checkout could not be opened. Please try again.')
       }
     },
-    [paddleAdvancedPriceId, paddleBasePriceId, paddleTrialPriceId, setLoginRequiredOpen, user]
+    [paddleAdvancedPriceId, paddleBasePriceId, setLoginRequiredOpen, user]
   )
 
   const { generateFinalPromptForTask, handleEditPrompt, handleStop } = useGenerationController({
@@ -1073,6 +1095,7 @@ function PromptTerminalInner({
     onBackToClarifying: backToClarifyingFromPreferences,
     allowUnclearFlag,
     handleClarifyingUnclear,
+    handleSubscriptionRequired,
     clarifyingQuestions,
     clarifyingAnswers,
     currentQuestionIndex,
@@ -1703,6 +1726,12 @@ function PromptTerminalInner({
   })
 
   const handleSubmitWithFocus = useCallback(() => {
+    const subGateActive =
+      isSubscriptionModalOpen || (typeof window !== 'undefined' && sessionStorage.getItem(SUB_MODAL_KEY) === '1')
+    if (subGateActive) {
+      setSubscriptionModal(true)
+      return
+    }
     setRestoredFromHistory(false)
     submitCurrent()
     if (inputRef.current) {
@@ -1710,7 +1739,7 @@ function PromptTerminalInner({
       const len = inputRef.current.value.length
       inputRef.current.setSelectionRange(len, len)
     }
-  }, [inputRef, submitCurrent])
+  }, [inputRef, isSubscriptionModalOpen, setSubscriptionModal, submitCurrent])
 
   // When user manually focuses input during questions flow, select "my own answer"
   const handleInputFocus = useCallback(() => {
@@ -1797,7 +1826,7 @@ function PromptTerminalInner({
       />
       <SubscriptionRequiredModal
         open={isSubscriptionModalOpen}
-        onClose={() => setSubscriptionModalOpen(false)}
+        onClose={() => setSubscriptionModal(false)}
         onStartTrial={handleStartTrial}
         onSubscribe={handleSubscribe}
         plans={subscriptionPlans}

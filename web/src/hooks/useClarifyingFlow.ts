@@ -44,6 +44,7 @@ export type ClarifyingFlowDeps = {
     options?: { skipConsentCheck?: boolean; allowUnclear?: boolean }
   ) => Promise<void>
   onUnclearTask?: (info: { reason: string; stage: 'clarifying'; task: string }) => void
+  onSubscriptionRequired?: () => void
 }
 
 export type ClarifyingFlowHandlers = {
@@ -109,11 +110,13 @@ export function useClarifyingFlow(deps: ClarifyingFlowDeps): ClarifyingFlowHandl
         beginQuestionFlow,
         showToast: deps.showToast,
         onUnclearTask: deps.onUnclearTask,
+        onSubscriptionRequired: deps.onSubscriptionRequired,
       }),
     [
       beginQuestionFlow,
       deps.generationRunIdRef,
       deps.onUnclearTask,
+      deps.onSubscriptionRequired,
       deps.preferences,
       deps.setActivity,
       deps.setAnsweringQuestions,
