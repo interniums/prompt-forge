@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState, useCallback, useLayoutEffect, useMemo } from 'react'
+import { useEffect, useRef, useState, useCallback, useLayoutEffect, useMemo, type FormEvent } from 'react'
 import { recordEvent } from '@/services/eventsService'
 import { captureEvent } from '@/lib/analytics'
 import { useToast } from '@/hooks/useToast'
@@ -177,7 +177,10 @@ function PromptTerminalInner({
   const [subscription, setSubscription] = useState<SubscriptionRecord | null>(null)
   const [subscriptionError, setSubscriptionError] = useState<string | null>(null)
   const SUB_MODAL_KEY = 'pf:subscription-required-open'
+  const GEN_SUCCESS_KEY = 'pf:generation-success-count'
   const [isSubscriptionModalOpen, setSubscriptionModalOpen] = useState<boolean>(false)
+  const [generationSuccessCount, setGenerationSuccessCount] = useState(0)
+  const [generationCountHydrated, setGenerationCountHydrated] = useState(false)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const editablePromptRef = useRef<HTMLDivElement | null>(null)
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
@@ -361,6 +364,32 @@ function PromptTerminalInner({
     }
     return undefined
   }, [subscription])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const stored = window.sessionStorage.getItem(GEN_SUCCESS_KEY)
+    const parsed = stored ? Number.parseInt(stored, 10) : 0
+    const value = Number.isFinite(parsed) ? parsed : 0
+    const id = setTimeout(() => {
+      setGenerationSuccessCount(value)
+      setGenerationCountHydrated(true)
+    }, 0)
+    return () => clearTimeout(id)
+  }, [])
+
+  const incrementGenerationSuccess = useCallback(() => {
+    setGenerationSuccessCount((prev) => {
+      const next = prev + 1
+      if (typeof window !== 'undefined') {
+        try {
+          window.sessionStorage.setItem(GEN_SUCCESS_KEY, String(next))
+        } catch (err) {
+          console.error('Failed to persist generation count', err)
+        }
+      }
+      return next
+    })
+  }, [])
 
   const setValue = useCallback((next: string) => dispatch(setInput(next)), [dispatch])
 
@@ -971,6 +1000,7 @@ function PromptTerminalInner({
     consentRequired: true,
     onUnclearTask: handleGeneratingUnclear,
     onSubscriptionRequired: handleSubscriptionRequired,
+    onGenerationSuccess: incrementGenerationSuccess,
   })
 
   const guardedGenerateFinalPromptForTask = useCallback(
@@ -1530,7 +1560,7 @@ function PromptTerminalInner({
     getPreferenceOptions: getPreferenceOptions ?? null,
   })
 
-  const { submitCurrent, handleFormSubmit } = useTaskFlowHandlers({
+  const { submitCurrent } = useTaskFlowHandlers({
     state: {
       isGenerating,
       value,
@@ -1748,13 +1778,18 @@ function PromptTerminalInner({
     onFinalBack: editablePrompt && !restoredFromHistory ? handleGlobalBack : undefined,
   })
 
-  const handleSubmitWithFocus = useCallback(() => {
-    const subGateActive =
+  const shouldGateSubscription = useCallback(() => {
+    const hasActiveSubscription = subscription && subscription.subscriptionTier !== 'expired'
+    const subGateSticky =
       isSubscriptionModalOpen || (typeof window !== 'undefined' && sessionStorage.getItem(SUB_MODAL_KEY) === '1')
-    if (subGateActive) {
-      setSubscriptionModal(true)
-      return
+    if (hasActiveSubscription) {
+      return subGateSticky
     }
+    if (subGateSticky) return true
+    return generationSuccessCount >= 2
+  }, [generationSuccessCount, isSubscriptionModalOpen, subscription])
+
+  const runSubmitFlow = useCallback(() => {
     setRestoredFromHistory(false)
     submitCurrent()
     if (inputRef.current) {
@@ -1762,7 +1797,35 @@ function PromptTerminalInner({
       const len = inputRef.current.value.length
       inputRef.current.setSelectionRange(len, len)
     }
-  }, [inputRef, isSubscriptionModalOpen, setSubscriptionModal, submitCurrent])
+  }, [inputRef, submitCurrent])
+
+  const handleSubmitWithFocus = useCallback(() => {
+    if (generationCountHydrated && !user && generationSuccessCount >= 1) {
+      setLoginRequiredOpen(true)
+      return
+    }
+    if (shouldGateSubscription()) {
+      setSubscriptionModal(true)
+      return
+    }
+    runSubmitFlow()
+  }, [
+    generationCountHydrated,
+    generationSuccessCount,
+    runSubmitFlow,
+    setLoginRequiredOpen,
+    setSubscriptionModal,
+    shouldGateSubscription,
+    user,
+  ])
+
+  const handleFormSubmitWithGuards = useCallback(
+    (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault()
+      handleSubmitWithFocus()
+    },
+    [handleSubmitWithFocus]
+  )
 
   // When user manually focuses input during questions flow, select "my own answer"
   const handleInputFocus = useCallback(() => {
@@ -1819,7 +1882,7 @@ function PromptTerminalInner({
       disabled: inputDisabled,
       inputRef,
     },
-    onFormSubmit: handleFormSubmit,
+    onFormSubmit: handleFormSubmitWithGuards,
     onSubmit: handleSubmitWithFocus,
     onStop: handleStop,
     isGenerating,

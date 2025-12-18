@@ -26,6 +26,7 @@ type GenDeps = {
   user: { id: string; email?: string | null } | null
   awaitingQuestionConsent: boolean
   consentRequired: boolean
+  onGenerationSuccess?: () => void
   onUnclearTask?: (info: {
     reason: string
     stage: 'generating'
@@ -53,6 +54,7 @@ export function useGenerationController({
   user,
   awaitingQuestionConsent,
   consentRequired,
+  onGenerationSuccess,
   onUnclearTask,
   onSubscriptionRequired,
 }: GenDeps) {
@@ -334,6 +336,7 @@ export function useGenerationController({
       setIsPromptFinalized,
       setLastApprovedPrompt,
       showToast,
+      onGenerationSuccess,
       onUnclearTask,
       onSubscriptionRequired,
     ]
