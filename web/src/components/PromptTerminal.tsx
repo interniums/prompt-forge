@@ -369,7 +369,7 @@ function PromptTerminalInner({
     return undefined
   }, [subscription])
 
-  const incrementGenerationSuccess = useCallback(() => {
+  const incrementGenerationAttempt = useCallback(() => {
     setGenerationSuccessCount((prev) => {
       const next = prev + 1
       if (typeof window !== 'undefined') {
@@ -992,7 +992,6 @@ function PromptTerminalInner({
     consentRequired: true,
     onUnclearTask: handleGeneratingUnclear,
     onSubscriptionRequired: handleSubscriptionRequired,
-    onGenerationSuccess: incrementGenerationSuccess,
   })
 
   const guardedGenerateFinalPromptForTask = useCallback(
@@ -1800,8 +1799,17 @@ function PromptTerminalInner({
       setSubscriptionModal(true)
       return
     }
+    incrementGenerationAttempt()
     runSubmitFlow()
-  }, [generationSuccessCount, runSubmitFlow, setLoginRequiredOpen, setSubscriptionModal, shouldGateSubscription, user])
+  }, [
+    generationSuccessCount,
+    incrementGenerationAttempt,
+    runSubmitFlow,
+    setLoginRequiredOpen,
+    setSubscriptionModal,
+    shouldGateSubscription,
+    user,
+  ])
 
   const handleFormSubmitWithGuards = useCallback(
     (event: FormEvent<HTMLFormElement>) => {
