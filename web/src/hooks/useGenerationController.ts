@@ -182,6 +182,7 @@ export function useGenerationController({
         if (autoCopied) {
           captureEvent('project_published', { destination: 'clipboard', auto: true })
         }
+        onGenerationSuccess?.()
         setIsGenerating(false)
 
         // Do not auto-prompt for preferences here to keep the flow minimal.
