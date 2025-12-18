@@ -179,8 +179,12 @@ function PromptTerminalInner({
   const SUB_MODAL_KEY = 'pf:subscription-required-open'
   const GEN_SUCCESS_KEY = 'pf:generation-success-count'
   const [isSubscriptionModalOpen, setSubscriptionModalOpen] = useState<boolean>(false)
-  const [generationSuccessCount, setGenerationSuccessCount] = useState(0)
-  const [generationCountHydrated, setGenerationCountHydrated] = useState(false)
+  const [generationSuccessCount, setGenerationSuccessCount] = useState(() => {
+    if (typeof window === 'undefined') return 0
+    const stored = window.sessionStorage.getItem(GEN_SUCCESS_KEY)
+    const parsed = stored ? Number.parseInt(stored, 10) : 0
+    return Number.isFinite(parsed) ? parsed : 0
+  })
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const editablePromptRef = useRef<HTMLDivElement | null>(null)
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
@@ -364,18 +368,6 @@ function PromptTerminalInner({
     }
     return undefined
   }, [subscription])
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    const stored = window.sessionStorage.getItem(GEN_SUCCESS_KEY)
-    const parsed = stored ? Number.parseInt(stored, 10) : 0
-    const value = Number.isFinite(parsed) ? parsed : 0
-    const id = setTimeout(() => {
-      setGenerationSuccessCount(value)
-      setGenerationCountHydrated(true)
-    }, 0)
-    return () => clearTimeout(id)
-  }, [])
 
   const incrementGenerationSuccess = useCallback(() => {
     setGenerationSuccessCount((prev) => {
@@ -1800,7 +1792,7 @@ function PromptTerminalInner({
   }, [inputRef, submitCurrent])
 
   const handleSubmitWithFocus = useCallback(() => {
-    if (generationCountHydrated && !user && generationSuccessCount >= 1) {
+    if (!user && generationSuccessCount >= 1) {
       setLoginRequiredOpen(true)
       return
     }
@@ -1809,15 +1801,7 @@ function PromptTerminalInner({
       return
     }
     runSubmitFlow()
-  }, [
-    generationCountHydrated,
-    generationSuccessCount,
-    runSubmitFlow,
-    setLoginRequiredOpen,
-    setSubscriptionModal,
-    shouldGateSubscription,
-    user,
-  ])
+  }, [generationSuccessCount, runSubmitFlow, setLoginRequiredOpen, setSubscriptionModal, shouldGateSubscription, user])
 
   const handleFormSubmitWithGuards = useCallback(
     (event: FormEvent<HTMLFormElement>) => {
